@@ -4,7 +4,7 @@
     python python/examples/live_camera.py --source 0                # any webcam through OpenCV
     python python/examples/live_camera.py --source recording.mp4    # video file
 
-Needs the [video] extra for OpenCV (pip install -e "python[examples]").
+Needs the [video] extra for OpenCV (pip install -e "./python[examples]").
 
 Every estimate uses 2L+1 consecutive frames. Live cameras deliver them as one
 burst per estimate, so the time spent estimating never mixes old buffered

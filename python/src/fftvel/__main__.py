@@ -21,7 +21,7 @@ def _load(path: str, var: str | None) -> np.ndarray:
         try:
             from scipy.io import loadmat
         except ImportError:
-            raise SystemExit('reading .mat files needs scipy: pip install -e "python[data]"') from None
+            raise SystemExit('reading .mat files needs scipy: pip install -e "./python[data]"') from None
 
         data = loadmat(path)
         names = [k for k in data if not k.startswith("__")]

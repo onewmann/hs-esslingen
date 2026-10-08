@@ -106,7 +106,7 @@ noise peaks, so it reported 32 to 78 px per step whatever the true speed.
 ### Python
 
 ```bash
-pip install -e "python[examples]"      # core needs only numpy: pip install -e python
+pip install -e "./python[examples]"    # core needs only numpy: pip install -e ./python
 python -m fftvel simulate --vx 5 --vy -3 --plot estimate.png
 python -m fftvel estimate my_pulsed_image.png --L 4
 python -m fftvel estimate frames.mat --stack    # mean of the 2L+1 frames in a stack
