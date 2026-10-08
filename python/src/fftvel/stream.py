@@ -15,13 +15,15 @@ import numpy as np
 
 from .core import crop_square, estimate_velocity
 
-__all__ = ["FrameWindow", "StreamEstimate", "estimate_stream", "to_grey"]
+__all__ = ["FrameWindow", "StreamEstimate", "estimate_stream", "estimate_window", "to_grey"]
 
 
 def to_grey(frame: np.ndarray) -> np.ndarray:
     """Grey-scale float image; colour input uses the MATLAB ``rgb2gray`` weights (RGB order)."""
     a = np.asarray(frame, dtype=float)
-    if a.ndim == 3:
+    if a.ndim == 3 and a.shape[2] == 1:
+        a = a[..., 0]
+    elif a.ndim == 3:
         a = a[..., :3] @ np.array([0.2989, 0.5870, 0.1140])
     return a
 
@@ -68,15 +70,38 @@ class StreamEstimate:
     regular: bool          # frame steps equal within the tolerance
 
 
+def estimate_window(frames: Iterable[Tuple[np.ndarray, float]], L: int = 4,
+                    roi: Optional[int] = None, tol: float = 0.2,
+                    min_quality: float = 0.6) -> StreamEstimate:
+    """Estimate from exactly ``2L+1`` consecutive ``(frame, t)`` pairs (e.g. one camera burst)."""
+    win = FrameWindow(L, roi, tol)
+    t = float("nan")
+    for frame, t in frames:
+        win.push(frame, t)
+    return _estimate(win, t, min_quality)
+
+
+def _estimate(win: FrameWindow, t: float, min_quality: float) -> StreamEstimate:
+    bp, step, regular = win.pulsed_image()
+    e = estimate_velocity(bp, L=win.L, min_quality=min_quality)
+    return StreamEstimate(
+        t=float(t), angle_deg=e.angle_deg, speed=e.speed,
+        speed_per_s=e.speed / step if step > 0 else float("nan"),
+        quality=e.quality, valid=e.valid and regular, regular=regular)
+
+
 def estimate_stream(frames: Iterable[Tuple[np.ndarray, float]], L: int = 4,
                     roi: Optional[int] = None, every: Optional[int] = None,
                     tol: float = 0.2, min_quality: float = 0.6) -> Iterator[StreamEstimate]:
     """Yield an estimate for every ``every`` new frames (default ``2L+1``, no overlap).
 
-    ``frames`` yields ``(frame, t)`` pairs with ``t`` in seconds. ``roi`` is the
-    side of the central square that is analysed (default: largest square).
-    Windows with unequal frame intervals are still estimated but reported with
-    ``regular=False`` and ``valid=False``.
+    Meant for sources that deliver every frame, such as video files. ``frames``
+    yields ``(frame, t)`` pairs with ``t`` in seconds. ``roi`` is the side of
+    the central square that is analysed (default: largest square). Windows
+    with unequal frame intervals are still estimated but reported with
+    ``regular=False`` and ``valid=False``. For live cameras, grab a burst of
+    ``2L+1`` frames per estimate and call :func:`estimate_window`, so that the
+    time spent estimating does not mix old buffered frames into a window.
     """
     win = FrameWindow(L, roi, tol)
     every = every or (2 * L + 1)
@@ -86,9 +111,4 @@ def estimate_stream(frames: Iterable[Tuple[np.ndarray, float]], L: int = 4,
         since += 1
         if win.ready and since >= every:
             since = 0
-            bp, step, regular = win.pulsed_image()
-            e = estimate_velocity(bp, L=L, min_quality=min_quality)
-            yield StreamEstimate(
-                t=float(t), angle_deg=e.angle_deg, speed=e.speed,
-                speed_per_s=e.speed / step if step > 0 else float("nan"),
-                quality=e.quality, valid=e.valid and regular, regular=regular)
+            yield _estimate(win, t, min_quality)

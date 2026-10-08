@@ -9,9 +9,15 @@ function test_options()
     expect_error(@() estimate_velocity(bp, 'L'), 'missing value');
     expect_error(@() estimate_velocity(zeros(8)), 'too small');
     expect_error(@() estimate_velocity(zeros(32, 32, 3)), 'not 2-D');
+    bad = bp;
+    bad(3, 4) = NaN;
+    expect_error(@() estimate_velocity(bad), 'NaN pixel');
+    e1 = estimate_velocity(bp, 'L', int32(4), 'PadFactor', uint8(2));
+    e2 = estimate_velocity(bp, 'L', 4, 'PadFactor', 2);
+    assert(e1.speed == e2.speed && e1.npad == e2.npad, 'integer-class options');
 
     e = estimate_velocity(bp, 'l', 4, 'minquality', 0.99);
-    assert(e.valid == (e.quality >= 0.99), 'MinQuality and case-insensitive names');
+    assert(e.valid == (e.quality >= max(0.99, e.threshold) && e.in_range), 'MinQuality and case-insensitive names');
     assert(~isfield(e, 'diag'), 'no diagnostics by default');
     e = estimate_velocity(bp, 'Diagnostics', true);
     assert(isfield(e, 'diag') && size(e.diag.spectrum, 1) == 128, 'diagnostics');

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,8 @@ name = "fftvel"
 version = "1.0.0"
 description = "Velocity of a moving texture from a single pulsed-exposure image (2-D FFT + Radon)"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{name = "Oliver Neumann"}]
 requires-python = ">=3.9"
 dependencies = ["numpy>=1.21"]
@@ -16,6 +17,7 @@ dependencies = ["numpy>=1.21"]
 plot = ["matplotlib>=3.5"]
 data = ["scipy>=1.7"]
 video = ["opencv-python-headless>=4.5"]
+examples = ["matplotlib>=3.5", "scipy>=1.7", "opencv-python-headless>=4.5"]
 test = ["pytest>=7", "scipy>=1.7", "matplotlib>=3.5"]
 
 [tool.setuptools.packages.find]

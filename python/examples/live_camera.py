@@ -4,66 +4,118 @@
     python python/examples/live_camera.py --source 0                # any webcam through OpenCV
     python python/examples/live_camera.py --source recording.mp4    # video file
 
-Every estimate uses 2L+1 consecutive frames. The pulsed-exposure model needs
-equal time steps between them; windows with uneven frame intervals are
-reported as not valid. ``--show`` opens a live plot.
+Needs the [video] extra for OpenCV (pip install -e "python[examples]").
+
+Every estimate uses 2L+1 consecutive frames. Live cameras deliver them as one
+burst per estimate, so the time spent estimating never mixes old buffered
+frames into a window. The pulsed-exposure model needs equal time steps; each
+window is checked against its timestamps (camera clock for Basler, the
+driver's buffer time or the host clock for webcams, the container time for
+files) and reported as not valid when the intervals differ by more than 20 %.
+``--show`` opens a live plot.
 """
 
 from __future__ import annotations
 
 import argparse
 import time
-from typing import Iterator, Tuple
+from typing import Iterator, List, Tuple
 
 import numpy as np
 
-from fftvel.stream import estimate_stream
+from fftvel.stream import estimate_stream, estimate_window
+
+Frames = List[Tuple[np.ndarray, float]]
 
 
-def pylon_frames(frame_rate: float | None) -> Iterator[Tuple[np.ndarray, float]]:
-    """Frames and camera timestamps from the first Basler camera (pypylon)."""
+def _try_set(cam, name: str, value) -> bool:
+    try:
+        getattr(cam, name).SetValue(value)
+        return True
+    except Exception:  # noqa: BLE001 - node missing on this camera model
+        return False
+
+
+def _tick_seconds(cam) -> float:
+    """Length of one timestamp tick: GigE models report their tick frequency, USB3 counts ns."""
+    try:
+        return 1.0 / float(cam.GevTimestampTickFrequency.GetValue())
+    except Exception:  # noqa: BLE001
+        return 1e-9
+
+
+def pylon_bursts(n: int, frame_rate: float | None) -> Iterator[Frames]:
+    """Bursts of ``n`` consecutive frames with camera timestamps from the first Basler camera."""
     from pypylon import pylon
 
     cam = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
     cam.Open()
     try:
-        try:
-            cam.PixelFormat.SetValue("Mono8")
-        except Exception:  # noqa: BLE001 - not every model exposes it
-            pass
+        _try_set(cam, "PixelFormat", "Mono8")
         if frame_rate:
-            cam.AcquisitionFrameRateEnable.SetValue(True)
-            cam.AcquisitionFrameRate.SetValue(frame_rate)
-        # USB3 cameras count timestamp ticks in ns; GigE models may use another
-        # tick rate (see GevTimestampTickFrequency).
-        cam.StartGrabbing(pylon.GrabStrategy_OneByOne)
-        while cam.IsGrabbing():
-            res = cam.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-            try:
-                if res.GrabSucceeded():
-                    yield res.Array.copy(), res.TimeStamp * 1e-9
-            finally:
-                res.Release()
+            ok = _try_set(cam, "AcquisitionFrameRateEnable", True)
+            if not (_try_set(cam, "AcquisitionFrameRate", frame_rate)        # USB3, newer GigE
+                    or _try_set(cam, "AcquisitionFrameRateAbs", frame_rate)):  # GigE ace classic
+                print("warning: could not set the frame rate" + ("" if ok else " (no frame-rate node)"))
+        tick = _tick_seconds(cam)
+        cam.MaxNumBuffer.SetValue(max(10, n + 2))
+        while True:
+            cam.StartGrabbingMax(n, pylon.GrabStrategy_OneByOne)
+            burst: Frames = []
+            while cam.IsGrabbing():
+                res = cam.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+                try:
+                    if res.GrabSucceeded():
+                        burst.append((res.Array.copy(), res.TimeStamp * tick))
+                finally:
+                    res.Release()
+            if len(burst) == n:
+                yield burst
     finally:
         cam.StopGrabbing()
         cam.Close()
 
 
-def opencv_frames(source) -> Iterator[Tuple[np.ndarray, float]]:
-    """Frames from OpenCV; file timestamps from the container, webcam ones from the clock."""
+def webcam_bursts(index: int, n: int) -> Iterator[Frames]:
+    """Bursts of ``n`` frames from a webcam; frames buffered during an estimate are dropped first."""
     import cv2
 
-    cap = cv2.VideoCapture(source)
+    cap = cv2.VideoCapture(index)
     if not cap.isOpened():
-        raise SystemExit(f"cannot open {source!r}")
-    is_file = isinstance(source, str)
+        raise SystemExit(f"cannot open camera {index}")
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)            # not every backend honours this
+    try:
+        while True:
+            for _ in range(5):                       # drain stale buffers
+                cap.grab()
+            frames, driver_t, host_t = [], [], []
+            for _ in range(n):
+                ok, frame = cap.read()
+                if not ok:
+                    return
+                host_t.append(time.monotonic())
+                driver_t.append(cap.get(cv2.CAP_PROP_POS_MSEC) * 1e-3)
+                frames.append(frame[..., ::-1] if frame.ndim == 3 else frame)   # BGR -> RGB
+            d = np.diff(driver_t)
+            times = driver_t if min(driver_t) > 0 and np.all(d > 0) else host_t
+            yield list(zip(frames, times))
+    finally:
+        cap.release()
+
+
+def file_frames(path: str) -> Iterator[Tuple[np.ndarray, float]]:
+    """Every frame of a video file with its presentation time."""
+    import cv2
+
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        raise SystemExit(f"cannot open {path!r}")
     try:
         while True:
             ok, frame = cap.read()
             if not ok:
                 break
-            t = cap.get(cv2.CAP_PROP_POS_MSEC) * 1e-3 if is_file else time.monotonic()
-            yield frame[..., ::-1] if frame.ndim == 3 else frame, t    # BGR -> RGB
+            yield (frame[..., ::-1] if frame.ndim == 3 else frame), cap.get(cv2.CAP_PROP_POS_MSEC) * 1e-3
     finally:
         cap.release()
 
@@ -73,17 +125,18 @@ def main():
     p.add_argument("--source", default="pylon", help="'pylon', a webcam index or a video file")
     p.add_argument("--L", type=int, default=4, help="half number of frames per estimate")
     p.add_argument("--roi", type=int, default=512, help="side of the analysed central square (px)")
-    p.add_argument("--every", type=int, help="new frames between estimates (default 2L+1)")
+    p.add_argument("--every", type=int, help="video files: new frames between estimates (default 2L+1)")
     p.add_argument("--frame-rate", type=float, help="set the Basler frame rate (Hz)")
     p.add_argument("--show", action="store_true", help="live plot of speed over time")
     a = p.parse_args()
 
+    n = 2 * a.L + 1
     if a.source == "pylon":
-        frames = pylon_frames(a.frame_rate)
+        results = (estimate_window(b, a.L, a.roi) for b in pylon_bursts(n, a.frame_rate))
     elif a.source.isdigit():
-        frames = opencv_frames(int(a.source))
+        results = (estimate_window(b, a.L, a.roi) for b in webcam_bursts(int(a.source), n))
     else:
-        frames = opencv_frames(a.source)
+        results = estimate_stream(file_frames(a.source), L=a.L, roi=a.roi, every=a.every)
 
     if a.show:
         import matplotlib.pyplot as plt
@@ -97,7 +150,7 @@ def main():
         hist = []
 
     print(f"{'t (s)':>8} {'dir (deg)':>9} {'px/frame':>9} {'px/s':>8} {'quality':>7}  state")
-    for r in estimate_stream(frames, L=a.L, roi=a.roi, every=a.every):
+    for r in results:
         state = "valid" if r.valid else ("uneven frame steps" if not r.regular else "not valid")
         print(f"{r.t:8.2f} {r.angle_deg:9.1f} {r.speed:9.2f} {r.speed_per_s:8.1f} {r.quality:7.2f}  {state}")
         if a.show:

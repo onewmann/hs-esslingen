@@ -1,5 +1,9 @@
 import json
 
+import numpy as np
+import pytest
+from scipy.io import savemat
+
 from fftvel import phase_correlation, simulate_pulsed_image
 from fftvel.__main__ import main
 
@@ -28,3 +32,20 @@ def test_cli_estimate_mat(repo, capsys):
     assert main(["estimate", str(path), "--var", "bp01"]) == 0
     out = capsys.readouterr().out
     assert '"valid": true' in out
+
+
+def test_cli_stack(tmp_path, capsys):
+    _, fr = simulate_pulsed_image(256, (3.0, -2.0), 2, rng=3, return_frames=True)   # 5 frames
+    savemat(tmp_path / "stack.mat", {"frames": fr})
+    with open(tmp_path / "STACK.NPY", "wb") as f:     # np.save would append .npy
+        np.save(f, fr)
+    for name in ("stack.mat", "STACK.NPY"):
+        assert main(["estimate", str(tmp_path / name), "--stack"]) == 0
+        out = capsys.readouterr().out
+        r = json.loads(out[out.index("{"):out.rindex("}") + 1])
+        assert r["L"] == 2 and abs(r["speed"] / np.hypot(3, 2) - 1) < 0.01
+    with pytest.raises(SystemExit):
+        main(["estimate", str(tmp_path / "stack.mat")])               # 3-D without --stack
+    np.save(tmp_path / "even.npy", fr[:, :, :4])
+    with pytest.raises(SystemExit):
+        main(["estimate", str(tmp_path / "even.npy"), "--stack"])     # even depth needs --L

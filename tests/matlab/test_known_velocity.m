@@ -29,9 +29,20 @@ function test_known_velocity()
     assert(abs(angle_error(e.angle_deg, atan2d(3, 5))) < 0.5, 'real texture: angle');
     assert(abs(e.speed/hypot(5, 3) - 1) < 0.01, 'real texture: speed');
 
-    % no motion must not produce a valid estimate
-    for k = 1:3
-        e = estimate_velocity(simulate_pulsed_image(256, [0 0], 4));
-        assert(~e.valid, sprintf('static scene marked valid (quality %.2f)', e.quality));
+    % motion below the measurable range must not produce a valid estimate
+    for c = [1 0.9; 1 1.0; 3 0.45; 4 0.3].'
+        bp = simulate_pulsed_image(256, c(2)*[cosd(37), -sind(37)], c(1));
+        e = estimate_velocity(bp, 'L', c(1));
+        assert(~e.in_range && ~e.valid, sprintf('L=%d, speed %g marked valid', c(1), c(2)));
+    end
+
+    % no motion must not produce a valid estimate, also on small images
+    for n = [32 64 128 256]
+        for k = 1:3
+            e = estimate_velocity(simulate_pulsed_image(n, [0 0], 4));
+            assert(~e.valid, sprintf('static scene %d px marked valid (quality %.2f)', n, e.quality));
+            e = estimate_velocity(randn(n));
+            assert(~e.valid, sprintf('white noise %d px marked valid (quality %.2f)', n, e.quality));
+        end
     end
 end

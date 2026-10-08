@@ -13,7 +13,8 @@ function [M, j, C] = mean_projection(S, theta_deg, rmax)
 %   ripple profile towards 45 and 135 degrees.
 %
 %   [M, J, C] = MEAN_PROJECTION(...) also returns the bin weights. They
-%   depend only on the geometry and are cached between calls.
+%   depend only on the geometry; the weights of the last call with more
+%   than one angle are cached.
 
     persistent cache_key cache_C
 
@@ -50,7 +51,7 @@ function [M, j, C] = mean_projection(S, theta_deg, rmax)
         end
         M(:, a) = acc(2:end-1) ./ max(C(:, a), 1e-12);
     end
-    if ~have_C
+    if ~have_C && na > 1          % keep the full angle grid, not single-angle calls
         cache_key = key;
         cache_C = C;
     end

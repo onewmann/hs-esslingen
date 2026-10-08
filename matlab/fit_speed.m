@@ -7,12 +7,14 @@ function [speed, quality, fit] = fit_speed(g, jpos, L, npad, n, angle_deg)
 %   maximises the correlation between the detrended profile and the
 %   detrended model; QUALITY is that correlation.
 %
-%   The grid runs from the speed whose first spectral zero still lies well
-%   inside the profile (1.5*NPAD/((2L+1)*max(JPOS))) to NPAD/4, where the
-%   motion lines are four bins apart.
+%   The measurable range runs from VMIN = 1.5*NPAD/((2L+1)*max(JPOS)), where
+%   the first spectral zero still lies well inside the profile, to NPAD/4,
+%   where the motion lines are four bins apart. The grid extends down to
+%   VMIN/4 as a guard band: slower motion then lands there instead of on a
+%   wrong in-range speed, and FIT.in_range is false.
 %
-%   FIT holds the grid (FIT.v), the scores (FIT.score) and the fitted model
-%   curve (FIT.model) for plotting.
+%   FIT holds the grid (FIT.v), the scores (FIT.score), VMIN, the flag
+%   FIT.in_range and the fitted model curve (FIT.model) for plotting.
 
     step = 0.005;
     jpos = jpos(:);
@@ -20,7 +22,8 @@ function [speed, quality, fit] = fit_speed(g, jpos, L, npad, n, angle_deg)
     vmin = 1.5*npad/((2*L + 1)*max(jpos));
     vmax = npad/4;
     nv = floor((log(vmax) - log(vmin))/step) + 1;
-    v = exp(log(vmin) + (0:nv-1)*step);
+    kext = floor(log(4)/step);
+    v = exp(log(vmin) + (-kext:nv-1)*step);
 
     T = dirichlet_template(jpos, v, L, npad, n, angle_deg);
     x = jpos/max(jpos);
@@ -38,6 +41,8 @@ function [speed, quality, fit] = fit_speed(g, jpos, L, npad, n, angle_deg)
     fit = struct();
     fit.v = v;
     fit.score = score;
+    fit.vmin = vmin;
+    fit.in_range = k > kext && k < numel(v);
     tk = Tp(:, k);
     fit.model = (g - gp) + (gp.'*tk)/(tk.'*tk)*tk;
 end

@@ -35,16 +35,22 @@ for k = 1:numel(names)
         ref_speed(w) = norm(mean(shift(idx(1:end-1), :), 1));
     end
     subplot(1, numel(names), k);
-    plot(starts, ref_speed, 'k-', 'LineWidth', 1.5); hold on;
-    plot(starts(valid), est_speed(valid), 'o', 'Color', [0.16 0.47 0.84], 'MarkerFaceColor', [0.16 0.47 0.84]);
-    plot(starts(~valid), est_speed(~valid), 'o', 'Color', [0.92 0.41 0.20]);
+    h = plot(starts, ref_speed, 'k-', 'LineWidth', 1.5); hold on;
+    labels = {'phase correlation'};
+    if any(valid)
+        h(end + 1) = plot(starts(valid), est_speed(valid), 'o', 'Color', [0.16 0.47 0.84], ...
+            'MarkerFaceColor', [0.16 0.47 0.84]);
+        labels{end + 1} = 'estimate (valid)';
+    end
+    if any(~valid)
+        h(end + 1) = plot(starts(~valid), est_speed(~valid), 'o', 'Color', [0.92 0.41 0.20]);
+        labels{end + 1} = 'estimate (not valid)';
+    end
     hold off;
     ylim([0 1.5*max(ref_speed)]);
     xlabel('first frame of window'); ylabel('speed (px/frame)');
     title(names{k});
-    if k == 1
-        legend('phase correlation', 'estimate (valid)', 'estimate (not valid)', 'Location', 'south');
-    end
+    legend(h, labels, 'Location', 'south');
     fprintf('%-13s %d windows, %d valid, median |error| of valid %.3f px/frame\n', names{k}, ...
         numel(starts), sum(valid), median(abs(est_speed(valid) - ref_speed(valid))));
 end

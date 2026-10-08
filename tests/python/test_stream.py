@@ -1,7 +1,7 @@
 import numpy as np
 
 from fftvel import simulate_pulsed_image
-from fftvel.stream import FrameWindow, estimate_stream
+from fftvel.stream import FrameWindow, estimate_stream, estimate_window
 
 from conftest import angle_error
 
@@ -39,3 +39,11 @@ def test_window_crop_and_colour():
     assert bp.shape == (50, 50)
     assert np.allclose(bp, 0.5870)
     assert abs(step - 0.1) < 1e-12 and regular
+
+
+def test_single_channel_frames_and_bursts():
+    times = np.arange(9) / 25.0
+    burst = [(f[:, :, None], t) for f, t in _frames(times)]      # (H, W, 1) frames
+    r = estimate_window(burst, L=4)
+    assert r.regular and r.valid
+    assert abs(r.speed / np.hypot(4, 1) - 1) < 0.01

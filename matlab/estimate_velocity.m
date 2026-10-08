@@ -9,7 +9,8 @@ function est = estimate_velocity(bp, varargin)
 %   EST = ESTIMATE_VELOCITY(BP, 'Name', Value, ...) sets options:
 %     'L'            half number of exposures, 2L+1 in total (default 4)
 %     'PadFactor'    zero padding factor of the FFT (default 2)
-%     'MinQuality'   fit quality required for EST.valid (default 0.6)
+%     'MinQuality'   lowest fit quality accepted for EST.valid (default 0.6);
+%                    small images need more, see EST.threshold
 %     'Diagnostics'  also return intermediate results in EST.diag
 %                    (default false)
 %
@@ -23,7 +24,10 @@ function est = estimate_velocity(bp, varargin)
 %                rows pointing down); -[vx vy] is equally possible
 %     geba       max(WR)/mean(WR) of the ripple profile
 %     quality    correlation between the measured profile and the model
-%     valid      quality >= MinQuality
+%     in_range   false if the best speed lies below the measurable range
+%     threshold  quality needed for this image size: the larger of MinQuality
+%                and tanh(9/sqrt(m-5)), m = number of profile points
+%     valid      quality >= threshold and in_range
 %
 %   Method: the motion multiplies the image spectrum by a Dirichlet kernel,
 %   which shows up as straight lines perpendicular to v, spaced
@@ -39,8 +43,8 @@ function est = estimate_velocity(bp, varargin)
 
     opts = parse_options(varargin, struct('L', 4, 'PadFactor', 2, ...
         'MinQuality', 0.6, 'Diagnostics', false));
-    L = opts.L;
-    if L < 1 || L ~= round(L)
+    L = double(opts.L);
+    if ~isscalar(L) || ~isreal(L) || L < 1 || L ~= round(L)
         error('estimate_velocity:L', 'L must be a positive integer.');
     end
 
@@ -75,7 +79,9 @@ function est = estimate_velocity(bp, varargin)
     est.vy = -speed*sind(angle);
     est.geba = geba;
     est.quality = quality;
-    est.valid = quality >= opts.MinQuality;
+    est.in_range = fit.in_range;
+    est.threshold = max(opts.MinQuality, null_quality(numel(jpos)));
+    est.valid = quality >= est.threshold && fit.in_range;
     est.L = L;
     est.n = n;
     est.npad = npad;
@@ -90,5 +96,19 @@ function est = estimate_velocity(bp, varargin)
         d.speed_grid = fit.v;
         d.speed_score = fit.score;
         est.diag = d;
+    end
+end
+
+function q = null_quality(m)
+%NULL_QUALITY  Fit quality that images without motion stay below.
+%   Under the null hypothesis the Fisher transform atanh(q) of the best
+%   correlation scales with 1/sqrt(m-5) for a profile of m points (four
+%   are taken by the cubic, one by the fit). On 1008 images without motion
+%   (white noise, random and camera textures, 32 to 256 px, L = 1 to 10)
+%   the largest value was tanh(8.6/sqrt(m-5)); 9 adds a margin.
+    if m <= 5
+        q = Inf;
+    else
+        q = tanh(9/sqrt(m - 5));
     end
 end

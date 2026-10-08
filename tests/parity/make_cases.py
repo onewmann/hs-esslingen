@@ -45,7 +45,7 @@ def main():
     savemat(HERE / "cases.mat", mats, do_compression=True)
     header = "case,L,pad,angle_deg,speed,geba,quality,valid"
     np.savetxt(HERE / "expected.csv", np.array(rows, dtype=float), delimiter=",",
-               header=header, comments="", fmt=["%d", "%d", "%d", "%.12g", "%.12g", "%.12g", "%.12g", "%d"])
+               header=header, comments="", fmt=["%d", "%d", "%d", "%.17g", "%.17g", "%.17g", "%.17g", "%d"])
     for r in rows:
         print(r)
 

@@ -2,12 +2,13 @@
 
     python benchmark/run_benchmark.py                 # about 15 min on 4 cores
     python benchmark/run_benchmark.py --quick         # smaller grids, for a check
-    python benchmark/run_benchmark.py --recordings ../2D-FFT/data
+    python benchmark/run_benchmark.py --recordings PATH/TO/2D-FFT/data
 
 Writes CSV files to benchmark/results/ and figures to docs/figures/.
-``--recordings`` points to the folder with the original camera recordings
-(vid2.mat .. vid4.mat, not part of this repository) and adds the analysis of
-their frame-to-frame motion.
+``--recordings`` points to the folder with the camera recordings of the
+original project (vid2.mat, vid3.mat and vid4.mat; not part of this
+repository, see data/README.md) and adds the analysis of their
+frame-to-frame motion.
 """
 
 from __future__ import annotations
@@ -185,14 +186,15 @@ def plot_accuracy(rows):
 
 def noise(pool, quick):
     levels = [0, 0.5, 1, 2] if quick else [0, 0.25, 0.5, 0.75, 1, 1.5, 2]
-    seeds = 1 if quick else 3
+    per_level = 12 if quick else 60
+    rng = np.random.default_rng(2025)
     cases = []
     for texture in ("random", "surface"):
         for nl in levels:
-            for s in (2, 8, 24):
-                for a in range(0, 180, 30):
-                    for k in range(seeds):
-                        cases.append((texture, s, a, 4, nl, 5000 + len(cases), False))
+            for _ in range(per_level):        # random velocity: speed log-uniform 1..32, any direction
+                s = float(np.exp(rng.uniform(np.log(1), np.log(32))))
+                a = float(rng.uniform(0, 180))
+                cases.append((texture, s, a, 4, nl, 5000 + len(cases), False))
     static = []
     for texture in ("random", "surface"):
         for nl in (0, 0.5, 1):
@@ -223,9 +225,9 @@ def plot_noise(rows, srows):
         ax.set_ylim(0, 104)
     ax1.legend(frameon=False, fontsize=9, labelcolor=INK2, loc="lower left")
     val = [r for r in rows if r["valid"]]
-    wrong_valid = sum(1 - r["correct"] for r in val)
+    wrong_valid = int(sum(1 - r["correct"] for r in val))
     _title(fig, "Sensor noise",
-           f"correct = direction within 2 deg and speed within 5 %, speeds 2, 8 and 24 px per step; "
+           f"correct = direction within 2 deg and speed within 5 %; random velocities, 1 to 32 px per step; "
            f"{wrong_valid} of {len(val)} valid estimates were wrong")
     fig.savefig(FIGURES / "noise.png", dpi=150, facecolor=SURFACE)
 
@@ -289,15 +291,23 @@ def pipeline_figure():
     fig.savefig(FIGURES / "pipeline.png", dpi=110, facecolor="white")
 
 
+def _zero_border(frame):
+    """Rows/columns of zero fill at the top and left (the sequences move down and to the right)."""
+    rows = int(np.argmax(frame.any(axis=1)))
+    cols = int(np.argmax(frame.any(axis=0)))
+    return max(rows, cols)
+
+
 def testsequences():
     from scipy.io import loadmat
 
     data = loadmat(REPO / "data" / "testsequences.mat")
     rows = []
-    fig, axes = _figure(3, 11.5)
+    fig, axes = _figure(4, 14.5)
     for ax, (name, title) in zip(axes, (("model", "model: (5, 5) px/frame"),
                                         ("tyre", "tyre: (4, 4) px/frame"),
-                                        ("accelerating", "accelerating: vx 1.8-8.2, vy 3"))):
+                                        ("accelerating", "accelerating: vx 1.8-8.2, vy 3"),
+                                        ("vehicle", "vehicle: irregular steps 2.2-9 px"))):
         s = data[name].astype(float) / 255
         nf = s.shape[2]
         shift = np.array([phase_correlation(s[:, :, f], s[:, :, f + 1])[:2] for f in range(nf - 1)])
@@ -305,7 +315,7 @@ def testsequences():
         est, ref, valid = [], [], []
         for st in starts:
             last = st + 8
-            border = int(np.ceil(np.abs(shift[:last].sum(axis=0)).max()))
+            border = max(_zero_border(s[:, :, k]) for k in range(st, last + 1))
             e = estimate_velocity(s[border:, border:, st:last + 1].mean(axis=2), L=4)
             r = float(np.hypot(*shift[st:last].mean(axis=0)))
             est.append(e.speed)
@@ -319,12 +329,13 @@ def testsequences():
                 label="single-image estimate")
         if (~valid).any():
             ax.plot(starts[~valid] + 1, est[~valid], "o", color=ORANGE, ms=6, mfc="none", label="not valid")
-        ax.set_ylim(0, 10)
+        ax.set_ylim(0, 15)
         ax.set_title(title, color=INK2, fontsize=10, loc="left")
         _style(ax, "first frame of the 9-frame window", "speed (px/frame)" if ax is axes[0] else "")
     axes[0].legend(frameon=False, fontsize=9, labelcolor=INK2, loc="lower left")
     _title(fig, "Test sequences with known motion",
-           "every window of 9 frames, cropped to the area without zero-filled borders")
+           "every window of 9 frames, cropped to the area without zero-filled borders; "
+           "the method assumes equal steps, which the last two sequences break")
     fig.savefig(FIGURES / "testsequences.png", dpi=150, facecolor=SURFACE)
     _write("testsequences.csv", rows)
     return rows
@@ -391,13 +402,14 @@ def main():
     p.add_argument("--jobs", type=int, default=os.cpu_count())
     p.add_argument("--replot", action="store_true",
                    help="redraw the simulation figures from benchmark/results/*.csv")
-    p.add_argument("--only", nargs="+", choices=["simulation", "pipeline", "testsequences", "recordings"],
+    p.add_argument("--only", nargs="+",
+                   choices=["accuracy", "noise", "before_after", "pipeline", "testsequences", "recordings"],
                    help="run only these parts (default: all)")
     a = p.parse_args()
     import matplotlib
     matplotlib.use("Agg")
     FIGURES.mkdir(parents=True, exist_ok=True)
-    parts = set(a.only or ["simulation", "pipeline", "testsequences", "recordings"])
+    parts = set(a.only or ["accuracy", "noise", "before_after", "pipeline", "testsequences", "recordings"])
     if a.replot:
         acc, noi, stat, ba = (_read(n) for n in ("accuracy.csv", "noise.csv", "static.csv",
                                                   "before_after.csv"))
@@ -406,21 +418,24 @@ def main():
         plot_before_after(ba)
         summary(acc, noi, stat, ba)
         return
-    if "simulation" in parts:
+    sim = parts & {"accuracy", "noise", "before_after"}
+    if sim:
         with Pool(a.jobs, initializer=_init) as pool:
-            acc = accuracy(pool, a.quick)
-            noi, stat = noise(pool, a.quick)
-            ba = before_after(pool, a.quick)
+            acc = accuracy(pool, a.quick) if "accuracy" in sim else _read("accuracy.csv")
+            noi, stat = noise(pool, a.quick) if "noise" in sim else (_read("noise.csv"), _read("static.csv"))
+            ba = before_after(pool, a.quick) if "before_after" in sim else _read("before_after.csv")
         summary(acc, noi, stat, ba)
     if "pipeline" in parts:
         pipeline_figure()
     if "testsequences" in parts:
         ts = testsequences()
-        for name in ("model", "tyre", "accelerating"):
+        for name in ("model", "tyre", "accelerating", "vehicle"):
             sel = [r for r in ts if r["sequence"] == name]
             val = [r for r in sel if r["valid"]]
-            err = [abs(r["est_speed"] - r["ref_speed"]) for r in val]
-            print(f"{name:13s} {len(val)}/{len(sel)} windows valid, max |error| {max(err):.3f} px/frame")
+            err = [abs(r["est_speed"] / r["ref_speed"] - 1) for r in val]
+            ang = [r["est_angle"] for r in val]
+            print(f"{name:13s} {len(val)}/{len(sel)} windows valid, max relative speed error of valid "
+                  f"{100 * max(err) if err else float('nan'):.1f} %, angles {min(ang):.2f}..{max(ang):.2f}")
     if "recordings" in parts and a.recordings:
         recordings(a.recordings)
 

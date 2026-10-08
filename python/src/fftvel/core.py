@@ -26,6 +26,7 @@ __all__ = [
     "mean_projection",
     "ripple_profile",
     "fit_speed",
+    "null_quality",
     "dirichlet_template",
     "parabolic_offset",
     "hann_window",
@@ -49,7 +50,10 @@ class Estimate:
         (y pointing down). ``-(vx, vy)`` is equally possible.
     geba : ``max(WR) / mean(WR)`` of the ripple profile.
     quality : correlation between the measured profile and the model.
-    valid : ``quality >= min_quality``.
+    in_range : False if the best speed lies below the measurable range.
+    threshold : quality needed for this image size, the larger of
+        ``min_quality`` and ``tanh(9/sqrt(m-5))`` for ``m`` profile points.
+    valid : ``quality >= threshold`` and ``in_range``.
     """
 
     angle_deg: float
@@ -58,6 +62,8 @@ class Estimate:
     vy: float
     geba: float
     quality: float
+    in_range: bool
+    threshold: float
     valid: bool
     L: int
     n: int
@@ -102,6 +108,8 @@ def log_spectrum(bp: np.ndarray, pad_factor: int = 2):
     n = x.shape[0]
     if n < 16:
         raise ValueError("image must be at least 16x16 pixels")
+    if not np.all(np.isfinite(x)):
+        raise ValueError("image contains NaN or Inf values")
     npad = pad_factor * n
     x = x - x.mean()
     w = hann_window(n)
@@ -124,9 +132,9 @@ def mean_projection(S: np.ndarray, theta_deg, rmax: int):
 
     Returns ``(M, j, C)``: ``M[:, k]`` is the mean of ``S`` along the lines at
     signed distance ``j = -rmax..rmax`` from the centre for angle
-    ``theta_deg[k]``; ``C`` holds the bin weights. Only samples inside the
-    disc of radius ``rmax`` are used, each split linearly between its two
-    neighbouring bins.
+    ``theta_deg[k]``; ``C`` holds the bin weights (those of the last call with
+    more than one angle are cached). Only samples inside the disc of radius
+    ``rmax`` are used, each split linearly between its two neighbouring bins.
     """
     npad = S.shape[0]
     c = npad // 2
@@ -157,7 +165,7 @@ def mean_projection(S: np.ndarray, theta_deg, rmax: int):
             cnt = np.bincount(b, 1 - f, nb) + np.bincount(b + 1, f, nb)
             C[:, a] = cnt[1:-1]
         M[:, a] = acc[1:-1] / np.maximum(C[:, a], 1e-12)
-    if not have_C:
+    if not have_C and theta.size > 1:     # keep the full angle grid, not single-angle calls
         _count_cache.clear()
         _count_cache[key] = C
     j = np.arange(-rmax, rmax + 1)
@@ -188,7 +196,11 @@ def parabolic_offset(y: np.ndarray, i: int, periodic: bool) -> float:
 
 
 def _window_autocorr(tau: np.ndarray, n: int) -> np.ndarray:
-    """Normalised autocorrelation of the ``n``-point Hann window (closed form)."""
+    """Normalised autocorrelation of the ``n``-point Hann window (closed form).
+
+    Matches the discrete autocorrelation of ``hann_window(n)`` at integer lags
+    to better than 1e-7 for ``n >= 64`` (3e-5 at ``n = 16``).
+    """
     x = np.abs(tau) / (n - 1)
     r = np.zeros_like(x)
     inside = x < 1
@@ -228,17 +240,21 @@ def fit_speed(g: np.ndarray, jpos: np.ndarray, L: int, npad: int, n: int, angle_
     """Speed from the projection along the direction of motion ``angle_deg``.
 
     Correlates the detrended half profile ``g(jpos)`` with the detrended
-    Dirichlet model (:func:`dirichlet_template`) for speeds on a logarithmic grid from
-    ``1.5*npad/((2L+1)*max(jpos))`` to ``npad/4``. A cubic polynomial in
-    ``jpos`` absorbs the smooth texture spectrum. Returns
-    ``(speed, quality, fit)`` with ``fit = {'v', 'score', 'model'}``.
+    Dirichlet model (:func:`dirichlet_template`) for speeds on a logarithmic
+    grid. A cubic polynomial in ``jpos`` absorbs the smooth texture spectrum.
+    The measurable range runs from ``vmin = 1.5*npad/((2L+1)*max(jpos))`` to
+    ``npad/4``; the grid extends down to ``vmin/4`` as a guard band, and
+    ``fit['in_range']`` is False when the best speed lands there.
+    Returns ``(speed, quality, fit)`` with
+    ``fit = {'v', 'score', 'vmin', 'in_range', 'model'}``.
     """
     jpos = np.asarray(jpos, dtype=float).ravel()
     g = np.asarray(g, dtype=float).ravel()
     vmin = 1.5 * npad / ((2 * L + 1) * jpos.max())
     vmax = npad / 4
     nv = int(np.floor((np.log(vmax) - np.log(vmin)) / SPEED_STEP)) + 1
-    v = np.exp(np.log(vmin) + np.arange(nv) * SPEED_STEP)
+    kext = int(np.floor(np.log(4) / SPEED_STEP))
+    v = np.exp(np.log(vmin) + np.arange(-kext, nv) * SPEED_STEP)
 
     T = dirichlet_template(jpos, v, L, npad, n, angle_deg)
     x = jpos / jpos.max()
@@ -255,7 +271,20 @@ def fit_speed(g: np.ndarray, jpos: np.ndarray, L: int, npad: int, n: int, angle_
     speed = float(np.exp(np.log(v[k]) + dk * SPEED_STEP))
     tk = Tp[:, k]
     model = (g - gp) + (gp @ tk) / (tk @ tk) * tk
-    return speed, quality, {"v": v, "score": score, "model": model}
+    in_range = bool(kext <= k < v.size - 1)
+    return speed, quality, {"v": v, "score": score, "vmin": vmin, "in_range": in_range, "model": model}
+
+
+def null_quality(m: int) -> float:
+    """Fit quality that images without motion stay below, for a profile of ``m`` points.
+
+    Under the null hypothesis the Fisher transform ``atanh(q)`` of the best
+    correlation scales with ``1/sqrt(m-5)`` (four points are taken by the
+    cubic, one by the fit). On 1008 images without motion (white noise,
+    random and camera textures, 32 to 256 px, L = 1 to 10) the largest value
+    was ``tanh(8.6/sqrt(m-5))``; 9 adds a margin.
+    """
+    return float("inf") if m <= 5 else float(np.tanh(9 / np.sqrt(m - 5)))
 
 
 def estimate_velocity(bp, L: int = 4, pad_factor: int = 2, min_quality: float = 0.6,
@@ -273,11 +302,12 @@ def estimate_velocity(bp, L: int = 4, pad_factor: int = 2, min_quality: float = 
     pad_factor : int
         Zero padding factor of the FFT.
     min_quality : float
-        Fit quality required for ``valid``.
+        Lowest fit quality accepted for ``valid``; small images need more
+        (see ``Estimate.threshold``).
     diagnostics : bool
         Keep intermediate results in ``Estimate.diag`` (needed for plotting).
     """
-    if L < 1 or int(L) != L:
+    if np.ndim(L) != 0 or L < 1 or int(L) != L:
         raise ValueError("L must be a positive integer")
     L = int(L)
     S, n, npad = log_spectrum(bp, pad_factor)
@@ -298,6 +328,7 @@ def estimate_velocity(bp, L: int = 4, pad_factor: int = 2, min_quality: float = 
     speed, quality, fit = fit_speed(g, jpos, L, npad, n, angle)
 
     a = np.deg2rad(angle)
+    threshold = max(min_quality, null_quality(jpos.size))
     est = Estimate(
         angle_deg=angle,
         speed=speed,
@@ -305,7 +336,9 @@ def estimate_velocity(bp, L: int = 4, pad_factor: int = 2, min_quality: float = 
         vy=float(-speed * np.sin(a)),
         geba=geba,
         quality=quality,
-        valid=bool(quality >= min_quality),
+        in_range=fit["in_range"],
+        threshold=threshold,
+        valid=bool(quality >= threshold and fit["in_range"]),
         L=L,
         n=n,
         npad=npad,

@@ -29,5 +29,7 @@ realistic texture for simulations: `simulate_pulsed_image(..., 'Texture', tex)`
 moves a fixed window over it with exact, known shifts.
 
 The full recordings (`vid1.mat` to `vid4.mat`, 10 frames each) stay in the
-archive of the original project. Their frame-to-frame motion is not uniform,
-which is analysed in `benchmark/run_benchmark.py --recordings`.
+archive of the original project (`2D-FFT/data` in onewmann/hs-esslingen).
+`vid1` shows a static room scene; `vid2` to `vid4` show the moving surface.
+Their frame-to-frame motion is not uniform, which
+`benchmark/run_benchmark.py --recordings PATH/TO/2D-FFT/data` analyses.

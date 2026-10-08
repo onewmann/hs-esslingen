@@ -19,8 +19,8 @@ function live_basler(varargin)
 %   pulsed-exposure model needs equal steps. The speed is reported in
 %   px/frame and in px/s.
 %
-%   Note: written for and tested against the documented Image Acquisition
-%   Toolbox API; it has not been run on hardware in this repository's CI.
+%   Note: written against the documented Image Acquisition Toolbox API; it
+%   has not been run in MATLAB or on camera hardware for this repository.
 
     here = fileparts(mfilename('fullpath'));
     addpath(fullfile(here, '..'));

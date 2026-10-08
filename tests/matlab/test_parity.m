@@ -9,10 +9,10 @@ function test_parity()
     for i = 1:size(ex, 1)
         bp = double(d.(sprintf('bp%02d', i)));
         e = estimate_velocity(bp, 'L', ex(i, 2), 'PadFactor', ex(i, 3));
-        assert(abs(angle_error(e.angle_deg, ex(i, 4))) < 1e-6, sprintf('case %d: angle', i));
-        assert(abs(e.speed/ex(i, 5) - 1) < 1e-7, sprintf('case %d: speed', i));
-        assert(abs(e.geba/ex(i, 6) - 1) < 1e-7, sprintf('case %d: geba', i));
-        assert(abs(e.quality - ex(i, 7)) < 1e-7, sprintf('case %d: quality', i));
+        assert(abs(angle_error(e.angle_deg, ex(i, 4))) < 1e-9, sprintf('case %d: angle', i));
+        assert(abs(e.speed/ex(i, 5) - 1) < 1e-9, sprintf('case %d: speed', i));
+        assert(abs(e.geba/ex(i, 6) - 1) < 1e-9, sprintf('case %d: geba', i));
+        assert(abs(e.quality - ex(i, 7)) < 1e-9, sprintf('case %d: quality', i));
         assert(e.valid == ex(i, 8), sprintf('case %d: valid', i));
     end
 end

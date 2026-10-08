@@ -51,10 +51,25 @@ def test_real_texture(repo):
     assert abs(e.speed / np.hypot(5, 3) - 1) < 0.01
 
 
+@pytest.mark.parametrize("L, speed", [(1, 0.9), (1, 1.0), (3, 0.45), (4, 0.3)])
+def test_motion_below_the_range_is_not_valid(L, speed):
+    a = np.deg2rad(37)
+    bp = simulate_pulsed_image(256, (speed * np.cos(a), -speed * np.sin(a)), L, rng=5)
+    e = estimate_velocity(bp, L=L)
+    assert not e.in_range and not e.valid
+
+
 @pytest.mark.parametrize("seed", [1, 2, 3])
-def test_static_scene_is_not_valid(seed):
-    e = estimate_velocity(simulate_pulsed_image(256, (0, 0), 4, rng=seed))
+@pytest.mark.parametrize("n", [32, 64, 128, 256])
+def test_static_scene_is_not_valid(seed, n):
+    e = estimate_velocity(simulate_pulsed_image(n, (0, 0), 4, rng=seed))
     assert not e.valid
+
+
+@pytest.mark.parametrize("n", [32, 64])
+def test_white_noise_is_not_valid_on_small_images(n):
+    rng = np.random.default_rng(n)
+    assert not any(estimate_velocity(rng.standard_normal((n, n))).valid for _ in range(10))
 
 
 def test_options_and_errors():
@@ -66,8 +81,13 @@ def test_options_and_errors():
         estimate_velocity(np.zeros((8, 8)))
     with pytest.raises(ValueError):
         estimate_velocity(np.zeros((32, 32, 3)))
+    nan_img = bp.copy()
+    nan_img[3, 4] = np.nan
+    with pytest.raises(ValueError):
+        estimate_velocity(nan_img)
+    assert estimate_velocity(bp, L=np.int32(4)).speed == estimate_velocity(bp, L=4).speed
     e = estimate_velocity(bp, min_quality=0.99)
-    assert e.valid == (e.quality >= 0.99)
+    assert e.valid == (e.quality >= max(0.99, e.threshold) and e.in_range)
     assert e.diag is None
     e = estimate_velocity(bp, diagnostics=True)
     assert e.diag["spectrum"].shape == (128, 128)

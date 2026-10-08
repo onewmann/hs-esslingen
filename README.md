@@ -51,9 +51,17 @@ cycles per pixel apart, with $2L-1$ weaker side lobes in between.
    caused by the window and cannot alias. A cubic polynomial absorbs the smooth
    spectrum of the texture; the speed with the highest correlation wins, and
    that correlation is the fit quality.
-4. **Validity.** An estimate counts as valid if the fit quality is at least 0.6.
-   Images without motion, with too much noise or with uneven exposure steps stay
-   below that.
+4. **Validity.** An estimate counts as valid if the fit quality reaches a
+   threshold and the speed lies inside the measurable range. The threshold is
+   0.6 for images from about 200 px upwards. Smaller images need more,
+   $\tanh(9/\sqrt{m-5})$ for a profile of $m$ points (0.70 at 128 px, 0.85 at
+   64 px), because a short profile matches some model speed by chance. The
+   constant comes from 1008 images without motion (32 to 256 px), none of which
+   passes. Images without motion, with strong noise or with erratic steps stay
+   below the threshold. A regular pattern of uneven steps (one dropped exposure,
+   alternating intervals) or a speed that changes during the exposures can still
+   pass with a wrong speed, often twice the true one, so the acquisition has to
+   guarantee equal steps.
 
 Directions are given in degrees, counter-clockwise from the x axis as seen on
 screen, in [0, 180). One image cannot tell $\mathbf v$ from $-\mathbf v$.
@@ -98,9 +106,10 @@ noise peaks, so it reported 32 to 78 px per step whatever the true speed.
 ### Python
 
 ```bash
-pip install -e "python[plot]"
+pip install -e "python[examples]"      # core needs only numpy: pip install -e python
 python -m fftvel simulate --vx 5 --vy -3 --plot estimate.png
 python -m fftvel estimate my_pulsed_image.png --L 4
+python -m fftvel estimate frames.mat --stack    # mean of the 2L+1 frames in a stack
 ```
 
 ```python
@@ -132,9 +141,14 @@ both. Octave needs about 2 s for a 256 x 256 image, Python about 0.5 s.
   [pypylon](https://github.com/basler/pypylon); `--source 0` uses any webcam
   and `--source video.mp4` a recording.
 
-Both use the camera timestamps and skip windows whose frame intervals differ
-by more than 20 %, because the model needs equal steps. Neither has been run
-on camera hardware as part of this repository's tests.
+Both check the frame timestamps, because the model needs equal steps: the
+camera clock for Basler cameras, the driver or host clock for webcams and the
+container time for video files. MATLAB skips windows whose frame intervals
+differ by more than 20 %, Python reports them as not valid. The Python script
+grabs a fresh burst of 2L+1 frames for every estimate, so frames buffered
+while it computes never end up in a window. Neither script has been run on
+camera hardware for this repository; the Python one was checked against the
+pylon camera emulator and with video files.
 
 ## Repository layout
 
@@ -156,10 +170,12 @@ python -m pytest tests/python
 ```
 
 The suites check the angle convention, known motion in simulations and on the
-test sequences, rejection of static scenes, input handling, and parity: the
-same eight input images (including odd sizes, a non-square image and other
-FFT lengths) must give the same result in both languages. GitHub Actions runs
-the Python suite and the MATLAB suite in GNU Octave on every push.
+test sequences, rejection of static scenes and white noise from 32 to 256 px,
+rejection of motion below the measurable range, input handling, and parity:
+the same eight input images (including odd sizes, a non-square image and
+other FFT lengths) must give the same result in both languages within 1e-9.
+GitHub Actions runs the Python suite and the MATLAB suite in GNU Octave on
+every push.
 
 ## Background
 
@@ -195,10 +211,17 @@ GEBA) and changes the rest:
 
 * The surface needs texture, and the motion has to be constant during the
   2L+1 exposures, which must be equally spaced in time. L has to be known.
+  The fit quality does not reliably detect a regular pattern of uneven steps
+  or a changing speed (see Validity above).
 * The measurable range depends on the image size N and on L. The lower end is
   about $3.3/(2L+1)$ px per step (0.4 for L = 4, 0.08 for L = 20), where the
   first zero of the Dirichlet kernel still lies inside the spectrum. The
   benchmark covers speeds up to N/4 (64 px per step for N = 256).
+* Images need at least about 64 x 64 px to give valid results with any
+  regularity; below 128 px the stricter threshold rejects many of them.
+* A sharp, straight static edge in the analysed square, for example a
+  zero-filled mask, has a line spectrum of its own and can be mistaken for
+  motion. Fill masked areas with the image mean instead.
 * Direction is only known modulo 180 deg.
 * The MATLAB code is written for base MATLAB and tested in GNU Octave 8; it has
   not been run in MATLAB itself as part of the CI.

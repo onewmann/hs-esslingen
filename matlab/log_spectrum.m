@@ -10,13 +10,17 @@ function [S, n, npad] = log_spectrum(bp, pad_factor)
     if nargin < 2
         pad_factor = 2;
     end
-    if pad_factor < 1 || pad_factor ~= round(pad_factor)
+    pad_factor = double(pad_factor);
+    if ~isscalar(pad_factor) || pad_factor < 1 || pad_factor ~= round(pad_factor)
         error('log_spectrum:pad', 'PadFactor must be a positive integer.');
     end
     x = crop_square(double(bp));
     n = size(x, 1);
     if n < 16
         error('log_spectrum:size', 'Image must be at least 16x16 pixels.');
+    end
+    if any(~isfinite(x(:)))
+        error('log_spectrum:finite', 'Image contains NaN or Inf values.');
     end
     npad = pad_factor*n;
     x = x - mean(x(:));

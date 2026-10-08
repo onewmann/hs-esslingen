@@ -32,7 +32,8 @@ end
 function r = window_autocorr(tau, n)
 %WINDOW_AUTOCORR  Normalised autocorrelation of the N-point Hann window.
 %   Closed form for a continuous lag; matches the discrete autocorrelation
-%   of HANN_WINDOW(N) at integer lags to better than 1e-7.
+%   of HANN_WINDOW(N) at integer lags to better than 1e-7 for N >= 64
+%   (3e-5 at N = 16).
     x = abs(tau)/(n - 1);
     r = zeros(size(x));
     in = x < 1;
