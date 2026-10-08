@@ -271,7 +271,7 @@ def plot_before_after(rows):
     _plain_log_ticks(ax, "x")
     _plain_log_ticks(ax, "y")
     _style(ax, "true speed (px per exposure step)", "estimated speed")
-    ax.legend(frameon=False, fontsize=9, labelcolor=INK2, loc="upper left")
+    ax.legend(frameon=False, fontsize=9, labelcolor=INK2, loc="lower right")
     _title(fig, "Speed estimate before and after the rewrite",
            f"same {len(rows)} simulated pulsed images (9 exposures, 256 x 256 px)")
     fig.savefig(FIGURES / "before_after.png", dpi=150, facecolor=SURFACE)

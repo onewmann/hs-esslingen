@@ -77,18 +77,19 @@ and a speed within 0.004 px per frame. When the speed changes inside the window
 
 ![Test sequences](docs/figures/testsequences.png)
 
-**Noise.** With white noise of half the signal's standard deviation, 86 % of
+**Noise.** With white noise of half the signal's standard deviation, 87 % of
 the estimates are correct (direction within 2 deg, speed within 5 %); with
-noise as strong as the signal, 64 %. The fit quality catches the failures: no
-estimate marked valid was wrong, and none of 36 images without motion was
-marked valid.
+noise as strong as the signal, 71 %. The fit quality catches the failures: of
+545 estimates marked valid, one missed the criterion (speed off by 6.8 %), and
+none of 120 images without motion was marked valid.
 
 ![Noise](docs/figures/noise.png)
 ![Fit quality](docs/figures/quality.png)
 
-**Before and after.** On the same simulated images the speed estimate of the
-original code is off by 509 % (median), the rewrite by 0.015 %. The original
-code found the direction but took its speed from noise peaks.
+**Before and after.** On the same 36 simulated images the speed estimate of
+the original code is off by 733 % (median), the rewrite by 0.018 %. The
+original code found the direction in 31 of 36 cases but took its speed from
+noise peaks, so it reported 32 to 78 px per step whatever the true speed.
 
 ![Before and after](docs/figures/before_after.png)
 
