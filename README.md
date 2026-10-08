@@ -14,7 +14,7 @@ results (differences below 1e-9). The MATLAB/Octave code needs no toolbox.
 ![Every stage of one estimate](docs/figures/pipeline.png)
 
 *Simulated pulsed image of a real surface (recorded with a Basler camera), moving
-by (5, -3) px per exposure. Estimate: 30.97 deg and 5.83 px per step, true
+by (5, -3) px per exposure. Estimate: 30.98 deg and 5.83 px per step, true
 values 30.96 deg and 5.83 px.*
 
 ## How it works
@@ -72,24 +72,31 @@ All numbers come from `benchmark/run_benchmark.py`; the CSV files are in
 `benchmark/results/`.
 
 **Accuracy.** For 256 x 256 px and 9 exposures the direction is within
-0.7 deg and the speed within 0.5 % from 0.4 to 64 px per step (within 0.1 deg
-above 1 px per step). With 41 exposures the range starts at 0.1 px per step.
-A real surface texture gives the same accuracy as a random one.
+0.71 deg and the speed within 0.5 % from 0.4 to 64 px per step (within 0.09 deg
+from 1 px per step up). With 41 exposures the range starts at 0.1 px per step.
+A real surface texture gives the same accuracy as a random one. Slower motion
+is reported as out of range, not as a wrong speed.
 
 ![Accuracy over the speed range](docs/figures/accuracy.png)
 
 **Ground truth.** On the test sequences of the original project, which move by
-exactly (5, 5) and (4, 4) px per frame, every 9-frame window gives 135.0 deg
-and a speed within 0.004 px per frame. When the speed changes inside the window
-(right panel) the estimate stays within 1.2 px per frame of the mean motion.
+exactly (5, 5) and (4, 4) px per frame, every 9-frame window gives
+135.0 &plusmn; 0.07 deg and a speed within 0.004 px per frame. The other two
+sequences break the model on purpose. Where the speed changes inside the window
+(third panel), 17 of 22 windows are valid and within 11 % of the mean motion.
+With irregular steps between 2.2 and 9 px (fourth panel), only 4 of 22 windows
+pass, within 14 %; the rest, including estimates of almost twice the speed,
+are rejected.
 
 ![Test sequences](docs/figures/testsequences.png)
 
-**Noise.** With white noise of half the signal's standard deviation, 87 % of
-the estimates are correct (direction within 2 deg, speed within 5 %); with
-noise as strong as the signal, 71 %. The fit quality catches the failures: of
-545 estimates marked valid, one missed the criterion (speed off by 6.8 %), and
-none of 120 images without motion was marked valid.
+**Noise.** With random velocities between 1 and 32 px per step and white noise
+of half the signal's standard deviation, 81 % of the estimates are correct
+(direction within 2 deg, speed within 5 %); with noise as strong as the signal,
+61 %. The validity check keeps most failures out: 11 of 592 valid estimates
+missed the criterion, six by a direction error of 2.2 to 3.7 deg and five
+with twice the true speed (all at noise of half the signal or more). None of
+120 images without motion was marked valid.
 
 ![Noise](docs/figures/noise.png)
 ![Fit quality](docs/figures/quality.png)
@@ -130,7 +137,8 @@ plot_estimate(bp, est)
 ```
 
 `matlab/examples/demo_simulation.m` and `demo_testsequences.m` run unchanged in
-both. Octave needs about 2 s for a 256 x 256 image, Python about 0.5 s.
+both. On a 2.8 GHz Xeon a 256 x 256 image takes about 0.7 s in Python and
+1.4 s in Octave.
 
 ### Live camera
 

@@ -329,7 +329,7 @@ def testsequences():
                 label="single-image estimate")
         if (~valid).any():
             ax.plot(starts[~valid] + 1, est[~valid], "o", color=ORANGE, ms=6, mfc="none", label="not valid")
-        ax.set_ylim(0, 15)
+        ax.set_ylim(0, 16.5)
         ax.set_title(title, color=INK2, fontsize=10, loc="left")
         _style(ax, "first frame of the 9-frame window", "speed (px/frame)" if ax is axes[0] else "")
     axes[0].legend(frameon=False, fontsize=9, labelcolor=INK2, loc="lower left")
