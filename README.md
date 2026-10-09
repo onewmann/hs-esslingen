@@ -8,9 +8,9 @@ moves. That motion leaves a pattern of straight lines in the image spectrum:
 their orientation gives the direction, their spacing the speed. A Radon
 transform of the log spectrum finds both.
 
-The method is not my own. It comes from the doctoral thesis of
-[THESIS: author, title, university, year], which I implemented in my student
-project at Hochschule Esslingen. This repository is a revised implementation;
+The method is not my own. It comes from the doctoral thesis of Jan Horn at
+Universität Karlsruhe (TH) ([reference](#reference)), which I implemented in
+my student project at Hochschule Esslingen. This repository is a revised implementation;
 what it changes compared with the thesis is listed under
 [Background](#background).
 
@@ -198,7 +198,8 @@ every push.
 
 ## Background
 
-The method comes from Chapter 3 of [THESIS: author, title, university, year]:
+The method comes from Chapter 3 of Jan Horn's doctoral thesis
+([reference](#reference)):
 the pulsed-exposure model, the analysis of the log spectrum with the Radon
 transform, the ripple profile WR for the direction, the speed from the
 spacing of the repeated structures and the quality measure GEBA. In my
@@ -249,6 +250,17 @@ ripple profile and GEBA) and changes the implementation:
 * The MATLAB code is written for base MATLAB and tested in GNU Octave 8; it has
   not been run in MATLAB itself as part of the CI.
 
+## Reference
+
+Jan Horn: *Zweidimensionale Geschwindigkeitsmessung texturierter Oberflächen
+mit flächenhaften bildgebenden Sensoren* (two-dimensional velocity measurement
+of textured surfaces with area image sensors). Dissertation, Universität
+Karlsruhe (TH), 2006. Schriftenreihe des Instituts für Mess- und
+Regelungstechnik, Band 006, Universitätsverlag Karlsruhe, 2007.
+ISBN 978-3-86644-076-0.
+[Full text (KIT, CC BY-NC-ND 2.0 DE)](https://publikationen.bibliothek.kit.edu/1000006276)
+
 ## License
 
-MIT, see [LICENSE](LICENSE). Oliver Neumann.
+The code in this repository is MIT licensed, see [LICENSE](LICENSE).
+Oliver Neumann. The method itself is described in the thesis above.

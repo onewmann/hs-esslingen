@@ -1,8 +1,9 @@
 """Velocity estimation from a single pulsed-exposure image.
 
 The model, the ripple profile WR and the quality measure GEBA follow Chapter 3
-of the doctoral thesis cited in README.md; the speed fit and the validity
-threshold were added in this implementation.
+of J. Horn's doctoral thesis (Universitaet Karlsruhe, 2007; full reference in
+README.md). The speed fit and the validity threshold were added in this
+implementation.
 
 This module mirrors the MATLAB/Octave functions in ``matlab/`` line by line,
 so that both give the same numbers for the same input (see ``tests/parity``).
