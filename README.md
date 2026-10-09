@@ -10,9 +10,9 @@ transform of the log spectrum finds both.
 
 The method is not my own. It comes from the doctoral thesis of Jan Horn at
 Universität Karlsruhe (TH) ([reference](#reference)), which I implemented in
-my student project at Hochschule Esslingen. This repository is a revised implementation;
-what it changes compared with the thesis is listed under
-[Background](#background).
+my student project at Hochschule Esslingen. This repository is a revised
+implementation, written with the assistance of AI; what it changes compared
+with the thesis is listed under [Background](#background).
 
 The same algorithm runs in MATLAB, GNU Octave and Python and gives identical
 results (differences below 1e-9). The MATLAB/Octave code needs no toolbox.
@@ -230,6 +230,13 @@ ripple profile and GEBA) and changes the implementation:
   with zero-filled borders, which better matches a camera;
 * one implementation per language instead of about 40 script versions, with
   tests that run in CI.
+
+### How this was built
+
+The MATLAB scripts of the student project (2025, archived in
+[onewmann/hs-esslingen](https://github.com/onewmann/hs-esslingen/tree/main/2D-FFT))
+are my own work. The code, tests, benchmark and documentation of this revision
+(2026) were written with the assistance of AI (Claude by Anthropic).
 
 ## Limitations
 
