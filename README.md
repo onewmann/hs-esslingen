@@ -11,8 +11,8 @@ transform of the log spectrum finds both.
 The method is not my own. It comes from the doctoral thesis of Jan Horn at
 Universität Karlsruhe (TH) ([reference](#reference)), which I implemented in
 my student project at Hochschule Esslingen. This repository is a reworked
-version of that implementation. AI was used from 8 October 2026 on, for the
-rework; [How this was built](#how-this-was-built) says exactly where. What it changes compared with
+version of that implementation, done with the assistance of AI;
+[How this was built](#how-this-was-built) says from which point on. What it changes compared with
 the thesis is listed under [Background](#background).
 
 The same algorithm runs in MATLAB, GNU Octave and Python and gives identical
@@ -234,19 +234,15 @@ ripple profile and GEBA) and changes the implementation:
 
 ### How this was built
 
-**Without AI (2025).** The student project: implementing the thesis method in
-MATLAB, the simulations, the Basler camera set-up and the recordings. These
-files are unchanged in the archive
+The scripts of the student project are archived unchanged in
 [onewmann/hs-esslingen](https://github.com/onewmann/hs-esslingen/tree/main/2D-FFT)
-(folder `2D-FFT/`). Its two commits, `54b90cc` and `8f0aec4` of 8 October 2026,
-only upload the files from 2025.
-
-**With AI (from 8 October 2026).** Everything after commit `8f0aec4` was done
-with the assistance of AI (Claude by Anthropic): first a code review of the
-original scripts, then the rework in this repository, starting with the commit
-"Rewrite the 2D-FFT velocity estimator for MATLAB, Octave and Python". That
-covers the code in `matlab/` and `python/`, the tests, the benchmark, the
-figures and this documentation.
+(folder `2D-FFT/`, uploaded on 8 October 2026 in commits `54b90cc` and
+`8f0aec4`). Everything after commit `8f0aec4` was done with the assistance of
+AI (Claude by Anthropic): first a code review of those scripts, then the
+rework in this repository, starting with the commit "Rewrite the 2D-FFT
+velocity estimator for MATLAB, Octave and Python". That covers the code in
+`matlab/` and `python/`, the tests, the benchmark, the figures and this
+documentation.
 
 ## Limitations
 
