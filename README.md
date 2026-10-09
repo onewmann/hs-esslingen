@@ -8,6 +8,12 @@ moves. That motion leaves a pattern of straight lines in the image spectrum:
 their orientation gives the direction, their spacing the speed. A Radon
 transform of the log spectrum finds both.
 
+The method is not my own. It comes from the doctoral thesis of
+[THESIS: author, title, university, year], which I implemented in my student
+project at Hochschule Esslingen. This repository is a revised implementation;
+what it changes compared with the thesis is listed under
+[Background](#background).
+
 The same algorithm runs in MATLAB, GNU Octave and Python and gives identical
 results (differences below 1e-9). The MATLAB/Octave code needs no toolbox.
 
@@ -18,6 +24,11 @@ by (5, -3) px per exposure. Estimate: 30.98 deg and 5.83 px per step, true
 values 30.96 deg and 5.83 px.*
 
 ## How it works
+
+The pulsed-exposure model, steps 1 and 2 and the quality measure GEBA follow
+Chapter 3 of the thesis. The thesis takes the speed from the spacing of the
+peaks in the projection; steps 3 and 4 replace that with a model fit and a
+validity check added in this implementation.
 
 A pulsed-exposure image is the mean of $2L+1$ exposures of a texture $b$ that
 moves by $\mathbf v$ between two exposures:
@@ -187,9 +198,13 @@ every push.
 
 ## Background
 
-This started as my student project at Hochschule Esslingen (2025). The method
-follows Chapter 3 of [REFERENCE: dissertation, to be added]. The original
-MATLAB scripts are archived in
+The method comes from Chapter 3 of [THESIS: author, title, university, year]:
+the pulsed-exposure model, the analysis of the log spectrum with the Radon
+transform, the ripple profile WR for the direction, the speed from the
+spacing of the repeated structures and the quality measure GEBA. In my
+student project at Hochschule Esslingen (2025) I implemented it in MATLAB and
+tested it with simulated sequences and recordings from a Basler camera. Those
+original scripts are archived in
 [onewmann/hs-esslingen](https://github.com/onewmann/hs-esslingen/tree/main/2D-FFT).
 
 A review of those scripts found the speed estimate was wrong in every script
@@ -201,8 +216,8 @@ needs:
 
 ![Frame-to-frame motion in the original recordings](docs/figures/recordings.png)
 
-The rewrite keeps the idea (log spectrum, Radon transform, ripple profile and
-GEBA) and changes the rest:
+The rewrite keeps the method of the thesis (log spectrum, Radon transform,
+ripple profile and GEBA) and changes the implementation:
 
 * the speed comes from a fit of the Dirichlet model instead of peak counting,
   and the fit quality decides whether a result is valid;

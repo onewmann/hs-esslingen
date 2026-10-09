@@ -36,6 +36,10 @@ function est = estimate_velocity(bp, varargin)
 %   profile WR). The speed is found by fitting the Dirichlet model for
 %   2L+1 exposures to the projection along that direction.
 %
+%   The model, the ripple profile WR and GEBA follow Chapter 3 of the
+%   doctoral thesis cited in README.md; the speed fit and the validity
+%   threshold were added in this implementation.
+%
 %   Non-square images are cropped to the central square. They are never
 %   resized, so the speed stays in camera pixels.
 %
