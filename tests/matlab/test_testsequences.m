@@ -14,8 +14,8 @@ function test_testsequences()
             last = start + 8;
             b = step(k)*(last - 1);
             bp = mean(s(b+1:end, b+1:end, start:last), 3);
-            e = estimate_velocity(bp, 'L', 4);
-            assert(abs(angle_error(e.angle_deg, 135)) < 0.1, ...
+            e = fftvel.estimate_velocity(bp, 'L', 4);
+            assert(abs(fftvel.angle_difference(e.angle_deg, 135)) < 0.1, ...
                 sprintf('%s frames %d-%d: angle %.3f', names{k}, start, last, e.angle_deg));
             assert(abs(e.speed/(step(k)*sqrt(2)) - 1) < 0.005, ...
                 sprintf('%s frames %d-%d: speed %.4f', names{k}, start, last, e.speed));

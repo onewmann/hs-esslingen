@@ -1,9 +1,9 @@
 function x = check_option(x, name, kind, id)
 %CHECK_OPTION  Check the value of an option and return it as double.
-%   X = CHECK_OPTION(X, NAME, KIND, ID) returns X as a double if it is a
-%   real, finite numeric scalar (not text, not logical) of the given KIND,
-%   and raises the error with identifier ID otherwise. NAME is the option
-%   name used in the message. KIND is one of
+%   X = fftvel.internal.check_option(X, NAME, KIND, ID) returns X as a
+%   double if it is a real, finite numeric scalar (not text, not logical)
+%   of the given KIND, and raises the error with identifier ID otherwise.
+%   NAME is the option name used in the message. KIND is one of
 %     'positive'   integer >= 1
 %     'exposures'  integer >= 2
 %     'roi'        integer >= 16 (pixels)

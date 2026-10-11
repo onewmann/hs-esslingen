@@ -1,9 +1,9 @@
 function t = make_texture(m, corr_len)
 %MAKE_TEXTURE  Random isotropic texture with exponential autocorrelation.
-%   T = MAKE_TEXTURE(M, CORR_LEN) returns an M-by-M texture with zero mean,
-%   unit standard deviation and autocorrelation close to exp(-r/CORR_LEN)
-%   (default CORR_LEN = 1.5 px). White noise is shaped in the Fourier
-%   domain with the matching power spectrum
+%   T = fftvel.make_texture(M, CORR_LEN) returns an M-by-M texture with
+%   zero mean, unit standard deviation and autocorrelation close to
+%   exp(-r/CORR_LEN) (default CORR_LEN = 1.5 px). White noise is shaped in
+%   the Fourier domain with the matching power spectrum
 %   (1 + (2*pi*CORR_LEN*f)^2)^(-3/2). The texture is periodic.
 
     if nargin < 2

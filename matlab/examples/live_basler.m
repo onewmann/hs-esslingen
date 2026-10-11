@@ -59,27 +59,29 @@ function live_basler(varargin)
 
     here = fileparts(mfilename('fullpath'));
     addpath(fullfile(here, '..'));
-    opts = parse_options(varargin, struct('Mode', '', 'L', 4, 'Exposures', [], 'Duty', [], ...
-        'FlashPeriod', [], 'Exposure', [], 'FrameRate', [], 'Tol', 0.1, 'ClipOutliers', false, ...
-        'ROI', 512, 'Period', 0.5, 'Device', 1));
+    opts = fftvel.internal.parse_options(varargin, struct('Mode', '', 'L', 4, 'Exposures', [], ...
+        'Duty', [], 'FlashPeriod', [], 'Exposure', [], 'FrameRate', [], 'Tol', 0.1, ...
+        'ClipOutliers', false, 'ROI', 512, 'Period', 0.5, 'Device', 1));
     if ~(ischar(opts.Mode) || isstring(opts.Mode)) || ~any(strcmpi(char(opts.Mode), {'flash', 'average'}))
         error('live_basler:Mode', ['Choose ''Mode'', ''flash'' (every frame holds several strobe ' ...
             'flashes) or ''Mode'', ''average'' (consecutive frames are averaged).']);
     end
     flash = strcmpi(char(opts.Mode), 'flash');
-    L = check_option(opts.L, 'L', 'positive', 'live_basler:L');
+    L = fftvel.internal.check_option(opts.L, 'L', 'positive', 'live_basler:L');
     if isempty(opts.Exposures)
         K = 2*L + 1;
     else
-        K = check_option(opts.Exposures, 'Exposures', 'exposures', 'live_basler:Exposures');
+        K = fftvel.internal.check_option(opts.Exposures, 'Exposures', 'exposures', ...
+            'live_basler:Exposures');
     end
     if ~isempty(opts.Duty)
-        check_option(opts.Duty, 'Duty', 'duty', 'live_basler:Duty');
+        fftvel.internal.check_option(opts.Duty, 'Duty', 'duty', 'live_basler:Duty');
     end
-    tol = check_option(opts.Tol, 'Tol', 'unit', 'live_basler:Tol');
-    clip = check_option(opts.ClipOutliers, 'ClipOutliers', 'flag', 'live_basler:ClipOutliers');
-    check_option(opts.ROI, 'ROI', 'roi', 'live_basler:ROI');
-    check_option(opts.Device, 'Device', 'positive', 'live_basler:Device');
+    tol = fftvel.internal.check_option(opts.Tol, 'Tol', 'unit', 'live_basler:Tol');
+    clip = fftvel.internal.check_option(opts.ClipOutliers, 'ClipOutliers', 'flag', ...
+        'live_basler:ClipOutliers');
+    fftvel.internal.check_option(opts.ROI, 'ROI', 'roi', 'live_basler:ROI');
+    fftvel.internal.check_option(opts.Device, 'Device', 'positive', 'live_basler:Device');
     check_positive(opts.FlashPeriod, 'FlashPeriod');
     check_positive(opts.Exposure, 'Exposure');
     check_positive(opts.FrameRate, 'FrameRate');
@@ -237,7 +239,7 @@ function live_basler(varargin)
             end
             bp = mean(frames, 3);
         end
-        est = estimate_velocity(bp, 'L', L, 'Exposures', opts.Exposures, 'Duty', duty, ...
+        est = fftvel.estimate_velocity(bp, 'L', L, 'Exposures', opts.Exposures, 'Duty', duty, ...
             'ClipOutliers', clip, 'Diagnostics', true);
         if flash
             set(h_bp, 'CData', est.diag.spectrum);

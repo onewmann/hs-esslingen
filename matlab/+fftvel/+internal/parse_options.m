@@ -1,9 +1,9 @@
 function opts = parse_options(args, defaults)
 %PARSE_OPTIONS  Merge name-value pairs into a struct of defaults.
-%   OPTS = PARSE_OPTIONS(ARGS, DEFAULTS) with ARGS a cell array of
-%   'Name', Value pairs. Names are matched case-insensitively against the
-%   fields of DEFAULTS; unknown names raise an error. The values are not
-%   checked here (see CHECK_OPTION).
+%   OPTS = fftvel.internal.parse_options(ARGS, DEFAULTS) with ARGS a cell
+%   array of 'Name', Value pairs. Names are matched case-insensitively
+%   against the fields of DEFAULTS; unknown names raise an error. The
+%   values are not checked here (see fftvel.internal.check_option).
 
     opts = defaults;
     if mod(numel(args), 2) ~= 0

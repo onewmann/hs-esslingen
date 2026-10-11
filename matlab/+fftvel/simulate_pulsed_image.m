@@ -1,11 +1,11 @@
 function [bp, frames] = simulate_pulsed_image(n, v, L, varargin)
 %SIMULATE_PULSED_IMAGE  Pulsed-exposure image of a texture moving under a camera.
-%   BP = SIMULATE_PULSED_IMAGE(N, V, L) returns the N-by-N mean of 2L+1
-%   exposures k = -L..L of a random texture shifted by k*V, V = [vx vy] in
-%   pixels per step (x along columns, y along rows pointing down). The
-%   camera window stays fixed while the texture moves underneath, so
-%   content enters and leaves the image as it would in a real recording.
-%   There are no zero-filled borders.
+%   BP = fftvel.simulate_pulsed_image(N, V, L) returns the N-by-N mean of
+%   2L+1 exposures k = -L..L of a random texture shifted by k*V,
+%   V = [vx vy] in pixels per step (x along columns, y along rows pointing
+%   down). The camera window stays fixed while the texture moves
+%   underneath, so content enters and leaves the image as it would in a
+%   real recording. There are no zero-filled borders.
 %
 %   Shifts are exact band-limited (Fourier) shifts of a texture that is
 %   large enough that no wrapped content reaches the window, so V may be
@@ -28,24 +28,25 @@ function [bp, frames] = simulate_pulsed_image(n, v, L, varargin)
 %                   (box blur of Duty*|V| pixels along V). Default 0:
 %                   instantaneous exposures.
 %
-%   [BP, FRAMES] = SIMULATE_PULSED_IMAGE(...) also returns the individual
-%   exposures as an N-by-N-by-K array.
+%   [BP, FRAMES] = fftvel.simulate_pulsed_image(...) also returns the
+%   individual exposures as an N-by-N-by-K array.
 
-    opts = parse_options(varargin, struct('CorrLength', 1.5, ...
+    opts = fftvel.internal.parse_options(varargin, struct('CorrLength', 1.5, ...
         'Texture', [], 'Noise', 0, 'Exposures', [], 'Duty', 0));
-    L = check_option(L, 'L', 'positive', 'simulate_pulsed_image:L');
+    L = fftvel.internal.check_option(L, 'L', 'positive', 'simulate_pulsed_image:L');
     if isempty(opts.Exposures)
         K = 2*L + 1;
     else
-        K = check_option(opts.Exposures, 'Exposures', 'exposures', 'simulate_pulsed_image:Exposures');
+        K = fftvel.internal.check_option(opts.Exposures, 'Exposures', 'exposures', ...
+            'simulate_pulsed_image:Exposures');
     end
-    duty = check_option(opts.Duty, 'Duty', 'duty', 'simulate_pulsed_image:Duty');
+    duty = fftvel.internal.check_option(opts.Duty, 'Duty', 'duty', 'simulate_pulsed_image:Duty');
     vx = v(1);
     vy = v(2);
     margin = ((K - 1) + duty)*max(abs([vx vy])) + 32;
     if isempty(opts.Texture)
         m = 2^ceil(log2(n + margin));
-        tex = make_texture(m, opts.CorrLength);
+        tex = fftvel.make_texture(m, opts.CorrLength);
     else
         tex = double(opts.Texture);
         if ndims(tex) == 3 && (size(tex, 3) == 3 || size(tex, 3) == 4)
@@ -61,7 +62,7 @@ function [bp, frames] = simulate_pulsed_image(n, v, L, varargin)
                 'Texture too small for N=%d and |v|=%g with %d exposures.', n, max(abs([vx vy])), K);
         end
         side = min(size(tex));
-        tex = crop_square(tex, side - mod(side, 2));
+        tex = fftvel.internal.crop_square(tex, side - mod(side, 2));
         tex = tex - mean(tex(:));
     end
     m = size(tex, 1);

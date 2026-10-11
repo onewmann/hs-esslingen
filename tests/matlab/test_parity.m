@@ -4,8 +4,8 @@ function test_parity()
 %   the results of python/src/fftvel (see tests/parity/make_cases.py).
 %   Columns 9-13 give the options of each case (0: default): Exposures,
 %   Duty, ROI, ClipOutliers and stack (the input is an H x W x 1 x F uint8
-%   stack for PULSED_FROM_STACK); columns 14-16 the results threshold,
-%   quality_perp and isotropic.
+%   stack for fftvel.pulsed_from_stack); columns 14-16 the results
+%   threshold, quality_perp and isotropic.
     here = fileparts(mfilename('fullpath'));
     pdir = fullfile(here, '..', 'parity');
     d = load(fullfile(pdir, 'cases.mat'));
@@ -23,7 +23,7 @@ function test_parity()
         end
         x = d.(sprintf('bp%02d', i));
         if ex(i, 13)
-            [bp, Ks] = pulsed_from_stack(x, 'L', L, 'Exposures', K);
+            [bp, Ks] = fftvel.pulsed_from_stack(x, 'L', L, 'Exposures', K);
             if isempty(K)
                 assert(Ks == 2*L + 1, sprintf('case %d: stack depth', i));
             else
@@ -32,9 +32,9 @@ function test_parity()
         else
             bp = double(x);
         end
-        e = estimate_velocity(bp, 'L', L, 'PadFactor', ex(i, 3), 'Exposures', K, ...
+        e = fftvel.estimate_velocity(bp, 'L', L, 'PadFactor', ex(i, 3), 'Exposures', K, ...
             'Duty', ex(i, 10), 'ROI', roi, 'ClipOutliers', ex(i, 12) ~= 0);
-        assert(abs(angle_error(e.angle_deg, ex(i, 4))) < 1e-9, sprintf('case %d: angle', i));
+        assert(abs(fftvel.angle_difference(e.angle_deg, ex(i, 4))) < 1e-9, sprintf('case %d: angle', i));
         assert(abs(e.speed/ex(i, 5) - 1) < 1e-9, sprintf('case %d: speed', i));
         assert(abs(e.geba/ex(i, 6) - 1) < 1e-9, sprintf('case %d: geba', i));
         assert(abs(e.quality - ex(i, 7)) < 1e-9, sprintf('case %d: quality', i));

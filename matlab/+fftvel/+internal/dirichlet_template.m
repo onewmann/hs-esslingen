@@ -1,9 +1,9 @@
 function T = dirichlet_template(jpos, v, L, npad, n, angle_deg, K, duty)
 %DIRICHLET_TEMPLATE  Expected log spectrum along v for K exposures.
-%   T = DIRICHLET_TEMPLATE(JPOS, V, L, NPAD, N, ANGLE_DEG) returns one
-%   column per speed in V, evaluated at the bins JPOS of the projection
-%   along ANGLE_DEG, for K = 2L+1 exposures. For a random texture, the
-%   expected power of the windowed pulsed image along v is
+%   T = fftvel.internal.dirichlet_template(JPOS, V, L, NPAD, N, ANGLE_DEG)
+%   returns one column per speed in V, evaluated at the bins JPOS of the
+%   projection along ANGLE_DEG, for K = 2L+1 exposures. For a random
+%   texture, the expected power of the windowed pulsed image along v is
 %
 %     P(j) = [ K + 2*sum_{m=1}^{K-1} (K-m) * rho(m*v) * cos(2*pi*j*m*|v|/NPAD) ] / K^2
 %
@@ -14,8 +14,9 @@ function T = dirichlet_template(jpos, v, L, npad, n, angle_deg, K, duty)
 %   the closed form avoids any aliasing of the fine side lobes. T is
 %   0.5*log(P + 1e-3).
 %
-%   T = DIRICHLET_TEMPLATE(..., K) uses K exposures instead of 2L+1 (K
-%   empty: 2L+1). T = DIRICHLET_TEMPLATE(..., K, DUTY) with DUTY > 0
+%   T = fftvel.internal.dirichlet_template(..., K) uses K exposures
+%   instead of 2L+1 (K empty: 2L+1).
+%   T = fftvel.internal.dirichlet_template(..., K, DUTY) with DUTY > 0
 %   (exposure time / time step) adds the motion blur within each exposure:
 %   P is multiplied by sinc(j*|v|*DUTY/NPAD)^2.
 
@@ -48,8 +49,8 @@ end
 function r = window_autocorr(tau, n)
 %WINDOW_AUTOCORR  Normalised autocorrelation of the N-point Hann window.
 %   Closed form for a continuous lag; matches the discrete autocorrelation
-%   of HANN_WINDOW(N) at integer lags to better than 1e-7 for N >= 64
-%   (3e-5 at N = 16).
+%   of fftvel.internal.hann_window(N) at integer lags to better than 1e-7
+%   for N >= 64 (3e-5 at N = 16).
     x = abs(tau)/(n - 1);
     r = zeros(size(x));
     in = x < 1;

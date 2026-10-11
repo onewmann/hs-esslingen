@@ -1,15 +1,15 @@
 function test_options()
 %TEST_OPTIONS  Input checks and option handling.
     seed_rng(3);
-    bp = simulate_pulsed_image(64, [2 1], 4);
-    expect_error(@() estimate_velocity(bp, 'Bogus', 1), 'unknown option', 'parse_options:unknown');
-    expect_error(@() estimate_velocity(bp, 'L'), 'missing value', 'parse_options:pairs');
-    expect_error(@() estimate_velocity(bp, 5, 3), 'option name not text', 'parse_options:name');
-    expect_error(@() estimate_velocity(zeros(8)), 'too small', 'log_spectrum:size');
-    expect_error(@() estimate_velocity(zeros(32, 32, 3)), 'not 2-D', 'crop_square:dims');
+    bp = fftvel.simulate_pulsed_image(64, [2 1], 4);
+    expect_error(@() fftvel.estimate_velocity(bp, 'Bogus', 1), 'unknown option', 'parse_options:unknown');
+    expect_error(@() fftvel.estimate_velocity(bp, 'L'), 'missing value', 'parse_options:pairs');
+    expect_error(@() fftvel.estimate_velocity(bp, 5, 3), 'option name not text', 'parse_options:name');
+    expect_error(@() fftvel.estimate_velocity(zeros(8)), 'too small', 'log_spectrum:size');
+    expect_error(@() fftvel.estimate_velocity(zeros(32, 32, 3)), 'not 2-D', 'crop_square:dims');
     bad = bp;
     bad(3, 4) = NaN;
-    expect_error(@() estimate_velocity(bad), 'NaN pixel', 'log_spectrum:finite');
+    expect_error(@() fftvel.estimate_velocity(bad), 'NaN pixel', 'log_spectrum:finite');
 
     % every option value is checked; the same rules as in tests/python/test_core.py
     noise = randn(32);
@@ -26,38 +26,39 @@ function test_options()
     for k = 1:size(bad_options, 1)
         name = bad_options{k, 1};
         value = bad_options{k, 2};
-        expect_error(@() estimate_velocity(noise, name, value), ...
+        expect_error(@() fftvel.estimate_velocity(noise, name, value), ...
             sprintf('%s, bad value %d', name, k), ['estimate_velocity:' name]);
     end
     msg = '';
     try
-        estimate_velocity(noise, 'L', '4');
+        fftvel.estimate_velocity(noise, 'L', '4');
     catch err
         msg = err.message;
     end
     assert(~isempty(strfind(msg, 'text ''4''')), 'message for text input');
-    expect_error(@() log_spectrum(noise, '2'), 'log_spectrum PadFactor', 'log_spectrum:pad');
-    expect_error(@() log_spectrum(noise, 2, '64'), 'log_spectrum ROI', 'log_spectrum:roi');
-    expect_error(@() log_spectrum(noise, 2, [], 2), 'log_spectrum ClipOutliers', 'log_spectrum:clip');
+    expect_error(@() fftvel.internal.log_spectrum(noise, '2'), 'log_spectrum PadFactor', 'log_spectrum:pad');
+    expect_error(@() fftvel.internal.log_spectrum(noise, 2, '64'), 'log_spectrum ROI', 'log_spectrum:roi');
+    expect_error(@() fftvel.internal.log_spectrum(noise, 2, [], 2), 'log_spectrum ClipOutliers', ...
+        'log_spectrum:clip');
 
-    e1 = estimate_velocity(bp, 'L', int32(4), 'PadFactor', uint8(2), 'MinQuality', single(0.5), ...
+    e1 = fftvel.estimate_velocity(bp, 'L', int32(4), 'PadFactor', uint8(2), 'MinQuality', single(0.5), ...
         'Exposures', int64(9), 'Duty', single(0), 'ROI', uint16(64), 'ClipOutliers', false);
-    e2 = estimate_velocity(bp, 'L', 4, 'MinQuality', 0.5);
+    e2 = fftvel.estimate_velocity(bp, 'L', 4, 'MinQuality', 0.5);
     assert(isequal(e1, e2) && e1.exposures == 9 && e1.L == 4, 'integer-class options');
-    e3 = estimate_velocity(bp, 'Exposures', [], 'ROI', [], 'ClipOutliers', 0, 'Duty', 0);
-    assert(isequal(e3, estimate_velocity(bp)), 'empty means default');
+    e3 = fftvel.estimate_velocity(bp, 'Exposures', [], 'ROI', [], 'ClipOutliers', 0, 'Duty', 0);
+    assert(isequal(e3, fftvel.estimate_velocity(bp)), 'empty means default');
 
-    e = estimate_velocity(bp, 'l', 4, 'minquality', 0.99);
+    e = fftvel.estimate_velocity(bp, 'l', 4, 'minquality', 0.99);
     assert(e.valid == (e.quality >= max(0.99, e.threshold) && e.in_range && ~e.isotropic), ...
         'MinQuality and case-insensitive names');
     assert(~isfield(e, 'diag'), 'no diagnostics by default');
-    e = estimate_velocity(bp, 'Diagnostics', true);
+    e = fftvel.estimate_velocity(bp, 'Diagnostics', true);
     assert(isfield(e, 'diag') && size(e.diag.spectrum, 1) == 128, 'diagnostics');
-    e = estimate_velocity(ones(64));
+    e = fftvel.estimate_velocity(ones(64));
     assert(~e.valid && e.quality == 0 && e.geba == 1, 'blank image');
-    e1 = estimate_velocity(bp);
-    e2 = estimate_velocity(uint8(255*(bp - min(bp(:)))/(max(bp(:)) - min(bp(:)))));
-    assert(abs(angle_error(e1.angle_deg, e2.angle_deg)) < 1, 'integer input');
+    e1 = fftvel.estimate_velocity(bp);
+    e2 = fftvel.estimate_velocity(uint8(255*(bp - min(bp(:)))/(max(bp(:)) - min(bp(:)))));
+    assert(abs(fftvel.angle_difference(e1.angle_deg, e2.angle_deg)) < 1, 'integer input');
 end
 
 function expect_error(f, what, id)

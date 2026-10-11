@@ -1,15 +1,16 @@
 function [speed, quality, fit] = fit_speed(g, jpos, L, npad, n, angle_deg, K, duty)
 %FIT_SPEED  Speed from the projection along the direction of motion.
-%   [SPEED, QUALITY] = FIT_SPEED(G, JPOS, L, NPAD, N, ANGLE_DEG) compares the
-%   measured half profile G(JPOS) along ANGLE_DEG with the Dirichlet model
-%   of 2L+1 exposures (DIRICHLET_TEMPLATE) for speeds on a logarithmic grid.
+%   [SPEED, QUALITY] = fftvel.internal.fit_speed(G, JPOS, L, NPAD, N,
+%   ANGLE_DEG) compares the measured half profile G(JPOS) along ANGLE_DEG
+%   with the Dirichlet model of 2L+1 exposures
+%   (fftvel.internal.dirichlet_template) for speeds on a logarithmic grid.
 %   A cubic polynomial in JPOS absorbs the smooth texture spectrum. SPEED
 %   maximises the correlation between the detrended profile and the
 %   detrended model; QUALITY is that correlation.
 %
-%   FIT_SPEED(..., K, DUTY) uses K exposures instead of 2L+1 (K empty:
-%   2L+1) and the motion blur DUTY within each exposure (default 0), see
-%   DIRICHLET_TEMPLATE.
+%   fftvel.internal.fit_speed(..., K, DUTY) uses K exposures instead of
+%   2L+1 (K empty: 2L+1) and the motion blur DUTY within each exposure
+%   (default 0), see fftvel.internal.dirichlet_template.
 %
 %   The measurable range runs from VMIN = 1.5*NPAD/(K*max(JPOS)), where
 %   the first spectral zero still lies well inside the profile, to NPAD/4,
@@ -38,7 +39,7 @@ function [speed, quality, fit] = fit_speed(g, jpos, L, npad, n, angle_deg, K, du
     kext = floor(log(4)/step);
     v = exp(log(vmin) + (-kext:nv-1)*step);
 
-    T = dirichlet_template(jpos, v, L, npad, n, angle_deg, K, duty);
+    T = fftvel.internal.dirichlet_template(jpos, v, L, npad, n, angle_deg, K, duty);
     x = jpos/max(jpos);
     X = [x.^3, x.^2, x, ones(size(x))];
     [Q, R] = qr(X, 0); %#ok<ASGLU>
@@ -49,7 +50,7 @@ function [speed, quality, fit] = fit_speed(g, jpos, L, npad, n, angle_deg, K, du
     score(tn <= 1e-6*sqrt(sum(T.^2, 1))) = 0;       % flat model: no information
 
     [quality, k] = max(score);
-    dk = parabolic_offset(score, k, false);
+    dk = fftvel.internal.parabolic_offset(score, k, false);
     speed = exp(log(v(k)) + dk*step);
 
     fit = struct();

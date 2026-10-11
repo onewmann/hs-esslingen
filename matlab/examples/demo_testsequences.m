@@ -18,7 +18,7 @@ for k = 1:numel(names)
     nf = size(s, 3);
     shift = zeros(nf - 1, 2);
     for f = 1:nf - 1
-        [dx, dy] = phase_correlation(s(:, :, f), s(:, :, f + 1));
+        [dx, dy] = fftvel.phase_correlation(s(:, :, f), s(:, :, f + 1));
         shift(f, :) = [dx dy];
     end
     starts = 1:(nf - 2*L);
@@ -29,7 +29,7 @@ for k = 1:numel(names)
         idx = starts(w) + (0:2*L);
         border = ceil(max(abs(sum(shift(1:idx(end) - 1, :), 1))));   % zero fill
         bp = mean(s(border + 1:end, border + 1:end, idx), 3);
-        e = estimate_velocity(bp, 'L', L);
+        e = fftvel.estimate_velocity(bp, 'L', L);
         est_speed(w) = e.speed;
         valid(w) = e.valid;
         ref_speed(w) = norm(mean(shift(idx(1:end-1), :), 1));

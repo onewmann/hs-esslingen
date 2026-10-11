@@ -1,12 +1,12 @@
 function est = estimate_velocity(bp, varargin)
 %ESTIMATE_VELOCITY  Velocity of a moving texture from one pulsed-exposure image.
-%   EST = ESTIMATE_VELOCITY(BP) estimates direction and speed of the motion
-%   recorded in the pulsed-exposure image BP. BP is the sum or mean of 2L+1
-%   exposures taken at equal time steps while the texture moves by v per
-%   step (a strobe within one camera frame, or the average of 2L+1
-%   consecutive video frames, see PULSED_FROM_STACK).
+%   EST = fftvel.estimate_velocity(BP) estimates direction and speed of the
+%   motion recorded in the pulsed-exposure image BP. BP is the sum or mean
+%   of 2L+1 exposures taken at equal time steps while the texture moves by
+%   v per step (a strobe within one camera frame, or the average of 2L+1
+%   consecutive video frames, see fftvel.pulsed_from_stack).
 %
-%   EST = ESTIMATE_VELOCITY(BP, 'Name', Value, ...) sets options:
+%   EST = fftvel.estimate_velocity(BP, 'Name', Value, ...) sets options:
 %     'L'             half number of exposures, 2L+1 in total (default 4)
 %     'Exposures'     exact number of exposures (flashes) K >= 2, also
 %                     even; overrides L for the model (default [] = 2L+1).
@@ -76,37 +76,43 @@ function est = estimate_velocity(bp, varargin)
 %   Non-square images are cropped to the central square. They are never
 %   resized, so the speed stays in camera pixels.
 %
-%   See also PULSED_FROM_STACK, SIMULATE_PULSED_IMAGE, PLOT_ESTIMATE.
+%   See also fftvel.pulsed_from_stack, fftvel.simulate_pulsed_image,
+%   fftvel.plot_estimate, fftvel.angle_difference.
 
-    opts = parse_options(varargin, struct('L', 4, 'Exposures', [], 'Duty', 0, ...
+    opts = fftvel.internal.parse_options(varargin, struct('L', 4, 'Exposures', [], 'Duty', 0, ...
         'ROI', [], 'PadFactor', 2, 'MinQuality', 0.6, 'ClipOutliers', false, ...
         'Diagnostics', false));
-    L = check_option(opts.L, 'L', 'positive', 'estimate_velocity:L');
+    L = fftvel.internal.check_option(opts.L, 'L', 'positive', 'estimate_velocity:L');
     if isempty(opts.Exposures)
         K = 2*L + 1;
     else
-        K = check_option(opts.Exposures, 'Exposures', 'exposures', 'estimate_velocity:Exposures');
+        K = fftvel.internal.check_option(opts.Exposures, 'Exposures', 'exposures', ...
+            'estimate_velocity:Exposures');
     end
-    duty = check_option(opts.Duty, 'Duty', 'duty', 'estimate_velocity:Duty');
+    duty = fftvel.internal.check_option(opts.Duty, 'Duty', 'duty', 'estimate_velocity:Duty');
     roi = opts.ROI;
     if ~isempty(roi)
-        roi = check_option(roi, 'ROI', 'roi', 'estimate_velocity:ROI');
+        roi = fftvel.internal.check_option(roi, 'ROI', 'roi', 'estimate_velocity:ROI');
     end
-    pad = check_option(opts.PadFactor, 'PadFactor', 'positive', 'estimate_velocity:PadFactor');
-    min_quality = check_option(opts.MinQuality, 'MinQuality', 'unit', 'estimate_velocity:MinQuality');
-    clip = check_option(opts.ClipOutliers, 'ClipOutliers', 'flag', 'estimate_velocity:ClipOutliers');
-    diagnostics = check_option(opts.Diagnostics, 'Diagnostics', 'flag', 'estimate_velocity:Diagnostics');
+    pad = fftvel.internal.check_option(opts.PadFactor, 'PadFactor', 'positive', ...
+        'estimate_velocity:PadFactor');
+    min_quality = fftvel.internal.check_option(opts.MinQuality, 'MinQuality', 'unit', ...
+        'estimate_velocity:MinQuality');
+    clip = fftvel.internal.check_option(opts.ClipOutliers, 'ClipOutliers', 'flag', ...
+        'estimate_velocity:ClipOutliers');
+    diagnostics = fftvel.internal.check_option(opts.Diagnostics, 'Diagnostics', 'flag', ...
+        'estimate_velocity:Diagnostics');
 
-    [S, n, npad] = log_spectrum(bp, pad, roi, clip);
+    [S, n, npad] = fftvel.internal.log_spectrum(bp, pad, roi, clip);
     rmax = floor(npad/2) - 1;
     rfrac = 0.9;
 
     % Direction: maximum of the ripple profile WR(theta)
     theta = 0:179;
-    [M, j] = mean_projection(S, theta, rmax);
-    wr = ripple_profile(M, j, rfrac);
+    [M, j] = fftvel.internal.mean_projection(S, theta, rmax);
+    wr = fftvel.internal.ripple_profile(M, j, rfrac);
     [wrmax, i] = max(wr);
-    angle = mod(theta(i) + parabolic_offset(wr, i, true), 180);
+    angle = mod(theta(i) + fftvel.internal.parabolic_offset(wr, i, true), 180);
     if mean(wr) > 0
         geba = wrmax / mean(wr);
     else
@@ -114,18 +120,19 @@ function est = estimate_velocity(bp, varargin)
     end
 
     % Speed: fit the Dirichlet model to the projection along that direction
-    m = mean_projection(S, angle, rmax);
+    m = fftvel.internal.mean_projection(S, angle, rmax);
     pos = j >= 2 & j <= rfrac*rmax;
     mf = flipud(m);
     g = 0.5*(m(pos) + mf(pos));
     jpos = j(pos);
-    [speed, quality, fit] = fit_speed(g, jpos, L, npad, n, angle, K, duty);
+    [speed, quality, fit] = fftvel.internal.fit_speed(g, jpos, L, npad, n, angle, K, duty);
 
     % Isotropy check: the same fit perpendicular to the direction found
     ap = mod(angle + 90, 180);
-    mp = mean_projection(S, ap, rmax);
+    mp = fftvel.internal.mean_projection(S, ap, rmax);
     mpf = flipud(mp);
-    [speed_perp, quality_perp] = fit_speed(0.5*(mp(pos) + mpf(pos)), jpos, L, npad, n, ap, K, duty);
+    [speed_perp, quality_perp] = fftvel.internal.fit_speed(0.5*(mp(pos) + mpf(pos)), jpos, L, ...
+        npad, n, ap, K, duty);
     isotropic = quality - quality_perp < 0.15 && abs(log(speed_perp/speed)) < 0.12;
 
     % Independent profile points: zero padding beyond 2 only interpolates

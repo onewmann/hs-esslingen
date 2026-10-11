@@ -1,11 +1,12 @@
 function fig = plot_estimate(bp, est, frame)
 %PLOT_ESTIMATE  Show every stage of the estimate in one figure.
-%   PLOT_ESTIMATE(BP, EST) needs EST from ESTIMATE_VELOCITY(..., 'Diagnostics',
-%   true). PLOT_ESTIMATE(BP, EST, FRAME) also shows a single exposure.
+%   fftvel.plot_estimate(BP, EST) needs EST from
+%   fftvel.estimate_velocity(..., 'Diagnostics', true).
+%   fftvel.plot_estimate(BP, EST, FRAME) also shows a single exposure.
 %   Works in MATLAB and Octave.
 
     if ~isfield(est, 'diag')
-        error('plot_estimate:diag', 'Call estimate_velocity with ''Diagnostics'', true.');
+        error('plot_estimate:diag', 'Call fftvel.estimate_velocity with ''Diagnostics'', true.');
     end
     d = est.diag;
     has_frame = nargin >= 3 && ~isempty(frame);
@@ -19,12 +20,14 @@ function fig = plot_estimate(bp, est, frame)
 
     if has_frame
         subplot(2, 3, slot.frame);
-        imagesc(crop_square(double(frame), min([est.n, size(frame)]))); axis image; axis off;
+        imagesc(fftvel.internal.crop_square(double(frame), min([est.n, size(frame)])));
+        axis image; axis off;
         title('Single exposure');
     end
 
     subplot(2, 3, slot.bp);
-    imagesc(crop_square(double(bp), est.n)); axis image; axis off;   % the analysed square
+    imagesc(fftvel.internal.crop_square(double(bp), est.n));   % the analysed square
+    axis image; axis off;
     if isfield(est, 'exposures')
         K = est.exposures;
     else

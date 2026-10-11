@@ -1,27 +1,28 @@
 function [bp, K] = pulsed_from_stack(frames, varargin)
 %PULSED_FROM_STACK  Pulsed-exposure image from a stack of single exposures.
-%   [BP, K] = PULSED_FROM_STACK(FRAMES) averages the frames of FRAMES,
-%   taken along its last dimension, into one pulsed-exposure image BP
-%   (double). All other dimensions of length 1 are dropped, so the
+%   [BP, K] = fftvel.pulsed_from_stack(FRAMES) averages the frames of
+%   FRAMES, taken along its last dimension, into one pulsed-exposure image
+%   BP (double). All other dimensions of length 1 are dropped, so the
 %   H-by-W-by-1-by-F arrays that GETDATA returns work as they are. The
 %   number of frames F must then be odd, and K = F.
 %
-%   [BP, K] = PULSED_FROM_STACK(FRAMES, 'Name', Value, ...) sets options:
+%   [BP, K] = fftvel.pulsed_from_stack(FRAMES, 'Name', Value, ...) sets
+%   options:
 %     'L'          average the first 2L+1 frames
 %     'Exposures'  average the first K frames (K >= 2, also even); wins
 %                  over 'L'
 %
-%   Pass K on: EST = ESTIMATE_VELOCITY(BP, 'Exposures', K).
+%   Pass K on: EST = fftvel.estimate_velocity(BP, 'Exposures', K).
 %   Same as fftvel.pulsed_from_stack in Python.
 %
 %   Example (Image Acquisition Toolbox):
 %     frames = getdata(vid, 9);              % H x W x 1 x 9
-%     [bp, K] = pulsed_from_stack(frames);
-%     est = estimate_velocity(bp, 'Exposures', K);
+%     [bp, K] = fftvel.pulsed_from_stack(frames);
+%     est = fftvel.estimate_velocity(bp, 'Exposures', K);
 %
-%   See also ESTIMATE_VELOCITY.
+%   See also fftvel.estimate_velocity.
 
-    opts = parse_options(varargin, struct('L', [], 'Exposures', []));
+    opts = fftvel.internal.parse_options(varargin, struct('L', [], 'Exposures', []));
     sz = size(frames);
     nf = sz(end);
     keep = sz(1:end-1);
@@ -35,10 +36,11 @@ function [bp, K] = pulsed_from_stack(frames, varargin)
         error('pulsed_from_stack:frames', 'A frame stack needs at least 2 frames, got size %s.', mat2str(sz));
     end
     if ~isempty(opts.L)
-        L = check_option(opts.L, 'L', 'positive', 'pulsed_from_stack:L');
+        L = fftvel.internal.check_option(opts.L, 'L', 'positive', 'pulsed_from_stack:L');
     end
     if ~isempty(opts.Exposures)
-        K = check_option(opts.Exposures, 'Exposures', 'exposures', 'pulsed_from_stack:Exposures');
+        K = fftvel.internal.check_option(opts.Exposures, 'Exposures', 'exposures', ...
+            'pulsed_from_stack:Exposures');
     elseif ~isempty(opts.L)
         K = 2*L + 1;
     elseif mod(nf, 2) == 0
