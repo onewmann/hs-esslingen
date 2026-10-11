@@ -8,9 +8,7 @@ import pytest
 from scipy.io import loadmat
 from scipy.signal import fftconvolve
 
-from fftvel import crop_square, estimate_velocity, pulsed_from_stack, simulate_pulsed_image
-
-from conftest import angle_error
+from fftvel import angle_difference, crop_square, estimate_velocity, pulsed_from_stack, simulate_pulsed_image
 
 
 @pytest.fixture(scope="module")
@@ -26,7 +24,7 @@ def velocity(speed, angle):
 
 
 def assert_correct(e, speed, angle, tol=0.01):
-    assert abs(angle_error(e.angle_deg, angle)) < 0.5, e
+    assert abs(angle_difference(e.angle_deg, angle)) < 0.5, e
     assert abs(e.speed / speed - 1) < tol, e
     assert e.valid, e
 

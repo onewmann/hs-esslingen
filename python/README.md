@@ -2,7 +2,7 @@
 
 Python implementation of the single-image velocity estimate (2-D FFT + Radon
 transform of a pulsed-exposure image). It gives the same results as the
-MATLAB/Octave functions in `../matlab` (checked by `tests/parity`).
+MATLAB/Octave package `+fftvel` in `../matlab` (checked by `tests/parity`).
 
 Needs Python 3.10 or newer and, for the editable install, pip 21.3 or newer.
 From this folder:

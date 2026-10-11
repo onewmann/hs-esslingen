@@ -1,10 +1,8 @@
 import numpy as np
 import pytest
 
-from fftvel import simulate_pulsed_image
+from fftvel import angle_difference, simulate_pulsed_image
 from fftvel.stream import FrameWindow, estimate_frame, estimate_stream, estimate_window, frame_step
-
-from conftest import angle_error
 
 
 def _frames(times, v=(4.0, -1.0), L=4, seed=0):
@@ -20,7 +18,7 @@ def test_regular_stream_gives_valid_estimate():
     r = out[0]
     assert r.regular and r.valid
     assert abs(r.speed / np.hypot(4, 1) - 1) < 0.01
-    assert abs(angle_error(r.angle_deg, np.rad2deg(np.arctan2(1, 4)))) < 0.5
+    assert abs(angle_difference(r.angle_deg, np.rad2deg(np.arctan2(1, 4)))) < 0.5
     assert abs(r.speed_per_s / (30 * np.hypot(4, 1)) - 1) < 0.01
 
 

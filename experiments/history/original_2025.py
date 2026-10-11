@@ -1,16 +1,18 @@
-"""The estimator of the original study project, ported to Python for comparison.
+"""The estimator of the 2025 student project, ported to Python for comparison.
 
-Processing chain of ``finaltest1.m`` (live Basler GUI, lines 102-139) as it
-was before the rewrite: top-hat background removal, Wiener filter, Hann
+Processing chain of ``aktuell/finaltest1.m`` (live Basler GUI, lines 102-139)
+as it was before the rewrite: top-hat background removal, Wiener filter, Hann
 window, zero padding to 2N, ``log(1+|FFT|)``, MATLAB-style Radon transform,
 ``beta = argmax WR`` and ``|v| = 2N / mean(spacing of findpeaks maxima)``
-with an absolute ``MinPeakProminence`` of 0.05.
+with an absolute ``MinPeakProminence`` of 0.05. The script is no longer in
+the tree; it is ``2D-FFT/aktuell/finaltest1.m`` at git tag
+``student-project-2025``.
 
 ``radon_matlab`` and ``findpeaks_matlab`` reproduce MATLAB's ``radon``
 (4 sub-pixels, linear binning, y up) and ``findpeaks`` semantics; the port was
 checked against the original code run in GNU Octave.
 
-Only used by ``run_benchmark.py`` to show what changed. Do not use it for
+Only used by ``before_after.py`` to show what changed. Do not use it for
 measurements.
 """
 

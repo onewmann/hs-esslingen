@@ -3,9 +3,7 @@
 import numpy as np
 from scipy.io import loadmat
 
-from fftvel import estimate_velocity, pulsed_from_stack
-
-from conftest import angle_error
+from fftvel import angle_difference, estimate_velocity, pulsed_from_stack
 
 
 def test_parity(repo):
@@ -25,7 +23,7 @@ def test_parity(repo):
             bp = x.astype(float)
         e = estimate_velocity(bp, L=L, pad_factor=pad, exposures=exposures, duty=row[9], roi=roi,
                               clip_outliers=bool(row[11]))
-        assert abs(angle_error(e.angle_deg, row[3])) < 1e-9, i
+        assert abs(angle_difference(e.angle_deg, row[3])) < 1e-9, i
         assert abs(e.speed / row[4] - 1) < 1e-9, i
         assert abs(e.geba / row[5] - 1) < 1e-9, i
         assert abs(e.quality - row[6]) < 1e-9, i

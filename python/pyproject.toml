@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fftvel"
-version = "1.0.0"
+version = "0.1.0"
 description = "Velocity of a moving texture from a single pulsed-exposure image (2-D FFT + Radon)"
 readme = "README.md"
 license = "MIT"

@@ -5,9 +5,9 @@ of J. Horn's doctoral thesis (Universitaet Karlsruhe, 2007; full reference in
 README.md). The speed fit, the validity threshold and the isotropy check were
 added in this implementation.
 
-This module mirrors the MATLAB/Octave functions in ``matlab/`` line by line,
-so that both give the same numbers for the same input (see ``tests/parity``).
-Only NumPy is needed.
+This module mirrors the MATLAB/Octave package ``matlab/+fftvel`` line by
+line, so that both give the same numbers for the same input (see
+``tests/parity``). Only NumPy is needed.
 
 Conventions
 -----------
@@ -26,6 +26,7 @@ import numpy as np
 
 __all__ = [
     "Estimate",
+    "angle_difference",
     "estimate_velocity",
     "log_spectrum",
     "mean_projection",
@@ -112,7 +113,8 @@ def _check_option(x, name: str, kind: str):
 
     ``x`` must be a real, finite number, not text and not a bool (except
     for ``kind='flag'``, which takes True/False or 0/1). ``kind`` is one of
-    the keys of ``_KINDS``. Same rules and messages as ``matlab/check_option.m``.
+    the keys of ``_KINDS``. Same rules and messages as
+    ``matlab/+fftvel/+internal/check_option.m``.
     """
     what = _KINDS[kind]
     if isinstance(x, str):
@@ -147,6 +149,24 @@ def _check_option(x, name: str, kind: str):
                 return int(v) if kind in _LOWEST else v
             got = f"{v:g}"
     raise ValueError(f"{name} must be {what}, got {got}")
+
+
+def angle_difference(a, b):
+    """Smallest difference of two directions modulo 180 degrees.
+
+    Returns ``a - b`` in degrees, wrapped to ``[-90, 90)``:
+    ``mod(a - b + 90, 180) - 90``. A direction and its opposite count as the
+    same, as for ``Estimate.angle_deg``, so ``abs(d)`` is the angle between
+    the two directions, at most 90 degrees; ``d > 0`` when ``a`` lies
+    counter-clockwise of ``b``. Element-wise for arrays (NumPy
+    broadcasting); a float for two scalars. Same as
+    ``fftvel.angle_difference`` in MATLAB.
+
+    >>> angle_difference(179, 1), angle_difference(1, 179)
+    (-2.0, 2.0)
+    """
+    d = np.mod(np.asarray(a, dtype=float) - np.asarray(b, dtype=float) + 90, 180) - 90
+    return float(d) if d.ndim == 0 else d
 
 
 def hann_window(n: int) -> np.ndarray:

@@ -1,12 +1,15 @@
+import re
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 from scipy.io import loadmat
 
-from fftvel import (crop_square, estimate_velocity, hann_window, log_spectrum, mean_projection,
-                    simulate_pulsed_image)
+import fftvel
+from fftvel import (angle_difference, crop_square, estimate_velocity, hann_window, log_spectrum,
+                    mean_projection, simulate_pulsed_image)
 from fftvel.core import parabolic_offset
-
-from conftest import angle_error
 
 
 def fixed_inputs(repo):
@@ -24,7 +27,7 @@ def fixed_inputs(repo):
 def test_angle_convention(v, expected):
     bp = simulate_pulsed_image(128, v, 4, rng=11)
     e = estimate_velocity(bp)
-    assert abs(angle_error(e.angle_deg, expected)) < 0.5
+    assert abs(angle_difference(e.angle_deg, expected)) < 0.5
     assert 0 <= e.angle_deg < 180
     vv = np.array([e.vx, e.vy])
     assert min(np.linalg.norm(vv - v), np.linalg.norm(vv + v)) < 0.03 * np.hypot(*v) + 0.02
@@ -36,7 +39,7 @@ def test_known_velocity(speed, angle):
     a = np.deg2rad(angle)
     bp = simulate_pulsed_image(256, (speed * np.cos(a), -speed * np.sin(a)), 4, rng=42)
     e = estimate_velocity(bp, L=4)
-    assert abs(angle_error(e.angle_deg, angle)) < 0.5
+    assert abs(angle_difference(e.angle_deg, angle)) < 0.5
     assert abs(e.speed / speed - 1) < 0.01
     assert e.valid
 
@@ -53,7 +56,7 @@ def test_real_texture(repo):
     tex = mpimg.imread(repo / "data" / "surface_texture.png").astype(float)
     bp = simulate_pulsed_image(256, (5, -3), 4, texture=tex, rng=0)
     e = estimate_velocity(bp)
-    assert abs(angle_error(e.angle_deg, np.rad2deg(np.arctan2(3, 5)))) < 0.5
+    assert abs(angle_difference(e.angle_deg, np.rad2deg(np.arctan2(3, 5)))) < 0.5
     assert abs(e.speed / np.hypot(5, 3) - 1) < 0.01
 
 
@@ -139,7 +142,7 @@ def test_options_and_errors():
     blank = estimate_velocity(np.ones((64, 64)))
     assert not blank.valid and blank.quality == 0 and blank.geba == 1
     u8 = np.round(255 * (bp - bp.min()) / np.ptp(bp)).astype(np.uint8)
-    assert abs(angle_error(estimate_velocity(u8).angle_deg, estimate_velocity(bp).angle_deg)) < 1
+    assert abs(angle_difference(estimate_velocity(u8).angle_deg, estimate_velocity(bp).angle_deg)) < 1
 
 
 def test_helpers():
@@ -155,3 +158,32 @@ def test_helpers():
     i = int(np.argmax(y))
     assert abs(i + parabolic_offset(y, i, periodic=False) - 3.3) < 1e-12
     assert parabolic_offset(y, 0, periodic=False) == 0
+
+
+def test_angle_difference():
+    # same values as tests/matlab/test_conventions.m: a - b wrapped to [-90, 90)
+    d = angle_difference([179, 1, 10, 100, 90, 0, 270, -90], [1, 179, 0, 0, 0, 90, 0, 0])
+    assert np.array_equal(d, [-2, 2, 10, -80, -90, -90, -90, -90])
+    assert np.array_equal(angle_difference(np.array([[30], [150]]), 135), [[75], [15]])
+    assert angle_difference(179, 1) == -2 and isinstance(angle_difference(179, 1), float)
+    assert angle_difference(-30.5, 30) == -60.5 and angle_difference(10, 190) == 0
+    a = np.array([[0, 45], [170, 359.5]])
+    assert np.array_equal(angle_difference(a, 10), [[-10, 35], [-20, -10.5]])
+    assert np.array_equal(angle_difference(a, a.T), -angle_difference(a.T, a))
+
+
+def test_version(repo):
+    # __version__ comes from the installed metadata (reinstall after changing pyproject.toml),
+    # with the same number as fallback when the package is used without installing
+    pyproject = (repo / "python" / "pyproject.toml").read_text()
+    expected = re.search(r'^version = "(.+)"$', pyproject, re.MULTILINE).group(1)
+    assert fftvel.__version__ == expected
+    code = ("import importlib.metadata as m\n"
+            "def missing(name):\n"
+            "    raise m.PackageNotFoundError(name)\n"
+            "m.version = missing\n"
+            "import fftvel\n"
+            "print(fftvel.__version__)\n")
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120,
+                       cwd=repo / "python" / "src")
+    assert r.returncode == 0 and r.stdout.strip() == expected, r.stderr

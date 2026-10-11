@@ -1,7 +1,8 @@
 # Data
 
-Both files come from the original study project and are small enough for the
-repository.
+All files come from the 2025 student project and are kept in the repository:
+two small files for tests and simulations, and the four camera recordings in
+`recordings/`.
 
 ## `testsequences.mat`
 
@@ -23,19 +24,34 @@ Converted from `Testsequenzen1.mat` of the original project (variables
 
 ## `surface_texture.png`
 
-Central 1024 x 1024 px of the first frame of recording `vid2.mat`, taken with a
-Basler camera (Mono8, 1936 x 1216 px) looking at a moving surface. Used as a
-realistic texture for simulations: `simulate_pulsed_image(..., 'Texture', tex)`
-moves a fixed window over it with exact, known shifts.
+Central 1024 x 1024 px of the first frame of recording `recordings/vid2.mat`
+(see below). Used as a realistic texture for simulations:
+`fftvel.simulate_pulsed_image` with the texture (MATLAB option `'Texture'`,
+Python argument `texture=`) moves a fixed window over it with exact, known
+shifts.
 
-The full recordings (`vid1.mat` to `vid4.mat`, 10 frames each) stay in the
-archive of the original project (`2D-FFT/data` in onewmann/hs-esslingen).
-`vid1` shows a static room scene; `vid2` to `vid4` show the moving surface.
-Each file holds the variable `recording`, 1216 x 1936 x 1 x 10 `uint8`, as
-`getdata` of the Image Acquisition Toolbox returns it. `pulsed_from_stack`
-(MATLAB and Python) and `python -m fftvel estimate vid2.mat --stack --L 4`
-read it as it is; with 10 frames, an even number, they need `L` or
-`Exposures` to know how many frames to average. The frame-to-frame motion in
-`vid2` to `vid4` is not uniform, which
-`benchmark/run_benchmark.py --only recordings --recordings PATH/TO/2D-FFT/data`
-analyses.
+## `recordings/vid1.mat` to `recordings/vid4.mat`
+
+Four recordings of a Basler camera (Mono8, 1936 x 1216 px), 10 frames each,
+as `getdata` of the MATLAB Image Acquisition Toolbox returns them. Each file
+holds one variable, `recording`: 1216 x 1936 x 1 x 10 `uint8` (rows x
+columns x 1 colour channel x frames).
+
+| File | Content |
+|---|---|
+| `vid1.mat` | static room scene, no motion (the mean brightness rises from about 110 to 136 over the 10 frames) |
+| `vid2.mat` | moving textured surface, steps of 3.0 to 8.2 px between frames |
+| `vid3.mat` | moving textured surface, steps of 4.6 to 18.0 px between frames |
+| `vid4.mat` | moving textured surface, steps of 1.6 to 6.1 px between frames |
+
+The steps are the displacement between consecutive frames by phase
+correlation of the central 1024 x 1024 px. They are not uniform, while the
+method assumes equal steps between the exposures it averages.
+`python experiments/run.py --only recordings` analyses this (the folder
+defaults to `data/recordings`) and writes `experiments/results/recordings.csv`
+and `docs/figures/recordings.png`.
+
+`fftvel.pulsed_from_stack` (MATLAB and Python) and
+`python -m fftvel estimate data/recordings/vid2.mat --stack --L 4` read a
+recording as it is. With 10 frames, an even number, they need `L` or
+`Exposures` to know how many frames to average.

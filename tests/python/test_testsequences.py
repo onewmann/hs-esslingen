@@ -4,9 +4,7 @@ import numpy as np
 import pytest
 from scipy.io import loadmat
 
-from fftvel import estimate_velocity
-
-from conftest import angle_error
+from fftvel import angle_difference, estimate_velocity
 
 
 @pytest.mark.parametrize("name, step", [("model", 5), ("tyre", 4)])
@@ -17,6 +15,6 @@ def test_constant_motion(repo, name, step, start):
     b = step * last                      # zero-filled border of the last frame
     bp = s[b:, b:, start:last + 1].mean(axis=2)
     e = estimate_velocity(bp, L=4)
-    assert abs(angle_error(e.angle_deg, 135)) < 0.1
+    assert abs(angle_difference(e.angle_deg, 135)) < 0.1
     assert abs(e.speed / (step * np.sqrt(2)) - 1) < 0.005
     assert e.valid

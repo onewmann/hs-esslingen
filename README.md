@@ -98,9 +98,10 @@ screen, in [0, 180). One image cannot tell $\mathbf v$ from $-\mathbf v$.
 
 ## Results
 
-All numbers come from `benchmark/run_benchmark.py` with default options; the
-CSV files are in `benchmark/results/`. `--quick` runs smaller grids and writes
-to `benchmark/results_quick/` instead, which git ignores.
+All numbers come from `experiments/run.py` with default options; the CSV
+files are in `experiments/results/`. `--quick` runs smaller grids and writes
+to `experiments/results_quick/` instead, which git ignores. Each study can also
+run on its own, for example `python experiments/noise.py --quick`.
 
 **Accuracy.** For 256 x 256 px and 9 exposures the direction is within
 0.71 deg and the speed within 0.5 % from 0.4 to 64 px per step (within 0.09 deg
@@ -210,17 +211,17 @@ print(est.angle_deg, est.speed, est.quality, est.valid)
 ### MATLAB or GNU Octave
 
 ```matlab
-addpath('matlab')
-bp  = simulate_pulsed_image(256, [5 -3], 4);
-est = estimate_velocity(bp, 'L', 4, 'Diagnostics', true);
-plot_estimate(bp, est)
+addpath('matlab')                       % the folder that holds +fftvel
+bp  = fftvel.simulate_pulsed_image(256, [5 -3], 4);
+est = fftvel.estimate_velocity(bp, 'L', 4, 'Diagnostics', true);
+fftvel.plot_estimate(bp, est);
 
-frames  = getdata(vid, 9);              % camera frames, H x W x 1 x 9
-[bp, K] = pulsed_from_stack(frames);    % mean of the 9 frames
-est = estimate_velocity(bp, 'Exposures', K, 'ROI', 512);
+frames  = getdata(vid, 9);                     % camera frames, H x W x 1 x 9
+[bp, K] = fftvel.pulsed_from_stack(frames);    % mean of the 9 frames
+est = fftvel.estimate_velocity(bp, 'Exposures', K, 'ROI', 512);
 ```
 
-`pulsed_from_stack` (Python: `fftvel.pulsed_from_stack`) takes the frames
+`fftvel.pulsed_from_stack` (same name in Python) takes the frames
 along the last dimension and drops other dimensions of length 1. Without
 `'L'` or `'Exposures'` it averages all frames, which must then be an odd
 number; with one of them it averages the first 2L+1 or K frames. Pass K on to
@@ -238,7 +239,7 @@ arguments):
 | `'ClipOutliers'` | `clip_outliers` | false | set pixels more than 6 robust standard deviations from the median to the median |
 | `'PadFactor'` | `pad_factor` | 2 | zero padding factor of the FFT |
 | `'MinQuality'` | `min_quality` | 0.6 | lowest fit quality accepted; small images need more |
-| `'Diagnostics'` | `diagnostics` | false | keep intermediate results for `plot_estimate` |
+| `'Diagnostics'` | `diagnostics` | false | keep intermediate results for `fftvel.plot_estimate` |
 
 The result has the fields `angle_deg`, `speed` (px per exposure step), `vx`,
 `vy`, `geba`, `quality`, `quality_perp` (the fit perpendicular to the
@@ -338,14 +339,15 @@ MATLAB.
 ## Repository layout
 
 ```
-matlab/            estimator, simulation and plotting (MATLAB and Octave, no toolboxes)
-matlab/examples/   demos and the live Basler GUI
-python/            the same as the Python package fftvel, plus examples
-tests/             test suites for both languages and shared parity cases
-benchmark/         accuracy, noise and before/after study, the original estimator for comparison
-benchmark/results/ CSV files of the full benchmark run (--quick writes to the ignored results_quick/)
-data/              test sequences with known motion and a real surface texture
-docs/figures/      figures of this README
+matlab/+fftvel/       MATLAB/Octave package fftvel (no toolboxes); helpers in +internal/
+matlab/examples/      demos and the live Basler GUI
+python/               the same as the Python package fftvel, plus examples
+tests/                test suites for both languages and shared parity cases
+experiments/          one script per study; run.py runs them all
+experiments/history/  the 2025 estimator ported to Python, before/after comparison
+experiments/results/  CSV files of the full run (--quick writes to the ignored results_quick/)
+data/                 test sequences, a real surface texture, the Basler recordings
+docs/figures/         figures of this README
 ```
 
 ## Tests
@@ -368,7 +370,7 @@ languages within 1e-9. The no-motion checks at 32 px use stored images
 (`tests/parity/fixed_inputs.mat`, written by `tests/parity/make_cases.py`), so
 they do not depend on the random number generator. The Python suite also
 covers the command line, the argument checks and output folders of the
-benchmark script, and the live script, the latter with fake camera modules.
+experiment scripts, and the live script, the latter with fake camera modules.
 `run_tests` prints the file and line of every failure and ends with
 an error, so `octave --eval` and `matlab -batch` exit with a non-zero status.
 GitHub Actions runs the Python suite on Python 3.10 and 3.13 and the MATLAB
@@ -383,8 +385,8 @@ transform, the ripple profile WR for the direction, the speed from the
 spacing of the repeated structures and the quality measure GEBA. In my
 student project (2025) I implemented it in MATLAB and tested it with simulated
 sequences and recordings from a Basler camera. Those original scripts are
-archived in
-[onewmann/hs-esslingen](https://github.com/onewmann/hs-esslingen/tree/main/2D-FFT).
+kept unchanged at tag
+[`student-project-2025`](https://github.com/onewmann/2D-FFT-Code/tree/student-project-2025/2D-FFT).
 
 A review of those scripts found the speed estimate was wrong in every script
 that computed it, mainly because peaks were picked with a fixed threshold that
@@ -412,14 +414,14 @@ ripple profile and GEBA) and changes the implementation:
 
 ### How this was built
 
-The scripts of the student project are archived unchanged in
-[onewmann/hs-esslingen](https://github.com/onewmann/hs-esslingen/tree/main/2D-FFT)
+The scripts of the student project are kept unchanged at tag
+[`student-project-2025`](https://github.com/onewmann/2D-FFT-Code/tree/student-project-2025/2D-FFT)
 (folder `2D-FFT/`, uploaded on 8 October 2026 in commits `54b90cc` and
-`8f0aec4`). Everything after commit `8f0aec4` was done with the assistance of
+`8f0aec4`; the tag points to `8f0aec4`). Everything after commit `8f0aec4` was done with the assistance of
 AI (Claude by Anthropic): first a code review of those scripts, then the
 rework in this repository, starting with the commit "Rewrite the 2D-FFT
 velocity estimator for MATLAB, Octave and Python". That covers the code in
-`matlab/` and `python/`, the tests, the benchmark, the figures and this
+`matlab/` and `python/`, the tests, the experiments, the figures and this
 documentation.
 
 ## Limitations
@@ -477,7 +479,7 @@ documentation.
 * The measurable range depends on the image size N and on the number of
   exposures K. The lower end is about $3.3/K$ px per step (0.4 for L = 4,
   0.08 for L = 20), where the first zero of the Dirichlet kernel still lies
-  inside the spectrum. The benchmark covers speeds up to N/4 (64 px per step
+  inside the spectrum. The experiments cover speeds up to N/4 (64 px per step
   for N = 256).
 * Images need at least about 64 x 64 px to give valid results with any
   regularity; below 128 px the stricter threshold rejects many of them.
