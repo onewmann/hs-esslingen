@@ -36,9 +36,9 @@ Writes baselines.csv (one row per image and method) and baselines.png; the
 summary prints the share correct, the median errors of the correct results
 and, for fftvel, the shares valid and wrong but valid, the share correct by
 speed and the precision of the phase correlation without noise. A full run
-takes about 9 min on 4 cores. --quick writes to experiments/results_quick;
---replot redraws the figure and prints the table from the CSV file in the
-output folder.
+needs about 27 min of CPU time, so about 7 to 10 min on 4 cores. --quick
+writes to experiments/results_quick; --replot redraws the figure and prints
+the table from the CSV file in the output folder.
 
 Columns of baselines.csv: the case (texture, speed, angle, L, noise, seed),
 method, est_angle, est_speed, angle_err, speed_err, correct; on fftvel rows

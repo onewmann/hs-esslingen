@@ -40,6 +40,80 @@ def test_fourier_forward_model_is_the_simulator_in_the_ideal_case(mv, i, K):
     np.testing.assert_allclose(bp - R.mean(), ref, rtol=0, atol=1e-10 * ref.std())
 
 
+def test_forward_model_equals_shifting_by_hand_for_integer_steps(mv):
+    # v = (3, -2) px per step: right and up. Flash k shows the scene moved by t_k * v, i.e. the window at
+    # (y, x) sees the scene at (y - t_k * vy, x - t_k * vx); plain array slicing, no FFT
+    n = 128
+    img = mv.image_params(0)
+    R = mv.scene(img, n)
+    r0 = (R.shape[0] - n) // 2
+    v = (3.0, -2.0)
+    hand = np.zeros((n, n))
+    for tk in mv.flash_times(9):
+        sy, sx = int(tk * v[1]), int(tk * v[0])
+        hand += R[r0 - sy:r0 - sy + n, r0 - sx:r0 - sx + n] / 9
+    np.testing.assert_allclose(mv.render(R, v, mv.flash_times(9), np.ones(9), n), hand, rtol=0, atol=1e-12)
+    e = estimate_velocity(mv.sensor(hand)[0], L=4)
+    assert e.valid and e.angle_deg == pytest.approx(np.degrees(np.arctan2(2, 3)), abs=0.2)
+    assert e.speed == pytest.approx(np.hypot(3, 2), rel=0.005)
+
+
+def _sinusoids(m, count=30, seed=1):
+    """Scene made of sinusoids that are periodic on the ``m`` grid, as ``[(ky, kx, phase, amplitude)]``."""
+    rng = np.random.default_rng(seed)
+    return [(int(rng.integers(-50, 51)), int(rng.integers(-50, 51)), rng.uniform(0, 2 * np.pi),
+             0.01 * rng.uniform(0.2, 1)) for _ in range(count)]
+
+
+def _sinusoid_scene(comps, m, y, x, vy=0.0, vx=0.0, length=0.0):
+    """Scene at (y, x), or its mean along the path of ``length`` steps of (vy, vx) centred there."""
+    out = np.ones_like(x)
+    for ky, kx, ph, a in comps:
+        out = out + a * np.cos(2 * np.pi * (ky * y + kx * x) / m + ph) * np.sinc(length * (ky * vy + kx * vx) / m)
+    return out
+
+
+def test_forward_model_on_a_scene_known_in_closed_form(mv):
+    # sub-pixel steps, timing and energy jitter, flash duration and continuous light, against the values of a
+    # scene of sinusoids, which are known exactly at any shift and for any box average along v
+    n = 48
+    m = n + 2 * mv.REACH
+    comps = _sinusoids(m)
+    R = _sinusoid_scene(comps, m, *np.mgrid[0:m, 0:m].astype(float))
+    r0 = (m - n) // 2
+    y, x = np.mgrid[r0:r0 + n, r0:r0 + n].astype(float)
+    v = (2.37, -5.81)
+    t = mv.flash_times(9, 0.1, np.random.default_rng(3))
+    w = 1 + 0.2 * np.random.default_rng(4).standard_normal(9)
+    exact = sum(wk * _sinusoid_scene(comps, m, y - tk * v[1], x - tk * v[0]) for tk, wk in zip(t, w)) / 9
+    np.testing.assert_allclose(mv.render(R, v, t, w, n), exact, rtol=0, atol=1e-12)
+    # each flash lasting half a step: sub-steps against the exact box average
+    t = mv.flash_times(9)
+    exact = np.mean([_sinusoid_scene(comps, m, y - tk * v[1], x - tk * v[0], v[1], v[0], 0.5) for tk in t], axis=0)
+    rel = mv.render(R, v, t, np.ones(9), n, duty=0.5)
+    assert np.abs(rel - exact).max() < 1e-3 * exact.std()
+    # continuous light over an exposure of 10 steps: the box average over 10 steps
+    exact = _sinusoid_scene(comps, m, y, x, v[1], v[0], 10)
+    rel = mv.render(R, v, t, np.ones(9), n, continuous=1.0, exposure_steps=10)
+    assert np.abs(rel - exact).max() < 1e-3 * exact.std()
+
+
+def test_seed_streams_are_separate(mv):
+    # numpy pads seeds with zeros ([a, b] and [a, b, 0] are the same stream); every stream must differ
+    for i in (0, 1, 7):
+        keys = [(), (mv.SCENE_KEY,)] + [(f.code,) for f in mv.FACTORS]
+        keys += [(f.code, li + 1) for f in mv.FACTORS for li in range(len(f.levels))]
+        first = {tuple(mv.stream(i, *k).integers(0, 2 ** 62, 2)) for k in keys}
+        assert len(first) == len(keys), i
+    # the scene does not depend on the velocity draw: crop offsets against log speed over many images
+    speeds, offsets = [], []
+    for i in range(0, 400, 2):
+        speeds.append(np.log(mv.image_params(i).speed))
+        offsets.append(mv.stream(i, mv.SCENE_KEY).integers(0, 321, 2))
+    offsets = np.array(offsets)
+    assert max(abs(np.corrcoef(speeds, offsets[:, j])[0, 1]) for j in (0, 1)) < 0.3
+
+
 def test_flash_duration_by_substeps_is_close_to_the_closed_form(mv):
     img = mv.image_params(2)                       # 9.4 px per step: 19 sub-steps per flash at duty 0.5
     R = mv.scene(img, N)
@@ -76,6 +150,11 @@ def test_flash_times_and_substeps(mv):
     np.testing.assert_array_equal(mv.flash_times(8), np.arange(8) - 3.5)
     t = mv.flash_times(9, 0.1, np.random.default_rng(1))
     assert t.mean() == pytest.approx(0, abs=1e-12) and np.all(np.diff(t) > 0) and np.std(np.diff(t)) > 0.02
+    # timing jitter: each flash off its own nominal time, independently (not a random walk of the steps)
+    K = 4001
+    d = mv.flash_times(K, 0.1, np.random.default_rng(2)) - mv.flash_times(K)
+    assert np.std(d) == pytest.approx(0.1, rel=0.05)
+    assert abs(np.corrcoef(d[:-1], d[1:])[0, 1]) < 0.1
     tau, count = mv.substeps(2.0)                  # 2 px: 8 sub-steps 0.25 px apart, centred
     assert count == 8 and tau.mean() == pytest.approx(0, abs=1e-15) and np.allclose(np.diff(tau), 1 / 8)
     assert mv.substeps(0.1)[1] == 1
@@ -147,6 +226,10 @@ def test_variants(mv):
     assert mv.variants("glints", 10)["matched"] == {"L": 4, "clip_outliers": True}
     assert mv.variants("true_K", 8) == {"default": {"L": 4}, "matched": {"L": 4, "exposures": 8}}
     assert mv.variants("assumed_K", 10) == {"default": {"L": 4, "exposures": 10}}
+    # the option reaches the estimator: duty 0.5 on a fast image (9.4 px per step) changes the estimate
+    default, matched = mv.evaluate(("pulse_width", 3, 2, 128))
+    assert (default["variant"], matched["variant"]) == ("default", "matched")
+    assert matched["est_speed"] != default["est_speed"] and matched["correct"] == 1
 
 
 def test_cases(mv):

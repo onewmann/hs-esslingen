@@ -41,17 +41,21 @@ Factors, each swept with all else ideal (the first level is the ideal
 image, except for the two K factors and the two with sensor noise):
 
 * pulse_width: flash duration / flash step (duty) 0 to 0.9.
-* step_jitter: step k is ``(1 + s * e_k) * v`` with ``e_k`` standard normal,
-  s = 0 to 20 % (timing jitter, along v).
+* timing_jitter: flash k fires at ``t_k + s * e_k`` with ``e_k`` standard
+  normal and independent for each flash (the jitter of a clocked flash
+  trigger), s = 0 to 20 % of the flash period. Its position is off by
+  ``s * e_k * |v|`` px along v.
 * energy_jitter: flash energy ``1 + s * e_k``, s = 0 to 40 %.
 * shot_noise: full well 100000 down to 1000 e- at 40 % exposure (a smaller
   full well is the same as a darker exposure), read noise 7 e-.
 * quantisation: 12, 10, 8, 6 and 4 bits (8 bits at a quarter of the
   exposure are about 6 bits at full exposure).
-* offset: a constant ambient light that makes up the given share of the
-  mean signal, with the total held at 40 % of the 32000 e- full well and
-  its shot and read noise. Without noise a constant offset changes
-  nothing, because the estimator removes the mean.
+* offset: a constant offset (stray light, flare or a raised black level)
+  that makes up the given share of the mean signal, with the total held at
+  40 % of the 32000 e- full well and its shot and read noise. Without noise
+  a constant offset changes nothing, because the estimator removes the
+  mean. Ambient light on the moving surface is not constant: it shows the
+  smeared scene (the factor continuous).
 * continuous: share of the signal from continuous light, which shows the
   scene smeared over the whole exposure, here 10 flash steps centred on
   the 9 flashes.
@@ -75,7 +79,9 @@ image, except for the two K factors and the two with sensor noise):
 Each level has 32 images (16 per texture; --quick: 4), with speed
 log-uniform from 0.5 to 30 px per step and direction uniform. Image i has
 the same velocity, scene and random draws (jitter, edge, glint positions)
-at every level of a factor; only the strength changes. Each image is
+at every level of a factor; only the strength changes. Velocity, scene,
+factor draws and sensor noise come from separate seed streams (see
+:func:`stream`). Each image is
 estimated with the default options and, where a matching option exists,
 with it set to the true value (pulse_width: ``duty``, glints:
 ``clip_outliers=True``, true_K: ``exposures``; for assumed_K the true value
@@ -85,7 +91,11 @@ and the speed within 5 %.
 Check (run first): the forward model in the ideal case against
 simulate_pulsed_image on the same scene and velocity, both estimated with
 the defaults; also with the cubic spline shift, with duty 0.5 (sub-steps
-against the closed form of the simulator) and with K = 8 (even K).
+against the closed form of the simulator) and with K = 8 (even K). The
+simulator uses the same Fourier shift, so the tests also render images
+directly, without an FFT: integer shifts by array slicing, and sub-pixel
+shifts, flash duration and continuous light on a scene made of sinusoids,
+whose shifted and smeared values are known in closed form.
 
 Writes violations.csv (one row per image and estimator variant; the check
 rows have factor ``check``) and failures.png (one panel per factor: share
@@ -125,6 +135,7 @@ REACH = 224                  # px of scene beyond the window on each side (large
 SPEEDS = (0.5, 30.0)         # px per flash step, log-uniform
 PER_LEVEL, PER_LEVEL_QUICK = 32, 4
 SEED = 7100                  # first entry of every seed of this study
+SCENE_KEY = 100              # seed key of the scene, distinct from the factor codes
 
 RANDOM_CONTRAST = 0.07       # std / mean of the random texture (camera texture: 0.0695)
 SUBSTEP = 0.25               # px; largest distance between the sub-steps of a flash or of continuous light
@@ -165,7 +176,7 @@ class Factor(NamedTuple):
 FACTORS = (
     Factor("pulse_width", 1, "Flash duration", "duration / flash step (duty)",
            (0, 0.1, 0.25, 0.5, 0.75, 0.9), _num, "duty"),
-    Factor("step_jitter", 2, "Flash step jitter", "standard deviation (% of |v|)",
+    Factor("timing_jitter", 2, "Flash timing jitter", "standard deviation (% of the flash period)",
            (0, 1, 2, 5, 10, 20), _num, None),
     Factor("energy_jitter", 3, "Flash energy jitter", "standard deviation (%)",
            (0, 2, 5, 10, 20, 40), _num, None),
@@ -173,7 +184,7 @@ FACTORS = (
            (0, 100000, 32000, 10000, 3200, 1000), _kilo, None),
     Factor("quantisation", 5, "Quantisation", "bits, mean at 40 % of full scale",
            (0, 12, 10, 8, 6, 4), _none, None),
-    Factor("offset", 6, "Constant ambient light", "share of the signal (32k e- noise)",
+    Factor("offset", 6, "Constant offset (stray light)", "share of the signal (32k e- noise)",
            (0, 0.25, 0.5, 0.75, 0.9), _num, None),
     Factor("continuous", 7, "Continuous light, exposure 10 steps", "share of the signal",
            (0, 0.1, 0.25, 0.5, 0.75, 0.9), _num, None),
@@ -197,6 +208,17 @@ FACTORS = (
 BY_NAME = {f.name: f for f in FACTORS}
 
 
+def stream(i, *key):
+    """Random generator of image ``i`` for one purpose, given by ``key``.
+
+    numpy's SeedSequence pads the seed with zeros, so ``[a, b]`` and
+    ``[a, b, 0]`` give the same stream. No key used here ends in 0: velocity
+    ``()``, scene ``(SCENE_KEY,)``, draws of a factor ``(code,)`` and sensor
+    noise of a level ``(code, level_index + 1)``.
+    """
+    return np.random.default_rng([SEED, i, *key])
+
+
 # The scene
 
 class Image(NamedTuple):
@@ -209,7 +231,7 @@ class Image(NamedTuple):
 
 def image_params(i):
     """Velocity and texture of image ``i``; the same at every level and factor."""
-    rng = np.random.default_rng([SEED, i])
+    rng = stream(i)
     speed = float(np.exp(rng.uniform(np.log(SPEEDS[0]), np.log(SPEEDS[1]))))
     angle = float(rng.uniform(0, 180))
     a = np.deg2rad(angle)
@@ -224,7 +246,7 @@ def scene(img, n):
     to be loaded.
     """
     m = n + 2 * REACH
-    rng = np.random.default_rng([SEED, img.index, 0])
+    rng = stream(img.index, SCENE_KEY)
     if img.texture == "surface":
         tex = common._texture
         if tex.ndim == 3:
@@ -284,11 +306,16 @@ def disc_otf(radius, m):
 # Flashes and rendering
 
 def flash_times(K, jitter=0.0, rng=None):
-    """Times of the K flashes in steps, centred on 0; steps ``1 + jitter * e_k``."""
+    """Times of the K flashes in flash periods, centred on 0.
+
+    With ``jitter`` > 0 each flash is off its nominal time by ``jitter * e_k``
+    (``e_k`` standard normal, independent for each flash), as for a trigger
+    driven by a clock; the result is centred again.
+    """
+    t = np.arange(K) - (K - 1) / 2
     if jitter == 0:
-        return np.arange(K) - (K - 1) / 2
-    steps = 1 + jitter * rng.standard_normal(K - 1)
-    t = np.concatenate([[0.0], np.cumsum(steps)])
+        return t
+    t = t + jitter * rng.standard_normal(K)
     return t - t.mean()
 
 
@@ -417,10 +444,10 @@ def make_image(factor, level_index, i, n=None):
     level = f.levels[level_index]
     img = image_params(i)
     R = scene(img, n)
-    frng = np.random.default_rng([SEED, i, f.code])                 # the same draws at every level
-    lrng = np.random.default_rng([SEED, i, f.code, level_index])    # sensor noise of this level
+    frng = stream(i, f.code)                        # the same draws at every level
+    lrng = stream(i, f.code, level_index + 1)       # sensor noise of this level
     K = int(level) if factor == "true_K" else TRUE_K
-    times = flash_times(K, level / 100 if factor == "step_jitter" else 0.0, frng)
+    times = flash_times(K, level / 100 if factor == "timing_jitter" else 0.0, frng)
     energies = np.ones(K)
     if factor == "energy_jitter":
         energies = np.maximum(1 + level / 100 * frng.standard_normal(K), 0)
