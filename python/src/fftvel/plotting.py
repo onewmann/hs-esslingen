@@ -26,7 +26,8 @@ def plot_estimate(bp, est: Estimate, frame=None, fig=None):
 
     if frame is not None:
         ax = fig.add_subplot(gs[0, 0])
-        ax.imshow(crop_square(np.asarray(frame, float)), cmap="gray")
+        frame = np.asarray(frame, float)
+        ax.imshow(crop_square(frame, min(est.n, *frame.shape)), cmap="gray")
         ax.set_title("Single exposure")
         ax.axis("off")
         ax_bp, ax_spec, ax_txt = fig.add_subplot(gs[0, 1]), fig.add_subplot(gs[0, 2]), fig.add_subplot(gs[1, 2])
@@ -35,8 +36,8 @@ def plot_estimate(bp, est: Estimate, frame=None, fig=None):
         ax_bp, ax_spec, ax_txt = fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[0, 1]), fig.add_subplot(gs[0, 2])
         ax_wr, ax_prof = fig.add_subplot(gs[1, 0]), fig.add_subplot(gs[1, 1:])
 
-    ax_bp.imshow(crop_square(np.asarray(bp, float)), cmap="gray")
-    ax_bp.set_title(f"Pulsed image ({2 * est.L + 1} exposures)")
+    ax_bp.imshow(np.asarray(crop_square(bp, est.n), float), cmap="gray")    # the analysed square
+    ax_bp.set_title(f"Pulsed image ({est.exposures} exposures)")
     ax_bp.axis("off")
 
     S = d["spectrum"]

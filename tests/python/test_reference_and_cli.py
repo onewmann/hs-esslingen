@@ -29,7 +29,7 @@ def test_cli_simulate(capsys, tmp_path):
 def test_cli_estimate_mat(repo, capsys):
     # bp01 of the parity cases is a pulsed image with v = (3, -2)
     path = repo / "tests" / "parity" / "cases.mat"
-    assert main(["estimate", str(path), "--var", "bp01"]) == 0
+    assert main(["estimate", str(path), "--var", "bp01", "--L", "4"]) == 0
     out = capsys.readouterr().out
     assert '"valid": true' in out
 
