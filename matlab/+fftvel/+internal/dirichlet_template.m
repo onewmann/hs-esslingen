@@ -26,6 +26,7 @@ function T = dirichlet_template(jpos, v, L, npad, n, angle_deg, K, duty)
     if nargin < 8
         duty = 0;
     end
+    cst = fftvel.internal.constants();
     jpos = jpos(:);
     v = v(:).';
     c = abs(cosd(angle_deg));
@@ -43,7 +44,7 @@ function T = dirichlet_template(jpos, v, L, npad, n, angle_deg, K, duty)
         sc(nz) = sin(pi*x(nz))./(pi*x(nz));
         P = P .* sc.^2;
     end
-    T = 0.5*log(P + 1e-3);
+    T = 0.5*log(P + cst.TEMPLATE_FLOOR);
 end
 
 function r = window_autocorr(tau, n)

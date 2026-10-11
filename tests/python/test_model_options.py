@@ -8,7 +8,8 @@ import pytest
 from scipy.io import loadmat
 from scipy.signal import fftconvolve
 
-from fftvel import angle_difference, crop_square, estimate_velocity, pulsed_from_stack, simulate_pulsed_image
+from fftvel import angle_difference, estimate_velocity, pulsed_from_stack, simulate_pulsed_image
+from fftvel.core import crop_square
 
 
 @pytest.fixture(scope="module")

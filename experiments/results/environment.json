@@ -1,0 +1,13 @@
+{
+  "date_utc": "2026-10-11T18:25:10+00:00",
+  "platform": "Linux-6.18.44-fc-v114-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "processor": "x86_64",
+  "cpu_count": 4,
+  "python": "3.13.16",
+  "python_implementation": "CPython",
+  "numpy": "2.5.3",
+  "fftvel": "0.1.0",
+  "scipy": "1.18.1",
+  "octave_version": "8.4.0"
+}

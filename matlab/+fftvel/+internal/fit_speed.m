@@ -30,24 +30,28 @@ function [speed, quality, fit] = fit_speed(g, jpos, L, npad, n, angle_deg, K, du
     if nargin < 8
         duty = 0;
     end
-    step = 0.005;
+    c = fftvel.internal.constants();
+    step = c.SPEED_STEP;
     jpos = jpos(:);
     g = g(:);
-    vmin = 1.5*npad/(K*max(jpos));
-    vmax = npad/4;
+    vmin = c.VMIN_FACTOR*npad/(K*max(jpos));
+    vmax = npad/c.MIN_LINE_SPACING;
     nv = floor((log(vmax) - log(vmin))/step) + 1;
-    kext = floor(log(4)/step);
+    kext = floor(log(c.GUARD_FACTOR)/step);
     v = exp(log(vmin) + (-kext:nv-1)*step);
 
     T = fftvel.internal.dirichlet_template(jpos, v, L, npad, n, angle_deg, K, duty);
     x = jpos/max(jpos);
-    X = [x.^3, x.^2, x, ones(size(x))];
+    X = zeros(numel(x), c.TREND_DEGREE + 1);     % cubic: [x.^3, x.^2, x, 1]
+    for p = 0:c.TREND_DEGREE
+        X(:, c.TREND_DEGREE + 1 - p) = x.^p;
+    end
     [Q, R] = qr(X, 0); %#ok<ASGLU>
     gp = g - Q*(Q.'*g);
     Tp = T - Q*(Q.'*T);
     tn = sqrt(sum(Tp.^2, 1));
     score = (gp.'*Tp) ./ (norm(gp)*tn + realmin);
-    score(tn <= 1e-6*sqrt(sum(T.^2, 1))) = 0;       % flat model: no information
+    score(tn <= c.FLAT_MODEL*sqrt(sum(T.^2, 1))) = 0;      % flat model: no information
 
     [quality, k] = max(score);
     dk = fftvel.internal.parabolic_offset(score, k, false);

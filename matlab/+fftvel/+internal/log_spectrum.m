@@ -15,8 +15,9 @@ function [S, n, npad] = log_spectrum(bp, pad_factor, roi, clip_outliers)
 %   CLIP_OUTLIERS true first sets the pixels more than 6 robust standard
 %   deviations (1.4826*MAD) from the median to the median.
 
+    c = fftvel.internal.constants();
     if nargin < 2
-        pad_factor = 2;
+        pad_factor = c.DEFAULT_PAD_FACTOR;
     end
     if nargin < 3
         roi = [];
@@ -36,17 +37,17 @@ function [S, n, npad] = log_spectrum(bp, pad_factor, roi, clip_outliers)
         'log_spectrum:clip');
     x = double(fftvel.internal.crop_square(bp, side));
     n = size(x, 1);
-    if n < 16
-        error('log_spectrum:size', 'Image must be at least 16x16 pixels.');
+    if n < c.MIN_SIZE
+        error('log_spectrum:size', 'Image must be at least %dx%d pixels.', c.MIN_SIZE, c.MIN_SIZE);
     end
     if any(~isfinite(x(:)))
         error('log_spectrum:finite', 'Image contains NaN or Inf values.');
     end
     if clip_outliers
         med = median(x(:));
-        s = 1.4826*median(abs(x(:) - med));
+        s = c.MAD_SCALE*median(abs(x(:) - med));
         if s > 0
-            x(abs(x - med) > 6*s) = med;
+            x(abs(x - med) > c.CLIP_SIGMA*s) = med;
         end
     end
     npad = pad_factor*n;
@@ -54,12 +55,12 @@ function [S, n, npad] = log_spectrum(bp, pad_factor, roi, clip_outliers)
     w = fftvel.internal.hann_window(n);
     B = fftshift(fft2(x .* (w*w.'), npad, npad));
     A = abs(B);
-    fl = 0.05*median(A(:));
+    fl = c.LOG_FLOOR*median(A(:));
     if fl <= 0
-        fl = 0.05*mean(A(:));
+        fl = c.LOG_FLOOR*mean(A(:));
     end
     if fl <= 0
-        fl = 1;          % blank image: flat spectrum, the estimate comes out not valid
+        fl = c.BLANK_FLOOR;      % blank image: flat spectrum, the estimate comes out not valid
     end
     S = log(A + fl);
 end

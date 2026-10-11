@@ -24,28 +24,65 @@ from typing import Optional
 
 import numpy as np
 
+# Public names; the helpers below (log_spectrum, mean_projection, ripple_profile,
+# fit_speed, null_quality, dirichlet_template, parabolic_offset, hann_window,
+# crop_square) are imported from fftvel.core by the tests and experiments.
 __all__ = [
     "Estimate",
+    "PhysicalVelocity",
     "angle_difference",
     "estimate_velocity",
-    "log_spectrum",
-    "mean_projection",
-    "ripple_profile",
-    "fit_speed",
-    "null_quality",
-    "dirichlet_template",
-    "parabolic_offset",
-    "hann_window",
-    "crop_square",
     "pulsed_from_stack",
+    "to_physical",
 ]
 
-RFRAC = 0.9          # fraction of the spectrum radius used for WR and the fit
-SPEED_STEP = 0.005   # step of the logarithmic speed grid
-ISO_GAP = 0.15       # isotropic if quality - quality_perp is below this ...
-ISO_LOG_SPEED = 0.12  # ... and |log(speed_perp/speed)| is below this
-CLIP_SIGMA = 6       # clip_outliers: robust standard deviations from the median
-FLAT_MODEL = 1e-6    # fit_speed: score 0 where the detrended model is below this fraction of the model
+# Numeric constants of the algorithm. tests/constants.json holds the same names
+# and values with the meaning of each, and matlab/+fftvel/+internal/constants.m
+# returns them in MATLAB; tests in both languages check all three against each
+# other. Every upper-case number or tuple of numbers in this module must be
+# listed there.
+
+# Defaults of estimate_velocity
+DEFAULT_L = 4                # half the number of exposures, K = 2L+1 = 9
+DEFAULT_PAD_FACTOR = 2       # zero padding factor of the FFT
+DEFAULT_MIN_QUALITY = 0.6    # lowest fit quality accepted for valid
+
+# Input checks
+MIN_SIZE = 16                # smallest analysed square (and roi) in px
+MIN_EXPOSURES = 2            # smallest number of exposures K
+
+# Log spectrum
+LOG_FLOOR = 0.05             # S = log(|B| + LOG_FLOOR*median|B|), mean|B| if the median is 0
+BLANK_FLOOR = 1.0            # floor instead when |B| is 0 everywhere (blank image)
+CLIP_SIGMA = 6               # clip_outliers: robust standard deviations from the median ...
+MAD_SCALE = 1.4826           # ... with robust standard deviation = MAD_SCALE * MAD
+
+# Direction
+ANGLE_STEP = 1.0             # angle grid 0, ANGLE_STEP, ..., 180 - ANGLE_STEP degrees
+RFRAC = 0.9                  # fraction of the spectrum radius used for WR and the fit
+WEIGHT_FLOOR = 1e-12         # mean_projection: lower bound of the bin weights (empty bins)
+
+# Speed
+PROFILE_START = 2            # first bin of the half profile used for the speed fit
+SPEED_STEP = 0.005           # step of the logarithmic speed grid
+VMIN_FACTOR = 1.5            # vmin = VMIN_FACTOR*npad/(K*max(jpos)): first zero well inside the profile
+MIN_LINE_SPACING = 4         # vmax = npad/MIN_LINE_SPACING: motion lines at least this many bins apart
+GUARD_FACTOR = 4             # the speed grid extends down to vmin/GUARD_FACTOR (guard band)
+TREND_DEGREE = 3             # degree of the polynomial in jpos that absorbs the texture spectrum
+TEMPLATE_FLOOR = 1e-3        # dirichlet_template returns 0.5*log(P + TEMPLATE_FLOOR)
+FLAT_MODEL = 1e-6            # fit_speed: score 0 where the detrended model is below this fraction of the model
+
+# Validity
+NULL_K = 9                   # null_quality(m) = tanh(NULL_K/sqrt(m - NULL_OFFSET)) ...
+NULL_OFFSET = 5              # ... with TREND_DEGREE + 1 points taken by the polynomial, 1 by the fit
+INDEPENDENT_PAD = 2          # m = min(points, floor(INDEPENDENT_PAD*n*points/npad)) independent points
+ISO_GAP = 0.15               # isotropic if quality - quality_perp is below this ...
+ISO_LOG_SPEED = 0.12         # ... and |log(speed_perp/speed)| is below this
+
+# Simulation (simulate.py) and grey conversion of colour input
+SIM_MARGIN = 32              # extra texture size in px beyond n + (K-1+duty)*max|v|
+DEFAULT_CORR_LEN = 1.5       # correlation length of the random texture in px
+GREY_WEIGHTS = (0.2989, 0.5870, 0.1140)    # R, G, B weights of MATLAB rgb2gray
 
 
 @dataclass
@@ -99,13 +136,14 @@ class Estimate:
 
 _KINDS = {
     "positive": "a positive integer",
-    "exposures": "an integer of at least 2",
-    "roi": "an integer of at least 16 (px)",
+    "exposures": f"an integer of at least {MIN_EXPOSURES}",
+    "roi": f"an integer of at least {MIN_SIZE} (px)",
     "unit": "a finite real number in [0, 1]",
     "duty": "a finite real number in [0, 1)",
     "flag": "true or false",
+    "positive_real": "a finite real number > 0",
 }
-_LOWEST = {"positive": 1, "exposures": 2, "roi": 16}
+_LOWEST = {"positive": 1, "exposures": MIN_EXPOSURES, "roi": MIN_SIZE}
 
 
 def _check_option(x, name: str, kind: str):
@@ -141,6 +179,8 @@ def _check_option(x, name: str, kind: str):
                 ok = 0 <= v <= 1
             elif kind == "duty":
                 ok = 0 <= v < 1
+            elif kind == "positive_real":
+                ok = bool(np.isfinite(v)) and v > 0
             else:
                 ok = bool(np.isfinite(v)) and v == np.floor(v) and v >= _LOWEST[kind]
             if ok:
@@ -194,7 +234,7 @@ def crop_square(img: np.ndarray, n: Optional[int] = None) -> np.ndarray:
     return img[r0:r0 + n, c0:c0 + n]
 
 
-def pulsed_from_stack(frames, L: Optional[int] = None, exposures: Optional[int] = None,
+def pulsed_from_stack(frames, *, L: Optional[int] = None, exposures: Optional[int] = None,
                       axis: int = -1):
     """Pulsed-exposure image from a stack of single exposures (video frames).
 
@@ -204,6 +244,7 @@ def pulsed_from_stack(frames, L: Optional[int] = None, exposures: Optional[int] 
     frames as a 2-D float image, and ``K``. ``K`` is ``exposures`` if given,
     else ``2L+1`` if ``L`` is given, else the number of frames, which must
     then be odd. Pass ``K`` on as ``estimate_velocity(bp, exposures=K)``.
+    All arguments after ``frames`` are keyword-only.
     """
     a = np.asarray(frames)
     shape = a.shape
@@ -232,7 +273,7 @@ def pulsed_from_stack(frames, L: Optional[int] = None, exposures: Optional[int] 
     return a[:, :, :K].astype(float).mean(axis=2), K
 
 
-def log_spectrum(bp: np.ndarray, pad_factor: int = 2, roi: Optional[int] = None,
+def log_spectrum(bp: np.ndarray, pad_factor: int = DEFAULT_PAD_FACTOR, roi: Optional[int] = None,
                  clip_outliers: bool = False):
     """Centred log-magnitude spectrum of the windowed, mean-free image.
 
@@ -253,13 +294,13 @@ def log_spectrum(bp: np.ndarray, pad_factor: int = 2, roi: Optional[int] = None,
             side = min(roi, *img.shape)
     x = np.asarray(crop_square(img, side), dtype=float)     # converts only the crop; no copy for float
     n = x.shape[0]
-    if n < 16:
-        raise ValueError("image must be at least 16x16 pixels")
+    if n < MIN_SIZE:
+        raise ValueError(f"image must be at least {MIN_SIZE}x{MIN_SIZE} pixels")
     if not np.all(np.isfinite(x)):
         raise ValueError("image contains NaN or Inf values")
     if _check_option(clip_outliers, "clip_outliers", "flag"):
         med = np.median(x)
-        s = 1.4826 * np.median(np.abs(x - med))
+        s = MAD_SCALE * np.median(np.abs(x - med))
         if s > 0:
             x = np.where(np.abs(x - med) > CLIP_SIGMA * s, med, x)
     npad = pad_factor * n
@@ -267,11 +308,11 @@ def log_spectrum(bp: np.ndarray, pad_factor: int = 2, roi: Optional[int] = None,
     w = hann_window(n)
     B = np.fft.fftshift(np.fft.fft2(x * np.outer(w, w), (npad, npad)))
     A = np.abs(B)
-    fl = 0.05 * np.median(A)
+    fl = LOG_FLOOR * np.median(A)
     if fl <= 0:
-        fl = 0.05 * A.mean()
+        fl = LOG_FLOOR * A.mean()
     if fl <= 0:
-        fl = 1.0         # blank image: flat spectrum, the estimate comes out not valid
+        fl = BLANK_FLOOR     # blank image: flat spectrum, the estimate comes out not valid
     S = np.log(A + fl)
     return S, n, npad
 
@@ -316,7 +357,7 @@ def mean_projection(S: np.ndarray, theta_deg, rmax: int):
         if not have_C:
             cnt = np.bincount(b, 1 - f, nb) + np.bincount(b + 1, f, nb)
             C[:, a] = cnt[1:-1]
-        M[:, a] = acc[1:-1] / np.maximum(C[:, a], 1e-12)
+        M[:, a] = acc[1:-1] / np.maximum(C[:, a], WEIGHT_FLOOR)
     if not have_C and theta.size > 1:     # keep the full angle grid, not single-angle calls
         _count_cache.clear()
         _count_cache[key] = C
@@ -391,7 +432,7 @@ def dirichlet_template(jpos: np.ndarray, v: np.ndarray, L: int, npad: int, n: in
     P = np.maximum(P / K**2, 0)
     if duty > 0:
         P = P * np.sinc(jpos * v * duty / npad) ** 2
-    return 0.5 * np.log(P + 1e-3)
+    return 0.5 * np.log(P + TEMPLATE_FLOOR)
 
 
 def fit_speed(g: np.ndarray, jpos: np.ndarray, L: int, npad: int, n: int, angle_deg: float,
@@ -415,15 +456,15 @@ def fit_speed(g: np.ndarray, jpos: np.ndarray, L: int, npad: int, n: int, angle_
     jpos = np.asarray(jpos, dtype=float).ravel()
     g = np.asarray(g, dtype=float).ravel()
     K = 2 * L + 1 if exposures is None else int(exposures)
-    vmin = 1.5 * npad / (K * jpos.max())
-    vmax = npad / 4
+    vmin = VMIN_FACTOR * npad / (K * jpos.max())
+    vmax = npad / MIN_LINE_SPACING
     nv = int(np.floor((np.log(vmax) - np.log(vmin)) / SPEED_STEP)) + 1
-    kext = int(np.floor(np.log(4) / SPEED_STEP))
+    kext = int(np.floor(np.log(GUARD_FACTOR) / SPEED_STEP))
     v = np.exp(np.log(vmin) + np.arange(-kext, nv) * SPEED_STEP)
 
     T = dirichlet_template(jpos, v, L, npad, n, angle_deg, K, duty)
     x = jpos / jpos.max()
-    X = np.column_stack([x**3, x**2, x, np.ones_like(x)])
+    X = np.column_stack([x**p for p in range(TREND_DEGREE, -1, -1)])     # cubic: x**3, x**2, x, 1
     Q, _ = np.linalg.qr(X)
     gp = g - Q @ (Q.T @ g)
     Tp = T - Q @ (Q.T @ T)
@@ -450,13 +491,14 @@ def null_quality(m: int) -> float:
     random and camera textures, 32 to 256 px, L = 1 to 10, ``pad_factor``
     2) the largest value was ``tanh(8.6/sqrt(m-5))``; 9 adds a margin.
     """
-    return float("inf") if m <= 5 else float(np.tanh(9 / np.sqrt(m - 5)))
+    return float("inf") if m <= NULL_OFFSET else float(np.tanh(NULL_K / np.sqrt(m - NULL_OFFSET)))
 
 
-def estimate_velocity(bp, L: int = 4, pad_factor: int = 2, min_quality: float = 0.6,
-                      diagnostics: bool = False, *, exposures: Optional[int] = None,
+def estimate_velocity(bp, *, L: int = DEFAULT_L, exposures: Optional[int] = None,
                       duty: float = 0.0, roi: Optional[int] = None,
-                      clip_outliers: bool = False) -> Estimate:
+                      clip_outliers: bool = False, pad_factor: int = DEFAULT_PAD_FACTOR,
+                      min_quality: float = DEFAULT_MIN_QUALITY,
+                      diagnostics: bool = False) -> Estimate:
     """Estimate direction and speed of the motion in a pulsed-exposure image.
 
     Parameters
@@ -468,14 +510,7 @@ def estimate_velocity(bp, L: int = 4, pad_factor: int = 2, min_quality: float = 
         (see :func:`pulsed_from_stack`). Non-square images are cropped to the
         central square, never resized.
     L : int
-        Half the number of exposures.
-    pad_factor : int
-        Zero padding factor of the FFT.
-    min_quality : float
-        Lowest fit quality accepted for ``valid``, in ``[0, 1]``; small images
-        need more (see ``Estimate.threshold``).
-    diagnostics : bool
-        Keep intermediate results in ``Estimate.diag`` (needed for plotting).
+        Half the number of exposures; default 4 (9 exposures).
     exposures : int, optional
         Exact number of exposures (flashes) ``K >= 2``, also even; default
         ``2L+1``. Overrides ``L`` for the model. For slow motion a wrong
@@ -493,8 +528,19 @@ def estimate_velocity(bp, L: int = 4, pad_factor: int = 2, min_quality: float = 
         Set pixels more than 6 robust standard deviations (``1.4826*MAD``)
         from the median to the median before the FFT, against static bright
         spots such as glints or hot pixels. Default False.
+    pad_factor : int
+        Zero padding factor of the FFT; default 2.
+    min_quality : float
+        Lowest fit quality accepted for ``valid``, in ``[0, 1]``; default
+        0.6. Small images need more (see ``Estimate.threshold``).
+    diagnostics : bool
+        Keep intermediate results in ``Estimate.diag`` (needed for plotting).
+        Default False.
 
-    All options are checked; invalid values raise ValueError.
+    All arguments after ``bp`` are keyword-only, e.g.
+    ``estimate_velocity(bp, L=4)``. All options are checked; invalid values
+    raise ValueError. :func:`to_physical` converts the result to length
+    units per second.
     """
     L = _check_option(L, "L", "positive")
     K = 2 * L + 1 if exposures is None else _check_option(exposures, "exposures", "exposures")
@@ -508,16 +554,16 @@ def estimate_velocity(bp, L: int = 4, pad_factor: int = 2, min_quality: float = 
     S, n, npad = log_spectrum(bp, pad_factor, roi, clip_outliers)
     rmax = npad // 2 - 1
 
-    theta = np.arange(180, dtype=float)
+    theta = np.arange(0, 180, ANGLE_STEP)
     M, j, _ = mean_projection(S, theta, rmax)
     wr = ripple_profile(M, j, RFRAC)
     i = int(np.argmax(wr))
-    angle = float((theta[i] + parabolic_offset(wr, i, periodic=True)) % 180)
+    angle = float((theta[i] + ANGLE_STEP * parabolic_offset(wr, i, periodic=True)) % 180)
     geba = float(wr[i] / wr.mean()) if wr.mean() > 0 else 1.0   # 1: no ripple at all
 
     m, _, _ = mean_projection(S, [angle], rmax)
     m = m[:, 0]
-    pos = (j >= 2) & (j <= RFRAC * rmax)
+    pos = (j >= PROFILE_START) & (j <= RFRAC * rmax)
     g = 0.5 * (m[pos] + m[::-1][pos])
     jpos = j[pos]
     speed, quality, fit = fit_speed(g, jpos, L, npad, n, angle, K, duty)
@@ -533,7 +579,7 @@ def estimate_velocity(bp, L: int = 4, pad_factor: int = 2, min_quality: float = 
 
     a = np.deg2rad(angle)
     npts = jpos.size
-    m_eff = min(npts, (2 * n * npts) // npad)       # independent points: padding interpolates
+    m_eff = min(npts, (INDEPENDENT_PAD * n * npts) // npad)    # independent points: padding interpolates
     threshold = max(min_quality, null_quality(m_eff))
     est = Estimate(
         angle_deg=angle,
@@ -565,3 +611,58 @@ def estimate_velocity(bp, L: int = 4, pad_factor: int = 2, min_quality: float = 
             "speed_perp": speed_perp,
         }
     return est
+
+
+@dataclass(frozen=True)
+class PhysicalVelocity:
+    """Result of :func:`to_physical`: the velocity in length units per second.
+
+    Attributes
+    ----------
+    speed : ``|v|`` in the length unit of ``gsd`` per second (mm/s for
+        ``gsd`` in mm per px).
+    vx, vy : velocity in image coordinates (x along columns, y along rows
+        pointing down) in the same unit; ``-(vx, vy)`` is equally possible.
+    angle_deg : direction as in ``Estimate.angle_deg``, unchanged.
+    """
+
+    speed: float
+    vx: float
+    vy: float
+    angle_deg: float
+
+
+def to_physical(est, gsd: float, period: float) -> PhysicalVelocity:
+    """Velocity in length units per second from an estimate in pixels per step.
+
+    ``gsd`` is the ground sample distance, the length on the moving surface
+    that one pixel covers (for example mm per px, measured from an image of
+    a ruler or a checkerboard in the plane of the surface). ``period`` is the
+    time step in seconds: the time between two flashes for a multi-flash
+    image, or between two frames for averaged frames. Then::
+
+        speed = est.speed * gsd / period
+
+    and ``vx``, ``vy`` likewise, in the length unit of ``gsd`` per second.
+    ``est`` is an :class:`Estimate` or any object with the attributes
+    ``speed``, ``vx``, ``vy`` and ``angle_deg``. It is converted whether or
+    not it is valid, so check ``est.valid`` first. ``gsd`` and ``period``
+    must be finite and greater than 0 (ValueError otherwise). Same as
+    ``fftvel.to_physical`` in MATLAB.
+
+    >>> e = Estimate(90.0, 2.5, 0.0, -2.5, 3.0, 0.99, 0.5, True, False, 0.7, True, 4, 9, 256, 512)
+    >>> to_physical(e, gsd=0.04, period=0.001).speed      # 2.5 px * 0.04 mm/px / 1 ms
+    100.0
+    """
+    gsd = _check_option(gsd, "gsd", "positive_real")
+    period = _check_option(period, "period", "positive_real")
+    missing = [k for k in ("speed", "vx", "vy", "angle_deg") if not hasattr(est, k)]
+    if missing:
+        raise TypeError(f"est must be a result of estimate_velocity (an Estimate); "
+                        f"{type(est).__name__} has no {', '.join(missing)}")
+    return PhysicalVelocity(
+        speed=float(est.speed * gsd / period),
+        vx=float(est.vx * gsd / period),
+        vy=float(est.vy * gsd / period),
+        angle_deg=float(est.angle_deg),
+    )

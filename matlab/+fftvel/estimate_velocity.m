@@ -76,12 +76,18 @@ function est = estimate_velocity(bp, varargin)
 %   Non-square images are cropped to the central square. They are never
 %   resized, so the speed stays in camera pixels.
 %
-%   See also fftvel.pulsed_from_stack, fftvel.simulate_pulsed_image,
-%   fftvel.plot_estimate, fftvel.angle_difference.
+%   fftvel.to_physical converts EST to length units per second. The
+%   defaults and all other numeric constants of the method are listed in
+%   fftvel.internal.constants (and in tests/constants.json).
+%
+%   See also fftvel.to_physical, fftvel.pulsed_from_stack,
+%   fftvel.simulate_pulsed_image, fftvel.plot_estimate,
+%   fftvel.angle_difference.
 
-    opts = fftvel.internal.parse_options(varargin, struct('L', 4, 'Exposures', [], 'Duty', 0, ...
-        'ROI', [], 'PadFactor', 2, 'MinQuality', 0.6, 'ClipOutliers', false, ...
-        'Diagnostics', false));
+    c = fftvel.internal.constants();
+    opts = fftvel.internal.parse_options(varargin, struct('L', c.DEFAULT_L, 'Exposures', [], ...
+        'Duty', 0, 'ROI', [], 'PadFactor', c.DEFAULT_PAD_FACTOR, 'MinQuality', ...
+        c.DEFAULT_MIN_QUALITY, 'ClipOutliers', false, 'Diagnostics', false));
     L = fftvel.internal.check_option(opts.L, 'L', 'positive', 'estimate_velocity:L');
     if isempty(opts.Exposures)
         K = 2*L + 1;
@@ -105,14 +111,14 @@ function est = estimate_velocity(bp, varargin)
 
     [S, n, npad] = fftvel.internal.log_spectrum(bp, pad, roi, clip);
     rmax = floor(npad/2) - 1;
-    rfrac = 0.9;
+    rfrac = c.RFRAC;
 
     % Direction: maximum of the ripple profile WR(theta)
-    theta = 0:179;
+    theta = 0:c.ANGLE_STEP:180 - c.ANGLE_STEP;
     [M, j] = fftvel.internal.mean_projection(S, theta, rmax);
     wr = fftvel.internal.ripple_profile(M, j, rfrac);
     [wrmax, i] = max(wr);
-    angle = mod(theta(i) + fftvel.internal.parabolic_offset(wr, i, true), 180);
+    angle = mod(theta(i) + c.ANGLE_STEP*fftvel.internal.parabolic_offset(wr, i, true), 180);
     if mean(wr) > 0
         geba = wrmax / mean(wr);
     else
@@ -121,7 +127,7 @@ function est = estimate_velocity(bp, varargin)
 
     % Speed: fit the Dirichlet model to the projection along that direction
     m = fftvel.internal.mean_projection(S, angle, rmax);
-    pos = j >= 2 & j <= rfrac*rmax;
+    pos = j >= c.PROFILE_START & j <= rfrac*rmax;
     mf = flipud(m);
     g = 0.5*(m(pos) + mf(pos));
     jpos = j(pos);
@@ -133,11 +139,11 @@ function est = estimate_velocity(bp, varargin)
     mpf = flipud(mp);
     [speed_perp, quality_perp] = fftvel.internal.fit_speed(0.5*(mp(pos) + mpf(pos)), jpos, L, ...
         npad, n, ap, K, duty);
-    isotropic = quality - quality_perp < 0.15 && abs(log(speed_perp/speed)) < 0.12;
+    isotropic = quality - quality_perp < c.ISO_GAP && abs(log(speed_perp/speed)) < c.ISO_LOG_SPEED;
 
     % Independent profile points: zero padding beyond 2 only interpolates
     npts = numel(jpos);
-    m_eff = min(npts, floor(2*n*npts/npad));
+    m_eff = min(npts, floor(c.INDEPENDENT_PAD*n*npts/npad));
 
     est = struct();
     est.angle_deg = angle;
@@ -149,7 +155,7 @@ function est = estimate_velocity(bp, varargin)
     est.quality_perp = quality_perp;
     est.in_range = fit.in_range;
     est.isotropic = isotropic;
-    est.threshold = max(min_quality, null_quality(m_eff));
+    est.threshold = max(min_quality, null_quality(m_eff, c));
     est.valid = quality >= est.threshold && fit.in_range && ~isotropic;
     est.L = L;
     est.exposures = K;
@@ -170,17 +176,19 @@ function est = estimate_velocity(bp, varargin)
     end
 end
 
-function q = null_quality(m)
+function q = null_quality(m, c)
 %NULL_QUALITY  Fit quality that images without motion stay below.
+%   Q = NULL_QUALITY(M, C) with C from fftvel.internal.constants is
+%   tanh(C.NULL_K/sqrt(M - C.NULL_OFFSET)), that is tanh(9/sqrt(M-5)).
 %   Under the null hypothesis the Fisher transform atanh(q) of the best
 %   correlation scales with 1/sqrt(m-5) for a profile of m independent
 %   points (four are taken by the cubic, one by the fit). On 1008 images
 %   without motion (white noise, random and camera textures, 32 to 256 px,
 %   L = 1 to 10, PadFactor 2) the largest value was tanh(8.6/sqrt(m-5));
 %   9 adds a margin.
-    if m <= 5
+    if m <= c.NULL_OFFSET
         q = Inf;
     else
-        q = tanh(9/sqrt(m - 5));
+        q = tanh(c.NULL_K/sqrt(m - c.NULL_OFFSET));
     end
 end

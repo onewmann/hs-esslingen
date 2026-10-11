@@ -29,6 +29,8 @@ function [M, j, C] = mean_projection(S, theta_deg, rmax)
     nb = 2*rmax + 3;                   % bins -rmax-1 .. rmax+1
     na = numel(theta_deg);
 
+    cst = fftvel.internal.constants();
+    wfloor = cst.WEIGHT_FLOOR;
     key = [npad, rmax, theta_deg(:).'];
     have_C = isequal(key, cache_key);
     if have_C
@@ -49,7 +51,7 @@ function [M, j, C] = mean_projection(S, theta_deg, rmax)
             cnt = accumarray(b, 1 - f, [nb 1]) + accumarray(b + 1, f, [nb 1]);
             C(:, a) = cnt(2:end-1);
         end
-        M(:, a) = acc(2:end-1) ./ max(C(:, a), 1e-12);
+        M(:, a) = acc(2:end-1) ./ max(C(:, a), wfloor);
     end
     if ~have_C && na > 1          % keep the full angle grid, not single-angle calls
         cache_key = key;

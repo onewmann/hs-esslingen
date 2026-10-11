@@ -1,0 +1,149 @@
+{
+  "description": "Numeric constants of the estimator and the simulator, shared by the Python package (module constants of python/src/fftvel/core.py) and the MATLAB/Octave package (matlab/+fftvel/+internal/constants.m). tests/python/test_constants.py and tests/matlab/test_constants.m check that both implementations hold exactly these names and values. Change a value in all three places at once and regenerate the parity cases (tests/parity/make_cases.py).",
+  "constants": {
+    "DEFAULT_L": {
+      "value": 4,
+      "meaning": "Default L: half the number of exposures, K = 2L+1 = 9.",
+      "used_in": "estimate_velocity, stream (Python), command line (simulate)"
+    },
+    "DEFAULT_PAD_FACTOR": {
+      "value": 2,
+      "meaning": "Default zero padding factor of the FFT: npad = pad_factor * n.",
+      "used_in": "estimate_velocity, log_spectrum"
+    },
+    "DEFAULT_MIN_QUALITY": {
+      "value": 0.6,
+      "meaning": "Default lowest fit quality accepted for valid (min_quality / MinQuality).",
+      "used_in": "estimate_velocity, stream (Python)"
+    },
+    "MIN_SIZE": {
+      "value": 16,
+      "meaning": "Smallest side of the analysed square, and smallest roi, in px.",
+      "used_in": "log_spectrum, option checks, command line (--roi)"
+    },
+    "MIN_EXPOSURES": {
+      "value": 2,
+      "meaning": "Smallest number of exposures K accepted by the exposures option.",
+      "used_in": "option checks, command line (--exposures)"
+    },
+    "LOG_FLOOR": {
+      "value": 0.05,
+      "meaning": "Floor of the log spectrum as a fraction of the median of |B|: S = log(|B| + LOG_FLOOR*median|B|); the mean of |B| replaces the median if the median is 0. Keeps S independent of the image scale.",
+      "used_in": "log_spectrum"
+    },
+    "BLANK_FLOOR": {
+      "value": 1.0,
+      "meaning": "Floor used instead when |B| is 0 everywhere (blank image); the estimate then comes out not valid.",
+      "used_in": "log_spectrum"
+    },
+    "CLIP_SIGMA": {
+      "value": 6,
+      "meaning": "clip_outliers: pixels more than CLIP_SIGMA robust standard deviations from the median are set to the median.",
+      "used_in": "log_spectrum"
+    },
+    "MAD_SCALE": {
+      "value": 1.4826,
+      "meaning": "Robust standard deviation = MAD_SCALE * median absolute deviation (1.4826 for normal noise).",
+      "used_in": "log_spectrum"
+    },
+    "ANGLE_STEP": {
+      "value": 1.0,
+      "meaning": "Step of the angle grid in degrees: 0, ANGLE_STEP, ..., 180 - ANGLE_STEP (0..179). The maximum of WR is refined by a parabola through three neighbouring angles (periodic); the speed maximum likewise on the speed grid.",
+      "used_in": "estimate_velocity"
+    },
+    "RFRAC": {
+      "value": 0.9,
+      "meaning": "Fraction of the spectrum radius rmax = npad/2 - 1 used for the ripple profile WR and for the speed fit.",
+      "used_in": "estimate_velocity, ripple_profile"
+    },
+    "WEIGHT_FLOOR": {
+      "value": 1e-12,
+      "meaning": "Lower bound of the bin weights in the mean projection, so empty bins do not divide by 0.",
+      "used_in": "mean_projection"
+    },
+    "PROFILE_START": {
+      "value": 2,
+      "meaning": "First bin of the half profile used for the speed fit (bins 0 and 1 hold the peak at zero frequency).",
+      "used_in": "estimate_velocity"
+    },
+    "SPEED_STEP": {
+      "value": 0.005,
+      "meaning": "Step of the logarithmic speed grid: v(k+1)/v(k) = exp(SPEED_STEP).",
+      "used_in": "fit_speed"
+    },
+    "VMIN_FACTOR": {
+      "value": 1.5,
+      "meaning": "Lower end of the measurable range: vmin = VMIN_FACTOR*npad/(K*max(jpos)), where the first spectral zero still lies well inside the profile.",
+      "used_in": "fit_speed"
+    },
+    "MIN_LINE_SPACING": {
+      "value": 4,
+      "meaning": "Upper end of the measurable range: vmax = npad/MIN_LINE_SPACING, where the motion lines are this many bins apart.",
+      "used_in": "fit_speed"
+    },
+    "GUARD_FACTOR": {
+      "value": 4,
+      "meaning": "The speed grid extends down to vmin/GUARD_FACTOR as a guard band; a best speed there gives in_range = false.",
+      "used_in": "fit_speed"
+    },
+    "TREND_DEGREE": {
+      "value": 3,
+      "meaning": "Degree of the polynomial in jpos that absorbs the smooth texture spectrum before the correlation (cubic).",
+      "used_in": "fit_speed"
+    },
+    "TEMPLATE_FLOOR": {
+      "value": 0.001,
+      "meaning": "The Dirichlet template is 0.5*log(P + TEMPLATE_FLOOR).",
+      "used_in": "dirichlet_template"
+    },
+    "FLAT_MODEL": {
+      "value": 1e-06,
+      "meaning": "Speeds whose detrended template has a norm below FLAT_MODEL times the norm of the template score 0 (flat model, no information).",
+      "used_in": "fit_speed"
+    },
+    "NULL_K": {
+      "value": 9,
+      "meaning": "Null quality tanh(NULL_K/sqrt(m - NULL_OFFSET)): the largest quality on 1008 images without motion was tanh(8.6/sqrt(m-5)); 9 adds a margin.",
+      "used_in": "estimate_velocity (null_quality)"
+    },
+    "NULL_OFFSET": {
+      "value": 5,
+      "meaning": "Points taken from the m independent profile points: TREND_DEGREE + 1 by the polynomial and 1 by the fit; the threshold is infinite for m <= NULL_OFFSET.",
+      "used_in": "estimate_velocity (null_quality)"
+    },
+    "INDEPENDENT_PAD": {
+      "value": 2,
+      "meaning": "Independent profile points m = min(points, floor(INDEPENDENT_PAD*n*points/npad)): padding beyond this factor only interpolates and does not lower the threshold.",
+      "used_in": "estimate_velocity"
+    },
+    "ISO_GAP": {
+      "value": 0.15,
+      "meaning": "Isotropy check: isotropic if quality - quality_perp < ISO_GAP and ...",
+      "used_in": "estimate_velocity"
+    },
+    "ISO_LOG_SPEED": {
+      "value": 0.12,
+      "meaning": "... |log(speed_perp/speed)| < ISO_LOG_SPEED (defocus blur or a square repeating texture, not motion).",
+      "used_in": "estimate_velocity"
+    },
+    "SIM_MARGIN": {
+      "value": 32,
+      "meaning": "Simulator: the texture is at least n + (K-1+duty)*max|v| + SIM_MARGIN px in both directions.",
+      "used_in": "simulate_pulsed_image"
+    },
+    "DEFAULT_CORR_LEN": {
+      "value": 1.5,
+      "meaning": "Simulator: default correlation length of the random texture in px.",
+      "used_in": "make_texture, simulate_pulsed_image"
+    },
+    "GREY_WEIGHTS": {
+      "value": [
+        0.2989,
+        0.587,
+        0.114
+      ],
+      "meaning": "R, G, B weights of the conversion of colour images to grey (those of MATLAB rgb2gray).",
+      "used_in": "simulate_pulsed_image, stream.to_grey, command line"
+    }
+  }
+}

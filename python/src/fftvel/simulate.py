@@ -6,12 +6,12 @@ from typing import Optional, Sequence
 
 import numpy as np
 
-from .core import _check_option, crop_square
+from .core import DEFAULT_CORR_LEN, GREY_WEIGHTS, SIM_MARGIN, _check_option, crop_square
 
 __all__ = ["make_texture", "simulate_pulsed_image"]
 
 
-def make_texture(m: int, corr_len: float = 1.5, rng=None) -> np.ndarray:
+def make_texture(m: int, corr_len: float = DEFAULT_CORR_LEN, rng=None) -> np.ndarray:
     """Random periodic ``m``-by-``m`` texture with autocorrelation close to ``exp(-r/corr_len)``.
 
     White noise is shaped with the matching power spectrum
@@ -26,10 +26,10 @@ def make_texture(m: int, corr_len: float = 1.5, rng=None) -> np.ndarray:
     return (t - t.mean()) / t.std(ddof=1)
 
 
-def simulate_pulsed_image(n: int, v: Sequence[float], L: int, corr_len: float = 1.5,
-                          texture: Optional[np.ndarray] = None, noise: float = 0.0,
-                          rng=None, return_frames: bool = False, exposures: Optional[int] = None,
-                          duty: float = 0.0):
+def simulate_pulsed_image(n: int, v: Sequence[float], L: int, *,
+                          exposures: Optional[int] = None, duty: float = 0.0,
+                          texture: Optional[np.ndarray] = None, corr_len: float = DEFAULT_CORR_LEN,
+                          noise: float = 0.0, rng=None, return_frames: bool = False):
     """Mean of ``2L+1`` exposures of a texture moving by ``v`` per step under a fixed window.
 
     ``v = (vx, vy)`` in pixels per step, x along columns, y along rows
@@ -49,6 +49,10 @@ def simulate_pulsed_image(n: int, v: Sequence[float], L: int, corr_len: float = 
     in ``[0, 1)``: the texture also moves during each exposure (box blur of
     ``duty*|v|`` pixels along ``v``). Default 0: instantaneous exposures.
 
+    ``corr_len`` is the correlation length of the random texture in px
+    (default 1.5, see :func:`make_texture`); ``rng`` seeds it and the noise.
+    All arguments after ``L`` are keyword-only.
+
     Returns ``bp`` or ``(bp, frames)`` with ``frames`` of shape ``(n, n, K)``.
     """
     rng = np.random.default_rng(rng)
@@ -56,14 +60,15 @@ def simulate_pulsed_image(n: int, v: Sequence[float], L: int, corr_len: float = 
     K = 2 * L + 1 if exposures is None else _check_option(exposures, "exposures", "exposures")
     duty = _check_option(duty, "duty", "duty")
     vx, vy = float(v[0]), float(v[1])
-    margin = ((K - 1) + duty) * max(abs(vx), abs(vy)) + 32
+    margin = ((K - 1) + duty) * max(abs(vx), abs(vy)) + SIM_MARGIN
     if texture is None:
         m = int(2 ** np.ceil(np.log2(n + margin)))
         tex = make_texture(m, corr_len, rng)
     else:
         tex = np.asarray(texture, dtype=float)
         if tex.ndim == 3 and tex.shape[2] in (3, 4):      # RGB(A) -> grey, MATLAB rgb2gray weights
-            tex = 0.2989 * tex[:, :, 0] + 0.5870 * tex[:, :, 1] + 0.1140 * tex[:, :, 2]
+            cr, cg, cb = GREY_WEIGHTS
+            tex = cr * tex[:, :, 0] + cg * tex[:, :, 1] + cb * tex[:, :, 2]
         if tex.ndim != 2:
             raise ValueError(f"texture must be a 2-D grey-scale or an RGB(A) image, got shape {tex.shape}")
         if min(tex.shape) < n + margin:

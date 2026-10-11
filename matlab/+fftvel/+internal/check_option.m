@@ -4,27 +4,37 @@ function x = check_option(x, name, kind, id)
 %   double if it is a real, finite numeric scalar (not text, not logical)
 %   of the given KIND, and raises the error with identifier ID otherwise.
 %   NAME is the option name used in the message. KIND is one of
-%     'positive'   integer >= 1
-%     'exposures'  integer >= 2
-%     'roi'        integer >= 16 (pixels)
-%     'unit'       real number in [0, 1]
-%     'duty'       real number in [0, 1)
-%     'flag'       true or false (logical, or numeric 0 or 1); X is
-%                  returned as logical
+%     'positive'       integer >= 1
+%     'exposures'      integer >= MIN_EXPOSURES (2)
+%     'roi'            integer >= MIN_SIZE (16 pixels)
+%     'unit'           real number in [0, 1]
+%     'duty'           real number in [0, 1)
+%     'positive_real'  finite real number > 0
+%     'flag'           true or false (logical, or numeric 0 or 1); X is
+%                      returned as logical
+%   MIN_EXPOSURES and MIN_SIZE come from fftvel.internal.constants.
 %   Text such as '4' is rejected, because double('4') would be 52.
 %   Same rules and messages as _check_option in python/src/fftvel/core.py.
 
+    lowest = [];
     switch kind
         case 'positive'
             what = 'a positive integer';
+            lowest = 1;
         case 'exposures'
-            what = 'an integer of at least 2';
+            cst = fftvel.internal.constants();
+            lowest = cst.MIN_EXPOSURES;
+            what = sprintf('an integer of at least %d', lowest);
         case 'roi'
-            what = 'an integer of at least 16 (px)';
+            cst = fftvel.internal.constants();
+            lowest = cst.MIN_SIZE;
+            what = sprintf('an integer of at least %d (px)', lowest);
         case 'unit'
             what = 'a finite real number in [0, 1]';
         case 'duty'
             what = 'a finite real number in [0, 1)';
+        case 'positive_real'
+            what = 'a finite real number > 0';
         case 'flag'
             what = 'true or false';
         otherwise
@@ -58,9 +68,10 @@ function x = check_option(x, name, kind, id)
                 ok = v >= 0 && v <= 1;
             case 'duty'
                 ok = v >= 0 && v < 1;
+            case 'positive_real'
+                ok = isfinite(v) && v > 0;
             otherwise
-                lowest = struct('positive', 1, 'exposures', 2, 'roi', 16);
-                ok = isfinite(v) && v == floor(v) && v >= lowest.(kind);
+                ok = isfinite(v) && v == floor(v) && v >= lowest;
         end
         if ok
             if strcmp(kind, 'flag')

@@ -1,0 +1,4 @@
+file,exposures,flash_period_s,duty,gsd_mm_per_px,set_speed_mm_s,set_angle_deg,static,roi,exposure_s,ref_frame_a,ref_frame_b,ref_dt_s,note
+flash_a.png,9,0.001,0.02,0.05,200,30,0,,0.008421,ref_a.png,ref_b.png,0.008,"synthetic, 4 px per flash, noise 10 % of the signal"
+flash_b.png,8,0.0005,0.2,0.05,560,120,0,,0.00378,,,,"synthetic, 5.6 px per flash, noise 30 % of the signal"
+static.png,9,0.001,0.02,0.05,,,1,,0.008421,,,,"synthetic, stopped surface"

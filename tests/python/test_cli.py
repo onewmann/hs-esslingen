@@ -8,7 +8,8 @@ import pytest
 from scipy.io import savemat
 
 import fftvel.__main__ as cli
-from fftvel import crop_square, estimate_velocity, simulate_pulsed_image
+from fftvel import estimate_velocity, simulate_pulsed_image
+from fftvel.core import crop_square
 from fftvel.__main__ import main
 
 FIELDS = ("angle_deg", "speed", "quality", "valid", "exposures", "n")

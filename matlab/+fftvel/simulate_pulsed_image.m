@@ -31,7 +31,8 @@ function [bp, frames] = simulate_pulsed_image(n, v, L, varargin)
 %   [BP, FRAMES] = fftvel.simulate_pulsed_image(...) also returns the
 %   individual exposures as an N-by-N-by-K array.
 
-    opts = fftvel.internal.parse_options(varargin, struct('CorrLength', 1.5, ...
+    c = fftvel.internal.constants();
+    opts = fftvel.internal.parse_options(varargin, struct('CorrLength', c.DEFAULT_CORR_LEN, ...
         'Texture', [], 'Noise', 0, 'Exposures', [], 'Duty', 0));
     L = fftvel.internal.check_option(L, 'L', 'positive', 'simulate_pulsed_image:L');
     if isempty(opts.Exposures)
@@ -43,7 +44,7 @@ function [bp, frames] = simulate_pulsed_image(n, v, L, varargin)
     duty = fftvel.internal.check_option(opts.Duty, 'Duty', 'duty', 'simulate_pulsed_image:Duty');
     vx = v(1);
     vy = v(2);
-    margin = ((K - 1) + duty)*max(abs([vx vy])) + 32;
+    margin = ((K - 1) + duty)*max(abs([vx vy])) + c.SIM_MARGIN;
     if isempty(opts.Texture)
         m = 2^ceil(log2(n + margin));
         tex = fftvel.make_texture(m, opts.CorrLength);
@@ -51,7 +52,8 @@ function [bp, frames] = simulate_pulsed_image(n, v, L, varargin)
         tex = double(opts.Texture);
         if ndims(tex) == 3 && (size(tex, 3) == 3 || size(tex, 3) == 4)
             % RGB(A) -> grey, rgb2gray weights
-            tex = 0.2989*tex(:, :, 1) + 0.5870*tex(:, :, 2) + 0.1140*tex(:, :, 3);
+            gw = c.GREY_WEIGHTS;
+            tex = gw(1)*tex(:, :, 1) + gw(2)*tex(:, :, 2) + gw(3)*tex(:, :, 3);
         end
         if ndims(tex) ~= 2
             error('simulate_pulsed_image:texture', ...

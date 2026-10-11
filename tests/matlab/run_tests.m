@@ -11,9 +11,9 @@ function run_tests()
     here = fileparts(mfilename('fullpath'));
     addpath(fullfile(here, '..', '..', 'matlab'));
     addpath(here);
-    tests = {'test_conventions', 'test_options', 'test_known_velocity', ...
+    tests = {'test_conventions', 'test_options', 'test_constants', 'test_known_velocity', ...
              'test_model_options', 'test_phase_correlation', 'test_testsequences', ...
-             'test_parity'};
+             'test_parity', 'test_physical'};
     failed = {};
     for k = 1:numel(tests)
         t0 = tic;

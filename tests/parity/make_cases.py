@@ -25,7 +25,8 @@ from pathlib import Path
 import numpy as np
 from scipy.io import savemat
 
-from fftvel import crop_square, estimate_velocity, pulsed_from_stack, simulate_pulsed_image
+from fftvel import estimate_velocity, pulsed_from_stack, simulate_pulsed_image
+from fftvel.core import crop_square
 from fftvel.simulate import make_texture
 
 HERE = Path(__file__).resolve().parent

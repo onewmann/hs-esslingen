@@ -9,14 +9,15 @@ import sys
 
 import numpy as np
 
-from .core import estimate_velocity, pulsed_from_stack
+from .core import (DEFAULT_L, GREY_WEIGHTS, MIN_EXPOSURES, MIN_SIZE, estimate_velocity, pulsed_from_stack,
+                   to_physical)
 from .simulate import simulate_pulsed_image
 
 NUMERIC = ("double", "single", "int8", "uint8", "int16", "uint16", "int32", "uint32",
            "int64", "uint64", "logical")          # MATLAB classes read as numeric arrays
 HDF5_SIGNATURE = b"\x89HDF\r\n\x1a\n"             # at byte 0, 512, 1024 or 2048 of an HDF5 file
 PIL_KEEP = ("1", "L", "I", "F", "RGB", "RGBA")     # Pillow modes read as they are (also I;16*)
-GREY = np.array([0.2989, 0.5870, 0.1140])         # MATLAB rgb2gray weights
+GREY = np.array(GREY_WEIGHTS)                     # MATLAB rgb2gray weights
 
 
 def _note(msg: str) -> None:
@@ -300,6 +301,13 @@ def _summary(est) -> dict:
     return d
 
 
+def _physical(est, gsd: float, period: float) -> dict:
+    """``gsd``, ``period`` and the velocity per second (6 significant digits) for the JSON output."""
+    p = to_physical(est, gsd, period)
+    return {"gsd": gsd, "period": period, "speed_per_s": float(f"{p.speed:.6g}"),
+            "vx_per_s": float(f"{p.vx:.6g}"), "vy_per_s": float(f"{p.vy:.6g}")}
+
+
 def _use_agg() -> None:
     """Check for matplotlib before any work and select its file-only backend (no display needed)."""
     try:
@@ -316,7 +324,7 @@ def main(argv=None) -> int:
     s = sub.add_parser("simulate", help="simulate a pulsed image with known v and estimate it")
     s.add_argument("--vx", type=float, default=3.0)
     s.add_argument("--vy", type=float, default=-2.0)
-    s.add_argument("--L", type=int, default=4)
+    s.add_argument("--L", type=int, default=DEFAULT_L)
     s.add_argument("--n", type=int, default=256)
     s.add_argument("--noise", type=float, default=0.0)
     s.add_argument("--seed", type=int, default=0)
@@ -346,6 +354,13 @@ def main(argv=None) -> int:
     e.add_argument("--frames-axis", choices=("auto", "first", "last"), default="auto",
                    help="axis of the stack that holds the frames, after dropping axes of length 1 "
                         "(default auto: the first or last axis if it is clearly the shortest)")
+    e.add_argument("--gsd", type=float, metavar="LENGTH_PER_PX",
+                   help="ground sample distance: the length on the surface that one pixel covers, in any "
+                        "unit (for example mm per px). With --period the JSON also holds speed_per_s, "
+                        "vx_per_s and vy_per_s in that unit per second (mm/s for mm per px)")
+    e.add_argument("--period", type=float, metavar="S",
+                   help="time step in seconds: between two flashes, or between two frames for --stack. "
+                        "Goes with --gsd")
     e.add_argument("--var", help="variable name inside a .mat file (needed if it holds several arrays "
                                  "and none is the only image, or with --stack the only stack)")
     e.add_argument("--plot", metavar="PNG", help="save the diagnostic figure")
@@ -354,14 +369,20 @@ def main(argv=None) -> int:
     if a.cmd == "estimate":
         if a.L is not None and a.L < 1:
             e.error("--L must be a positive integer")
-        if a.exposures is not None and a.exposures < 2:
-            e.error("--exposures must be at least 2")
+        if a.exposures is not None and a.exposures < MIN_EXPOSURES:
+            e.error(f"--exposures must be at least {MIN_EXPOSURES}")
         if not 0 <= a.duty < 1:
             e.error("--duty must be in [0, 1)")
-        if a.roi < 0 or 0 < a.roi < 16:
-            e.error("--roi must be 0 (the largest square) or at least 16")
+        if a.roi < 0 or 0 < a.roi < MIN_SIZE:
+            e.error(f"--roi must be 0 (the largest square) or at least {MIN_SIZE}")
         if a.frames_axis != "auto" and not a.stack:
             e.error("--frames-axis needs --stack")
+        if (a.gsd is None) != (a.period is None):
+            e.error("--gsd and --period go together; speed_per_s needs both")
+        for name in ("gsd", "period"):
+            value = getattr(a, name)
+            if value is not None and not (np.isfinite(value) and value > 0):
+                e.error(f"--{name} must be a finite number > 0")
     if a.plot:
         _use_agg()
     if a.cmd == "simulate":
@@ -384,7 +405,12 @@ def main(argv=None) -> int:
                                     roi=roi, clip_outliers=a.clip_outliers)
         except ValueError as err:
             raise SystemExit(f"{a.file}: {err}") from None
-    print(json.dumps(_summary(est), indent=2))
+    out = _summary(est)
+    if a.cmd == "estimate" and a.gsd is not None:
+        _note(f"units: speed_per_s = speed * gsd / period, gsd {a.gsd:g} (length unit) per px, "
+              f"period {a.period:g} s")
+        out.update(_physical(est, a.gsd, a.period))
+    print(json.dumps(out, indent=2))
     if a.plot:
         import matplotlib.pyplot as plt
 

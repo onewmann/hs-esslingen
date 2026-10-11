@@ -6,7 +6,8 @@ function wr = ripple_profile(M, j, rfrac)
 %   so WR peaks at the direction of motion.
 
     if nargin < 3
-        rfrac = 0.9;
+        c = fftvel.internal.constants();
+        rfrac = c.RFRAC;
     end
     sel = abs(j) <= rfrac*max(j);
     wr = sum(abs(diff(M(sel, :), 1, 1)), 1);

@@ -7,7 +7,8 @@ function t = make_texture(m, corr_len)
 %   (1 + (2*pi*CORR_LEN*f)^2)^(-3/2). The texture is periodic.
 
     if nargin < 2
-        corr_len = 1.5;
+        c = fftvel.internal.constants();
+        corr_len = c.DEFAULT_CORR_LEN;
     end
     f = [0:ceil(m/2)-1, -floor(m/2):-1]/m;      % same order as fft
     [FX, FY] = meshgrid(f, f);

@@ -22,7 +22,8 @@ from typing import Iterable, Iterator, Optional, Tuple
 
 import numpy as np
 
-from .core import Estimate, _check_option, crop_square, estimate_velocity
+from .core import (DEFAULT_L, DEFAULT_MIN_QUALITY, GREY_WEIGHTS, Estimate, _check_option, crop_square,
+                   estimate_velocity)
 
 __all__ = ["FrameWindow", "StreamEstimate", "estimate_frame", "estimate_stream", "estimate_window",
            "frame_step", "to_grey"]
@@ -34,7 +35,7 @@ def to_grey(frame: np.ndarray) -> np.ndarray:
     if a.ndim == 3 and a.shape[2] == 1:
         a = a[..., 0]
     elif a.ndim == 3:
-        a = a[..., :3] @ np.array([0.2989, 0.5870, 0.1140])
+        a = a[..., :3] @ np.array(GREY_WEIGHTS)
     return a
 
 
@@ -93,7 +94,7 @@ class FrameWindow:
     passed to :func:`frame_step`.
     """
 
-    def __init__(self, L: int = 4, roi: Optional[int] = None, tol: float = 0.1, *,
+    def __init__(self, L: int = DEFAULT_L, roi: Optional[int] = None, tol: float = 0.1, *,
                  exposures: Optional[int] = None, period: Optional[float] = None):
         n = _window_length(L, exposures)
         self.L = L
@@ -137,9 +138,9 @@ class StreamEstimate:
     estimate: Optional[Estimate] = None     # full result of estimate_velocity
 
 
-def estimate_frame(frame: np.ndarray, t: float = float("nan"), L: int = 4,
+def estimate_frame(frame: np.ndarray, t: float = float("nan"), L: int = DEFAULT_L,
                    roi: Optional[int] = None, flash_period: Optional[float] = None,
-                   min_quality: float = 0.6, *, exposures: Optional[int] = None,
+                   min_quality: float = DEFAULT_MIN_QUALITY, *, exposures: Optional[int] = None,
                    duty: float = 0.0, clip_outliers: bool = False) -> StreamEstimate:
     """Estimate from one multi-flash frame (flash mode).
 
@@ -162,9 +163,9 @@ def estimate_frame(frame: np.ndarray, t: float = float("nan"), L: int = 4,
         quality=e.quality, valid=e.valid, regular=True, step=step, estimate=e)
 
 
-def estimate_window(frames: Iterable[Tuple[np.ndarray, float]], L: int = 4,
+def estimate_window(frames: Iterable[Tuple[np.ndarray, float]], L: int = DEFAULT_L,
                     roi: Optional[int] = None, tol: float = 0.1,
-                    min_quality: float = 0.6, *, exposures: Optional[int] = None,
+                    min_quality: float = DEFAULT_MIN_QUALITY, *, exposures: Optional[int] = None,
                     duty: float = 0.0, clip_outliers: bool = False,
                     period: Optional[float] = None) -> StreamEstimate:
     """Estimate from exactly ``K = 2L+1`` (or ``exposures``) consecutive ``(frame, t)`` pairs.
@@ -191,9 +192,9 @@ def _estimate(win: FrameWindow, t: float, min_quality: float, duty: float,
         quality=e.quality, valid=e.valid and regular, regular=regular, step=step, estimate=e)
 
 
-def estimate_stream(frames: Iterable[Tuple[np.ndarray, float]], L: int = 4,
+def estimate_stream(frames: Iterable[Tuple[np.ndarray, float]], L: int = DEFAULT_L,
                     roi: Optional[int] = None, every: Optional[int] = None,
-                    tol: float = 0.1, min_quality: float = 0.6, *,
+                    tol: float = 0.1, min_quality: float = DEFAULT_MIN_QUALITY, *,
                     exposures: Optional[int] = None, duty: float = 0.0,
                     clip_outliers: bool = False,
                     period: Optional[float] = None) -> Iterator[StreamEstimate]:
