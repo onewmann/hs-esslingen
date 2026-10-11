@@ -64,43 +64,49 @@ documented:
 - Host timing for webcams: alternating intervals pass when checked against
   the nominal period.
 
-## In progress when this was saved
+## Studies and tools added on 11 October (commits `93b60ec`, `38bc248`)
 
-A workflow was adding the studies and tools below. Its files are committed
-as they were at that moment, under the commit "Save work in progress".
-268 Python tests passed on that state; the reviews were still running.
-
-- `matlab/+fftvel/+internal/constants.m` and `tests/constants.json`: all
+- `matlab/+fftvel/+internal/constants.m` and `tests/constants.json`: 28
   algorithm constants checked against one file in both languages.
 - Keyword-only options in Python, smaller `fftvel.__all__`,
   `fftvel.to_physical(est, gsd, period)` in both languages, CLI `--gsd` and
   `--period`.
-- `experiments/timing.py` (run times, `results/timing.csv`,
-  `results/environment.json`).
+- `experiments/timing.py`: 256 px takes 0.84 s in Python and 1.30 s in
+  Octave per call, 512 px 4.2 s and 6.2 s (4 cores, `results/timing.csv`).
 - `experiments/real_measurements.py` and `data/real/README.md`: evaluation of
-  the owner's own multi-flash recordings from a `meta.csv`, with a synthetic
+  the owner's multi-flash recordings from a `meta.csv`, with a synthetic
   example in `data/real/example/`.
-- `experiments/calibrate_threshold.py`: reproducible threshold calibration
-  (1008 null images), held-out test, real null test on single Basler frames,
-  power for constants 8 to 10, GEBA comparison, half-speed check
-  (`results/threshold_*.csv`, `docs/figures/threshold.png`).
-- `experiments/baselines.py`: cepstrum, autocorrelation, corrected peak
-  spacing, phase correlation as a two-frame reference
-  (`results/baselines.csv`, `docs/figures/baselines.png`).
-- `experiments/model_violations.py`: independent forward model with pulse
-  width, step and energy jitter, shot and read noise, quantisation, ambient
-  light, defocus, static edge, periodic texture, glints, wrong K
-  (`results/violations.csv`, `docs/figures/failures.png`).
+- `experiments/calibrate_threshold.py`: largest k on the 1008 null images is
+  8.41 (the docstring still says 8.6); 0 of 2268 simulated null images valid;
+  held out 4 of 1512 valid, all crops of the static room scene vid1.
+- `experiments/baselines.py`: share correct over 840 images, random / camera
+  texture: fftvel 80 / 63 %, peak spacing 69 / 56 %, cepstrum 70 / 60 %,
+  autocorrelation 72 / 55 %, phase correlation with two frames 81 / 78 %.
+- `experiments/model_violations.py`: independent forward model; wrong but
+  valid results appear with pulse width 0.25 to 0.5 without `duty`, step
+  jitter of 10 %, continuous light during most of a long exposure, a strong
+  static edge, periodic textures with a period below about 160 px, glints.
+- run.py parts `calibration baselines violations timing` and `--all`; CI has
+  a MATLAB job, the Octave demos and a smoke run.
+- 284 Python tests and 9 Octave test files pass.
 
-Still to do for this step: finish the reviews of the three studies, register
-the new studies in `experiments/run.py` (`--only calibration baselines
-violations timing`, `--all`), extend CI (MATLAB job with
-`matlab-actions/setup-matlab@v2`, Octave demos, a short experiments smoke
-run and the real-data example), run both suites.
+Found by these studies and not fixed yet (next work):
+
+- Single camera frames of the moving surface (vid3, vid4: one exposure, so
+  motion blur, no flash repetition) come out valid in 8 to 11 % of crops,
+  with K x speed equal to the blur length. One blurred exposure and a slow
+  multi-flash image look alike in the spectrum. Options: a check that a
+  continuous-blur model does not fit as well as the Dirichlet model, a
+  warning for saturated pixels, and clear advice to keep ambient light out.
+- `clip_outliers` leaves a ring around a clipped glint; dilating the mask
+  would help.
+- `phase_correlation` has a sub-pixel bias of about 0.12 px, which limits the
+  two-frame cross-check for slow motion.
+- Docstrings and README still cite 8.6 and "1 in 1000 at 32 px".
 
 ## Next steps
 
-1. Finish the step above and commit it in logical commits.
+1. Work on the items found by the studies (list above).
 2. Rewrite README.md following section 2 of the plan: no chapter structure,
    a status table first ("works in simulation; real multi-flash images
    not shown yet"), who did what, hero figure, try it, why one image, how it
