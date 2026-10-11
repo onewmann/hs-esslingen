@@ -6,7 +6,7 @@ from typing import Optional, Sequence
 
 import numpy as np
 
-from .core import crop_square
+from .core import _check_option, crop_square
 
 __all__ = ["make_texture", "simulate_pulsed_image"]
 
@@ -28,7 +28,8 @@ def make_texture(m: int, corr_len: float = 1.5, rng=None) -> np.ndarray:
 
 def simulate_pulsed_image(n: int, v: Sequence[float], L: int, corr_len: float = 1.5,
                           texture: Optional[np.ndarray] = None, noise: float = 0.0,
-                          rng=None, return_frames: bool = False):
+                          rng=None, return_frames: bool = False, exposures: Optional[int] = None,
+                          duty: float = 0.0):
     """Mean of ``2L+1`` exposures of a texture moving by ``v`` per step under a fixed window.
 
     ``v = (vx, vy)`` in pixels per step, x along columns, y along rows
@@ -37,22 +38,37 @@ def simulate_pulsed_image(n: int, v: Sequence[float], L: int, corr_len: float = 
     reaches the ``n``-by-``n`` window and there are no zero-filled borders.
 
     ``texture`` replaces the random texture (e.g. a real camera frame); it must
-    be at least ``n + 2*L*max|v| + 32`` pixels in both directions. ``noise`` is
-    the standard deviation of white noise added to the result, relative to
-    the standard deviation of the noise-free image.
+    be at least ``n + (K-1+duty)*max|v| + 32`` pixels in both directions. An
+    RGB(A) texture is converted to grey with the weights 0.2989, 0.5870,
+    0.1140. ``noise`` is the standard deviation of white noise added to the
+    result, relative to the standard deviation of the noise-free image.
 
-    Returns ``bp`` or ``(bp, frames)`` with ``frames`` of shape ``(n, n, 2L+1)``.
+    ``exposures`` sets the number of exposures ``K`` (default ``2L+1``; an
+    even ``K`` puts the exposures at half-integer steps around the centre).
+    ``duty`` is the duration of each exposure divided by the time step,
+    in ``[0, 1)``: the texture also moves during each exposure (box blur of
+    ``duty*|v|`` pixels along ``v``). Default 0: instantaneous exposures.
+
+    Returns ``bp`` or ``(bp, frames)`` with ``frames`` of shape ``(n, n, K)``.
     """
     rng = np.random.default_rng(rng)
+    L = _check_option(L, "L", "positive")
+    K = 2 * L + 1 if exposures is None else _check_option(exposures, "exposures", "exposures")
+    duty = _check_option(duty, "duty", "duty")
     vx, vy = float(v[0]), float(v[1])
-    margin = 2 * L * max(abs(vx), abs(vy)) + 32
+    margin = ((K - 1) + duty) * max(abs(vx), abs(vy)) + 32
     if texture is None:
         m = int(2 ** np.ceil(np.log2(n + margin)))
         tex = make_texture(m, corr_len, rng)
     else:
         tex = np.asarray(texture, dtype=float)
+        if tex.ndim == 3 and tex.shape[2] in (3, 4):      # RGB(A) -> grey, MATLAB rgb2gray weights
+            tex = 0.2989 * tex[:, :, 0] + 0.5870 * tex[:, :, 1] + 0.1140 * tex[:, :, 2]
+        if tex.ndim != 2:
+            raise ValueError(f"texture must be a 2-D grey-scale or an RGB(A) image, got shape {tex.shape}")
         if min(tex.shape) < n + margin:
-            raise ValueError(f"texture too small for n={n} and |v|={max(abs(vx), abs(vy))} with L={L}")
+            raise ValueError(f"texture too small for n={n} and |v|={max(abs(vx), abs(vy))} "
+                             f"with {K} exposures")
         side = min(tex.shape)
         tex = crop_square(tex, side - side % 2)
         tex = tex - tex.mean()
@@ -60,17 +76,20 @@ def simulate_pulsed_image(n: int, v: Sequence[float], L: int, corr_len: float = 
     f = np.fft.fftfreq(m)
     FX, FY = np.meshgrid(f, f)
     T = np.fft.fft2(tex)
+    if duty > 0:                         # motion during each exposure: box blur along v
+        T = T * np.sinc(duty * (FX * vx + FY * vy))
     r0 = (m - n) // 2
     win = slice(r0, r0 + n)
 
-    frames = np.zeros((n, n, 2 * L + 1)) if return_frames else None
+    frames = np.zeros((n, n, K)) if return_frames else None
     D = np.zeros((m, m), dtype=complex)
-    for k in range(-L, L + 1):
+    for q in range(K):
+        k = q - (K - 1) / 2              # -L..L for K = 2L+1
         e = np.exp(-2j * np.pi * (FX * vx + FY * vy) * k)
         D += e
         if return_frames:
-            frames[:, :, k + L] = np.real(np.fft.ifft2(T * e))[win, win]
-    big = np.real(np.fft.ifft2(T * D / (2 * L + 1)))
+            frames[:, :, q] = np.real(np.fft.ifft2(T * e))[win, win]
+    big = np.real(np.fft.ifft2(T * D / K))
     bp = big[win, win]
     if noise > 0:
         bp = bp + noise * bp.std(ddof=1) * rng.standard_normal((n, n))

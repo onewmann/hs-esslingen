@@ -2,7 +2,8 @@ function opts = parse_options(args, defaults)
 %PARSE_OPTIONS  Merge name-value pairs into a struct of defaults.
 %   OPTS = PARSE_OPTIONS(ARGS, DEFAULTS) with ARGS a cell array of
 %   'Name', Value pairs. Names are matched case-insensitively against the
-%   fields of DEFAULTS; unknown names raise an error.
+%   fields of DEFAULTS; unknown names raise an error. The values are not
+%   checked here (see CHECK_OPTION).
 
     opts = defaults;
     if mod(numel(args), 2) ~= 0
@@ -10,9 +11,15 @@ function opts = parse_options(args, defaults)
     end
     names = fieldnames(defaults);
     for k = 1:2:numel(args)
-        hit = find(strcmpi(names, args{k}), 1);
+        name = args{k};
+        if ~((ischar(name) && size(name, 1) == 1) || (isstring(name) && isscalar(name)))
+            error('parse_options:name', 'Option name %d is not text (expected one of: %s).', ...
+                (k + 1)/2, strjoin(names.', ', '));
+        end
+        hit = find(strcmpi(names, char(name)), 1);
         if isempty(hit)
-            error('parse_options:unknown', 'Unknown option ''%s''.', args{k});
+            error('parse_options:unknown', 'Unknown option ''%s'' (expected one of: %s).', ...
+                char(name), strjoin(names.', ', '));
         end
         opts.(names{hit}) = args{k + 1};
     end

@@ -19,13 +19,18 @@ function fig = plot_estimate(bp, est, frame)
 
     if has_frame
         subplot(2, 3, slot.frame);
-        imagesc(crop_square(double(frame))); axis image; axis off;
+        imagesc(crop_square(double(frame), min([est.n, size(frame)]))); axis image; axis off;
         title('Single exposure');
     end
 
     subplot(2, 3, slot.bp);
-    imagesc(crop_square(double(bp))); axis image; axis off;
-    title(sprintf('Pulsed image (%d exposures)', 2*est.L + 1));
+    imagesc(crop_square(double(bp), est.n)); axis image; axis off;   % the analysed square
+    if isfield(est, 'exposures')
+        K = est.exposures;
+    else
+        K = 2*est.L + 1;
+    end
+    title(sprintf('Pulsed image (%d exposures)', K));
 
     subplot(2, 3, slot.spec);
     S = d.spectrum;

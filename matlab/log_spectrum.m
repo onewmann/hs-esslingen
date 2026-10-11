@@ -1,4 +1,4 @@
-function [S, n, npad] = log_spectrum(bp, pad_factor)
+function [S, n, npad] = log_spectrum(bp, pad_factor, roi, clip_outliers)
 %LOG_SPECTRUM  Centred log-magnitude spectrum of a windowed image.
 %   [S, N, NPAD] = LOG_SPECTRUM(BP, PAD_FACTOR) crops BP to its central
 %   N-by-N square, removes the mean, applies a 2-D Hann window and returns
@@ -6,21 +6,47 @@ function [S, n, npad] = log_spectrum(bp, pad_factor)
 %   with the zero frequency at index floor(NPAD/2)+1 (fftshift layout).
 %   The floor relative to the median keeps the result independent of the
 %   image scale.
+%
+%   [S, N, NPAD] = LOG_SPECTRUM(BP, PAD_FACTOR, ROI) crops to the central
+%   ROI-by-ROI square instead (ROI empty, or larger than the image: the
+%   largest central square).
+%
+%   [S, N, NPAD] = LOG_SPECTRUM(BP, PAD_FACTOR, ROI, CLIP_OUTLIERS) with
+%   CLIP_OUTLIERS true first sets the pixels more than 6 robust standard
+%   deviations (1.4826*MAD) from the median to the median.
 
     if nargin < 2
         pad_factor = 2;
     end
-    pad_factor = double(pad_factor);
-    if ~isscalar(pad_factor) || pad_factor < 1 || pad_factor ~= round(pad_factor)
-        error('log_spectrum:pad', 'PadFactor must be a positive integer.');
+    if nargin < 3
+        roi = [];
     end
-    x = crop_square(double(bp));
+    if nargin < 4
+        clip_outliers = false;
+    end
+    pad_factor = check_option(pad_factor, 'PadFactor', 'positive', 'log_spectrum:pad');
+    side = [];
+    if ~isempty(roi)
+        roi = check_option(roi, 'ROI', 'roi', 'log_spectrum:roi');
+        if ndims(bp) == 2
+            side = min([roi, size(bp)]);
+        end
+    end
+    clip_outliers = check_option(clip_outliers, 'ClipOutliers', 'flag', 'log_spectrum:clip');
+    x = double(crop_square(bp, side));
     n = size(x, 1);
     if n < 16
         error('log_spectrum:size', 'Image must be at least 16x16 pixels.');
     end
     if any(~isfinite(x(:)))
         error('log_spectrum:finite', 'Image contains NaN or Inf values.');
+    end
+    if clip_outliers
+        med = median(x(:));
+        s = 1.4826*median(abs(x(:) - med));
+        if s > 0
+            x(abs(x - med) > 6*s) = med;
+        end
     end
     npad = pad_factor*n;
     x = x - mean(x(:));

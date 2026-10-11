@@ -2,8 +2,8 @@
 
 The model, the ripple profile WR and the quality measure GEBA follow Chapter 3
 of J. Horn's doctoral thesis (Universitaet Karlsruhe, 2007; full reference in
-README.md). The speed fit and the validity threshold were added in this
-implementation.
+README.md). The speed fit, the validity threshold and the isotropy check were
+added in this implementation.
 
 This module mirrors the MATLAB/Octave functions in ``matlab/`` line by line,
 so that both give the same numbers for the same input (see ``tests/parity``).
@@ -36,10 +36,15 @@ __all__ = [
     "parabolic_offset",
     "hann_window",
     "crop_square",
+    "pulsed_from_stack",
 ]
 
 RFRAC = 0.9          # fraction of the spectrum radius used for WR and the fit
 SPEED_STEP = 0.005   # step of the logarithmic speed grid
+ISO_GAP = 0.15       # isotropic if quality - quality_perp is below this ...
+ISO_LOG_SPEED = 0.12  # ... and |log(speed_perp/speed)| is below this
+CLIP_SIGMA = 6       # clip_outliers: robust standard deviations from the median
+FLAT_MODEL = 1e-6    # fit_speed: score 0 where the detrended model is below this fraction of the model
 
 
 @dataclass
@@ -55,10 +60,22 @@ class Estimate:
         (y pointing down). ``-(vx, vy)`` is equally possible.
     geba : ``max(WR) / mean(WR)`` of the ripple profile.
     quality : correlation between the measured profile and the model.
+    quality_perp : quality of the same fit perpendicular to the direction.
     in_range : False if the best speed lies below the measurable range.
+    isotropic : True if the perpendicular fit is about as good
+        (``quality - quality_perp < 0.15``) and gives about the same speed
+        (``|log(speed_perp/speed)| < 0.12``). Motion makes the spectrum
+        anisotropic; defocus blur and square repeating textures do not.
     threshold : quality needed for this image size, the larger of
-        ``min_quality`` and ``tanh(9/sqrt(m-5))`` for ``m`` profile points.
-    valid : ``quality >= threshold`` and ``in_range``.
+        ``min_quality`` and ``tanh(9/sqrt(m-5))``. ``m`` counts independent
+        profile points: ``min(points, floor(2*n*points/npad))``, so zero
+        padding beyond ``pad_factor = 2`` does not lower the threshold.
+    valid : ``quality >= threshold`` and ``in_range`` and not ``isotropic``.
+    L : ``L`` as passed.
+    exposures : number of exposures ``K`` used in the model (``2L+1``
+        unless ``exposures`` was given).
+    n : side of the analysed central square in pixels.
+    npad : FFT length.
     """
 
     angle_deg: float
@@ -67,13 +84,69 @@ class Estimate:
     vy: float
     geba: float
     quality: float
+    quality_perp: float
     in_range: bool
+    isotropic: bool
     threshold: float
     valid: bool
     L: int
+    exposures: int
     n: int
     npad: int
     diag: Optional[dict] = field(default=None, repr=False)
+
+
+_KINDS = {
+    "positive": "a positive integer",
+    "exposures": "an integer of at least 2",
+    "roi": "an integer of at least 16 (px)",
+    "unit": "a finite real number in [0, 1]",
+    "duty": "a finite real number in [0, 1)",
+    "flag": "true or false",
+}
+_LOWEST = {"positive": 1, "exposures": 2, "roi": 16}
+
+
+def _check_option(x, name: str, kind: str):
+    """Return the option value ``x`` as int, float or bool, or raise ValueError.
+
+    ``x`` must be a real, finite number, not text and not a bool (except
+    for ``kind='flag'``, which takes True/False or 0/1). ``kind`` is one of
+    the keys of ``_KINDS``. Same rules and messages as ``matlab/check_option.m``.
+    """
+    what = _KINDS[kind]
+    if isinstance(x, str):
+        got = f"text '{x}'"
+    elif x is None:
+        got = "None"
+    else:
+        a = np.asarray(x)
+        if a.ndim != 0:
+            got = f"shape {a.shape}"
+        elif a.dtype.kind == "b":
+            if kind == "flag":
+                return bool(a)
+            got = "a logical value"
+        elif a.dtype.kind == "c":
+            got = "a complex value"
+        elif a.dtype.kind not in "iuf":
+            got = f"a value of type {type(x).__name__}"
+        else:
+            v = float(a)
+            if kind == "flag":
+                ok = v in (0, 1)
+            elif kind == "unit":
+                ok = 0 <= v <= 1
+            elif kind == "duty":
+                ok = 0 <= v < 1
+            else:
+                ok = bool(np.isfinite(v)) and v == np.floor(v) and v >= _LOWEST[kind]
+            if ok:
+                if kind == "flag":
+                    return bool(v)
+                return int(v) if kind in _LOWEST else v
+            got = f"{v:g}"
+    raise ValueError(f"{name} must be {what}, got {got}")
 
 
 def hann_window(n: int) -> np.ndarray:
@@ -88,7 +161,9 @@ def crop_square(img: np.ndarray, n: Optional[int] = None) -> np.ndarray:
     """Central ``n``-by-``n`` crop (default: the largest central square)."""
     img = np.asarray(img)
     if img.ndim != 2:
-        raise ValueError("expected a 2-D grey-scale image")
+        raise ValueError(f"expected a 2-D grey-scale image, got shape {img.shape}. Convert a colour "
+                         f"image to grey; for a frame stack use pulsed_from_stack(frames), which "
+                         f"averages exactly 2L+1 frames")
     h, w = img.shape
     if n is None:
         n = min(h, w)
@@ -99,22 +174,74 @@ def crop_square(img: np.ndarray, n: Optional[int] = None) -> np.ndarray:
     return img[r0:r0 + n, c0:c0 + n]
 
 
-def log_spectrum(bp: np.ndarray, pad_factor: int = 2):
+def pulsed_from_stack(frames, L: Optional[int] = None, exposures: Optional[int] = None,
+                      axis: int = -1):
+    """Pulsed-exposure image from a stack of single exposures (video frames).
+
+    Takes the frames along ``axis`` (default: the last axis) and drops all
+    other axes of length 1, so a MATLAB ``getdata`` stack (rows x cols x 1 x
+    frames) works as it is. Returns ``(bp, K)``: the mean of the first ``K``
+    frames as a 2-D float image, and ``K``. ``K`` is ``exposures`` if given,
+    else ``2L+1`` if ``L`` is given, else the number of frames, which must
+    then be odd. Pass ``K`` on as ``estimate_velocity(bp, exposures=K)``.
+    """
+    a = np.asarray(frames)
+    shape = a.shape
+    if a.ndim < 3:
+        raise ValueError(f"expected a stack of 2-D frames (rows, cols, frames), got shape {shape}")
+    a = np.moveaxis(a, axis, -1)
+    a = np.squeeze(a, axis=tuple(i for i in range(a.ndim - 1) if a.shape[i] == 1))
+    if a.ndim != 3:
+        raise ValueError(f"expected a stack of 2-D frames (rows, cols, frames), got shape {shape}")
+    nf = a.shape[2]
+    if nf < 2:
+        raise ValueError(f"a frame stack needs at least 2 frames, got shape {shape}")
+    if L is not None:
+        L = _check_option(L, "L", "positive")
+    if exposures is not None:
+        K = _check_option(exposures, "exposures", "exposures")
+    elif L is not None:
+        K = 2 * L + 1
+    elif nf % 2 == 0:
+        raise ValueError(f"the stack has {nf} frames, an even number; pass L or exposures "
+                         f"to choose how many to average")
+    else:
+        K = nf
+    if K > nf:
+        raise ValueError(f"{K} exposures need {K} frames, the stack has {nf}")
+    return a[:, :, :K].astype(float).mean(axis=2), K
+
+
+def log_spectrum(bp: np.ndarray, pad_factor: int = 2, roi: Optional[int] = None,
+                 clip_outliers: bool = False):
     """Centred log-magnitude spectrum of the windowed, mean-free image.
 
     Returns ``(S, n, npad)``. ``S = log(|B| + 0.05 * median|B|)`` of the
     ``npad``-point FFT (``npad = pad_factor * n``) with zero frequency at index
-    ``npad // 2``.
+    ``npad // 2``. The image is cropped to its central ``roi``-by-``roi``
+    square (default and for ``roi`` larger than the image: the largest
+    central square). With ``clip_outliers``, pixels more than 6 robust
+    standard deviations (``1.4826 * MAD``) from the median are set to the
+    median first.
     """
-    if pad_factor < 1 or int(pad_factor) != pad_factor:
-        raise ValueError("pad_factor must be a positive integer")
-    pad_factor = int(pad_factor)
-    x = crop_square(np.asarray(bp, dtype=float))
+    pad_factor = _check_option(pad_factor, "pad_factor", "positive")
+    img = np.asarray(bp)
+    side = None
+    if roi is not None:
+        roi = _check_option(roi, "roi", "roi")
+        if img.ndim == 2:
+            side = min(roi, *img.shape)
+    x = np.asarray(crop_square(img, side), dtype=float)     # converts only the crop; no copy for float
     n = x.shape[0]
     if n < 16:
         raise ValueError("image must be at least 16x16 pixels")
     if not np.all(np.isfinite(x)):
         raise ValueError("image contains NaN or Inf values")
+    if _check_option(clip_outliers, "clip_outliers", "flag"):
+        med = np.median(x)
+        s = 1.4826 * np.median(np.abs(x - med))
+        if s > 0:
+            x = np.where(np.abs(x - med) > CLIP_SIGMA * s, med, x)
     npad = pad_factor * n
     x = x - x.mean()
     w = hann_window(n)
@@ -215,53 +342,66 @@ def _window_autocorr(tau: np.ndarray, n: int) -> np.ndarray:
 
 
 def dirichlet_template(jpos: np.ndarray, v: np.ndarray, L: int, npad: int, n: int,
-                       angle_deg: float) -> np.ndarray:
-    """Expected log spectrum along ``v`` for ``2L+1`` exposures, one column per speed.
+                       angle_deg: float, exposures: Optional[int] = None,
+                       duty: float = 0.0) -> np.ndarray:
+    """Expected log spectrum along ``v`` for ``K`` exposures, one column per speed.
 
-    For a random texture the expected power of the windowed pulsed image at
-    bin ``j`` of the projection along ``angle_deg`` is::
+    ``K = 2L+1`` unless ``exposures`` is given. For a random texture the
+    expected power of the windowed pulsed image at bin ``j`` of the
+    projection along ``angle_deg`` is::
 
-        P(j) = [(2L+1) + 2*sum_{m=1}^{2L} (2L+1-m) * rho(m*v) * cos(2*pi*j*m*|v|/npad)] / (2L+1)**2
+        P(j) = [K + 2*sum_{m=1}^{K-1} (K-m) * rho(m*v) * cos(2*pi*j*m*|v|/npad)] / K**2
 
     with ``rho(m*v) = rho_w(m*vx) * rho_w(m*vy)`` the autocorrelation of the
     separable Hann window at the offset between exposures ``m`` steps apart.
     The closed form includes the blur by the window exactly and cannot alias.
+    ``duty > 0`` (exposure time / time step) adds the motion blur within each
+    exposure: ``P`` is multiplied by ``sinc(j*|v|*duty/npad)**2``.
     Returns ``0.5*log(P + 1e-3)``.
     """
     jpos = np.asarray(jpos, dtype=float).reshape(-1, 1)
     v = np.asarray(v, dtype=float).reshape(1, -1)
     c = abs(np.cos(np.deg2rad(angle_deg)))
     s = abs(np.sin(np.deg2rad(angle_deg)))
-    K = 2 * L + 1
+    K = 2 * L + 1 if exposures is None else int(exposures)
     P = K * np.ones((jpos.size, v.size))
-    for m in range(1, 2 * L + 1):
+    for m in range(1, K):
         w = (K - m) * _window_autocorr(m * v * c, n) * _window_autocorr(m * v * s, n)
         P += 2 * np.cos(2 * np.pi * jpos * (m * v) / npad) * w
     P = np.maximum(P / K**2, 0)
+    if duty > 0:
+        P = P * np.sinc(jpos * v * duty / npad) ** 2
     return 0.5 * np.log(P + 1e-3)
 
 
-def fit_speed(g: np.ndarray, jpos: np.ndarray, L: int, npad: int, n: int, angle_deg: float):
+def fit_speed(g: np.ndarray, jpos: np.ndarray, L: int, npad: int, n: int, angle_deg: float,
+              exposures: Optional[int] = None, duty: float = 0.0):
     """Speed from the projection along the direction of motion ``angle_deg``.
 
     Correlates the detrended half profile ``g(jpos)`` with the detrended
-    Dirichlet model (:func:`dirichlet_template`) for speeds on a logarithmic
-    grid. A cubic polynomial in ``jpos`` absorbs the smooth texture spectrum.
-    The measurable range runs from ``vmin = 1.5*npad/((2L+1)*max(jpos))`` to
-    ``npad/4``; the grid extends down to ``vmin/4`` as a guard band, and
-    ``fit['in_range']`` is False when the best speed lands there.
+    Dirichlet model (:func:`dirichlet_template`, ``K = 2L+1`` exposures
+    unless ``exposures`` is given, motion blur ``duty``) for speeds on a
+    logarithmic grid. A cubic polynomial in ``jpos`` absorbs the smooth
+    texture spectrum. The measurable range runs from
+    ``vmin = 1.5*npad/(K*max(jpos))`` to ``npad/4``; the grid extends down
+    to ``vmin/4`` as a guard band, and ``fit['in_range']`` is False when the
+    best speed lands there. With ``pad_factor > 2`` the grid reaches speeds
+    at which exposures one step apart no longer overlap within the window;
+    the model is then flat (``duty = 0``), and its score is set to 0
+    instead of a ratio of rounding errors.
     Returns ``(speed, quality, fit)`` with
     ``fit = {'v', 'score', 'vmin', 'in_range', 'model'}``.
     """
     jpos = np.asarray(jpos, dtype=float).ravel()
     g = np.asarray(g, dtype=float).ravel()
-    vmin = 1.5 * npad / ((2 * L + 1) * jpos.max())
+    K = 2 * L + 1 if exposures is None else int(exposures)
+    vmin = 1.5 * npad / (K * jpos.max())
     vmax = npad / 4
     nv = int(np.floor((np.log(vmax) - np.log(vmin)) / SPEED_STEP)) + 1
     kext = int(np.floor(np.log(4) / SPEED_STEP))
     v = np.exp(np.log(vmin) + np.arange(-kext, nv) * SPEED_STEP)
 
-    T = dirichlet_template(jpos, v, L, npad, n, angle_deg)
+    T = dirichlet_template(jpos, v, L, npad, n, angle_deg, K, duty)
     x = jpos / jpos.max()
     X = np.column_stack([x**3, x**2, x, np.ones_like(x)])
     Q, _ = np.linalg.qr(X)
@@ -269,6 +409,7 @@ def fit_speed(g: np.ndarray, jpos: np.ndarray, L: int, npad: int, n: int, angle_
     Tp = T - Q @ (Q.T @ T)
     tn = np.sqrt((Tp**2).sum(axis=0))
     score = (gp @ Tp) / (np.linalg.norm(gp) * tn + np.finfo(float).tiny)
+    score[tn <= FLAT_MODEL * np.sqrt((T**2).sum(axis=0))] = 0     # flat model: no information
 
     k = int(np.argmax(score))
     quality = float(score[k])
@@ -281,41 +422,70 @@ def fit_speed(g: np.ndarray, jpos: np.ndarray, L: int, npad: int, n: int, angle_
 
 
 def null_quality(m: int) -> float:
-    """Fit quality that images without motion stay below, for a profile of ``m`` points.
+    """Fit quality that images without motion stay below, for ``m`` independent profile points.
 
     Under the null hypothesis the Fisher transform ``atanh(q)`` of the best
     correlation scales with ``1/sqrt(m-5)`` (four points are taken by the
     cubic, one by the fit). On 1008 images without motion (white noise,
-    random and camera textures, 32 to 256 px, L = 1 to 10) the largest value
-    was ``tanh(8.6/sqrt(m-5))``; 9 adds a margin.
+    random and camera textures, 32 to 256 px, L = 1 to 10, ``pad_factor``
+    2) the largest value was ``tanh(8.6/sqrt(m-5))``; 9 adds a margin.
     """
     return float("inf") if m <= 5 else float(np.tanh(9 / np.sqrt(m - 5)))
 
 
 def estimate_velocity(bp, L: int = 4, pad_factor: int = 2, min_quality: float = 0.6,
-                      diagnostics: bool = False) -> Estimate:
+                      diagnostics: bool = False, *, exposures: Optional[int] = None,
+                      duty: float = 0.0, roi: Optional[int] = None,
+                      clip_outliers: bool = False) -> Estimate:
     """Estimate direction and speed of the motion in a pulsed-exposure image.
 
     Parameters
     ----------
     bp : 2-D array
-        Sum or mean of ``2L+1`` exposures taken at equal time steps while the
-        texture moves by ``v`` per step. Non-square images are cropped to the
+        Sum or mean of ``K = 2L+1`` exposures (see ``exposures``) taken at
+        equal time steps while the texture moves by ``v`` per step: a strobe
+        within one camera frame, or the mean of ``K`` consecutive video frames
+        (see :func:`pulsed_from_stack`). Non-square images are cropped to the
         central square, never resized.
     L : int
         Half the number of exposures.
     pad_factor : int
         Zero padding factor of the FFT.
     min_quality : float
-        Lowest fit quality accepted for ``valid``; small images need more
-        (see ``Estimate.threshold``).
+        Lowest fit quality accepted for ``valid``, in ``[0, 1]``; small images
+        need more (see ``Estimate.threshold``).
     diagnostics : bool
         Keep intermediate results in ``Estimate.diag`` (needed for plotting).
+    exposures : int, optional
+        Exact number of exposures (flashes) ``K >= 2``, also even; default
+        ``2L+1``. Overrides ``L`` for the model. For slow motion a wrong
+        count scales the speed by ``K_true/K`` without lowering the quality.
+    duty : float
+        Duration of one exposure (flash pulse, or camera exposure time)
+        divided by the time step, in ``[0, 1)``; default 0 (short flashes).
+        The motion blur within each exposure, ``duty*|v|`` pixels, must
+        either be given here or stay well below about 3 px.
+    roi : int, optional
+        Side in pixels of the central square that is analysed (at least 16);
+        default and values larger than the image: the largest central square.
+        The run time grows with ``roi**2``.
+    clip_outliers : bool
+        Set pixels more than 6 robust standard deviations (``1.4826*MAD``)
+        from the median to the median before the FFT, against static bright
+        spots such as glints or hot pixels. Default False.
+
+    All options are checked; invalid values raise ValueError.
     """
-    if np.ndim(L) != 0 or L < 1 or int(L) != L:
-        raise ValueError("L must be a positive integer")
-    L = int(L)
-    S, n, npad = log_spectrum(bp, pad_factor)
+    L = _check_option(L, "L", "positive")
+    K = 2 * L + 1 if exposures is None else _check_option(exposures, "exposures", "exposures")
+    duty = _check_option(duty, "duty", "duty")
+    if roi is not None:
+        roi = _check_option(roi, "roi", "roi")
+    pad_factor = _check_option(pad_factor, "pad_factor", "positive")
+    min_quality = _check_option(min_quality, "min_quality", "unit")
+    clip_outliers = _check_option(clip_outliers, "clip_outliers", "flag")
+    diagnostics = _check_option(diagnostics, "diagnostics", "flag")
+    S, n, npad = log_spectrum(bp, pad_factor, roi, clip_outliers)
     rmax = npad // 2 - 1
 
     theta = np.arange(180, dtype=float)
@@ -330,10 +500,21 @@ def estimate_velocity(bp, L: int = 4, pad_factor: int = 2, min_quality: float = 
     pos = (j >= 2) & (j <= RFRAC * rmax)
     g = 0.5 * (m[pos] + m[::-1][pos])
     jpos = j[pos]
-    speed, quality, fit = fit_speed(g, jpos, L, npad, n, angle)
+    speed, quality, fit = fit_speed(g, jpos, L, npad, n, angle, K, duty)
+
+    # Isotropy check: the same fit perpendicular to the direction found
+    ap = (angle + 90.0) % 180.0
+    mp, _, _ = mean_projection(S, [ap], rmax)
+    mp = mp[:, 0]
+    speed_perp, quality_perp, _ = fit_speed(0.5 * (mp[pos] + mp[::-1][pos]), jpos, L, npad, n,
+                                            ap, K, duty)
+    isotropic = bool(quality - quality_perp < ISO_GAP
+                     and abs(np.log(speed_perp / speed)) < ISO_LOG_SPEED)
 
     a = np.deg2rad(angle)
-    threshold = max(min_quality, null_quality(jpos.size))
+    npts = jpos.size
+    m_eff = min(npts, (2 * n * npts) // npad)       # independent points: padding interpolates
+    threshold = max(min_quality, null_quality(m_eff))
     est = Estimate(
         angle_deg=angle,
         speed=speed,
@@ -341,10 +522,13 @@ def estimate_velocity(bp, L: int = 4, pad_factor: int = 2, min_quality: float = 
         vy=float(-speed * np.sin(a)),
         geba=geba,
         quality=quality,
+        quality_perp=float(quality_perp),
         in_range=fit["in_range"],
+        isotropic=isotropic,
         threshold=threshold,
-        valid=bool(quality >= threshold and fit["in_range"]),
+        valid=bool(quality >= threshold and fit["in_range"] and not isotropic),
         L=L,
+        exposures=K,
         n=n,
         npad=npad,
     )
@@ -358,5 +542,6 @@ def estimate_velocity(bp, L: int = 4, pad_factor: int = 2, min_quality: float = 
             "model": fit["model"],
             "speed_grid": fit["v"],
             "speed_score": fit["score"],
+            "speed_perp": speed_perp,
         }
     return est

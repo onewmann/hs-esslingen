@@ -8,6 +8,7 @@ from .core import (
     hann_window,
     log_spectrum,
     mean_projection,
+    pulsed_from_stack,
     ripple_profile,
 )
 from .reference import phase_correlation
@@ -25,6 +26,7 @@ __all__ = [
     "make_texture",
     "mean_projection",
     "phase_correlation",
+    "pulsed_from_stack",
     "ripple_profile",
     "simulate_pulsed_image",
 ]

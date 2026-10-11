@@ -36,8 +36,18 @@ function test_known_velocity()
         assert(~e.in_range && ~e.valid, sprintf('L=%d, speed %g marked valid', c(1), c(2)));
     end
 
-    % no motion must not produce a valid estimate, also on small images
-    for n = [32 64 128 256]
+    % no motion must not produce a valid estimate, also on small images.
+    % At 32 px about 1 in 1000 such images passes, so these inputs are fixed
+    % (saved by tests/parity/make_cases.py, the same as in the Python tests)
+    fx = load(fullfile(here, '..', 'parity', 'fixed_inputs.mat'));
+    for k = 1:3
+        for name = {sprintf('static32_%d', k), sprintf('noise32_%d', k)}
+            e = estimate_velocity(double(fx.(name{1})));
+            assert(~e.valid && e.quality < e.threshold - 0.05, ...
+                sprintf('%s marked valid (quality %.2f)', name{1}, e.quality));
+        end
+    end
+    for n = [64 128 256]
         for k = 1:3
             e = estimate_velocity(simulate_pulsed_image(n, [0 0], 4));
             assert(~e.valid, sprintf('static scene %d px marked valid (quality %.2f)', n, e.quality));
