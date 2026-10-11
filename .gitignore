@@ -11,3 +11,6 @@ dist/
 *.m~
 *.mex*
 octave-workspace
+
+# output of benchmark/run_benchmark.py --quick
+benchmark/results_quick/

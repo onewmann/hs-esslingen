@@ -14,8 +14,8 @@ holds image content in every frame of a window (see `tests/matlab/test_testseque
 |---|---|---|
 | `model` | 20 | (5, 5) px, constant |
 | `tyre` | 20 | (4, 4) px, constant |
-| `vehicle` | 30 | about (5, 5) px, single steps between 2.2 and 8 px |
-| `accelerating` | 30 | vy = 3 px, vx varies smoothly between 1.8 and 8.2 px |
+| `vehicle` | 30 | about (5, 5) px, single steps with vx and vy between 1.9 and 7.9 px |
+| `accelerating` | 30 | vy = 3 px, vx varies smoothly between 2 and 8 px |
 
 Converted from `Testsequenzen1.mat` of the original project (variables
 `modelSequence`, `reifenSequence`, `fahrzeugSequence`, `simSequence`; values in
@@ -31,5 +31,11 @@ moves a fixed window over it with exact, known shifts.
 The full recordings (`vid1.mat` to `vid4.mat`, 10 frames each) stay in the
 archive of the original project (`2D-FFT/data` in onewmann/hs-esslingen).
 `vid1` shows a static room scene; `vid2` to `vid4` show the moving surface.
-Their frame-to-frame motion is not uniform, which
-`benchmark/run_benchmark.py --recordings PATH/TO/2D-FFT/data` analyses.
+Each file holds the variable `recording`, 1216 x 1936 x 1 x 10 `uint8`, as
+`getdata` of the Image Acquisition Toolbox returns it. `pulsed_from_stack`
+(MATLAB and Python) and `python -m fftvel estimate vid2.mat --stack --L 4`
+read it as it is; with 10 frames, an even number, they need `L` or
+`Exposures` to know how many frames to average. The frame-to-frame motion in
+`vid2` to `vid4` is not uniform, which
+`benchmark/run_benchmark.py --only recordings --recordings PATH/TO/2D-FFT/data`
+analyses.
