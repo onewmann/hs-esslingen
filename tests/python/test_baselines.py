@@ -78,8 +78,7 @@ def test_every_method_finds_an_easy_motion(bl, monkeypatch, texture):
         bp, frames = bl.simulate(case)
         a, b = bl.single_exposures(case, frames)
         assert bl.phase_correlation_shift(a, b) == pytest.approx(v, abs=0.02)
-        if v == (0.75, -6.4):                               # between pixels: the parabolic peak is off by 0.15 px
-            assert pc["vector_err_parabolic"] > 0.1
+        assert pc["vector_err_parabolic"] < 0.02, (v, pc)  # fftvel.phase_correlation refines by upsampling too
 
 
 def test_upsampled_peak_of_a_pure_shift(bl):

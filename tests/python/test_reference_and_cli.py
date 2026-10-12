@@ -9,12 +9,13 @@ from fftvel.__main__ import main
 
 
 def test_phase_correlation():
+    # more checks in test_phase_correlation.py
     _, fr = simulate_pulsed_image(128, (3, -2), 1, rng=5, return_frames=True)
     dx, dy, _ = phase_correlation(fr[:, :, 0], fr[:, :, 1])
-    assert abs(dx - 3) < 0.05 and abs(dy + 2) < 0.05
+    assert abs(dx - 3) < 0.01 and abs(dy + 2) < 0.01
     _, fr = simulate_pulsed_image(128, (-1.5, 0.75), 1, rng=6, return_frames=True)
     dx, dy, _ = phase_correlation(fr[:, :, 0], fr[:, :, 2])
-    assert abs(dx + 3) < 0.15 and abs(dy - 1.5) < 0.15
+    assert abs(dx + 3) < 0.01 and abs(dy - 1.5) < 0.01
 
 
 def test_cli_simulate(capsys, tmp_path):
