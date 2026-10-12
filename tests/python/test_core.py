@@ -99,6 +99,7 @@ BAD_OPTIONS = [
     ("duty", 1), ("duty", -0.1), ("duty", np.nan), ("duty", "0.2"), ("duty", None),
     ("roi", 8), ("roi", 100.5), ("roi", "128"), ("roi", np.inf),
     ("clip_outliers", 2), ("clip_outliers", "yes"), ("clip_outliers", None),
+    ("reject_blur", 2), ("reject_blur", "yes"), ("reject_blur", None),
     ("diagnostics", "no"), ("diagnostics", 2),
 ]
 
@@ -130,7 +131,7 @@ def test_options_and_errors():
         estimate_velocity(nan_img)
     e1 = estimate_velocity(bp, L=np.int32(4), pad_factor=np.uint8(2), min_quality=np.float32(0.5),
                            exposures=np.int64(9), duty=np.float32(0), roi=np.uint16(64),
-                           clip_outliers=np.bool_(False))
+                           clip_outliers=np.bool_(False), reject_blur=np.bool_(False))
     e2 = estimate_velocity(bp, L=4.0, min_quality=0.5)
     assert e1 == e2 and e1.exposures == 9 and e1.L == 4
     e = estimate_velocity(bp, min_quality=0.99)

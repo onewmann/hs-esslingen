@@ -47,7 +47,7 @@ import common
 from common import AQUA, BLUE, INK2, ORANGE, SURFACE
 from fftvel import angle_difference, estimate_velocity, phase_correlation, to_physical
 from fftvel.__main__ import _frames_axis, _load
-from fftvel.core import DEFAULT_PAD_FACTOR, RFRAC, VMIN_FACTOR
+from fftvel.core import DEFAULT_PAD_FACTOR, RFRAC, SAT_WARN, VMIN_FACTOR
 
 COLUMNS = {
     "file": "image file, relative to meta.csv (.png, .tif, .npy, .mat); file.mat#k selects frame k",
@@ -72,7 +72,8 @@ META = ("exposures", "flash_period_s", "duty", "gsd_mm_per_px", "set_speed_mm_s"
 # estimate, the settings from meta.csv, the cross-check, then warnings, errors and the note
 FIELDS = ("file", "line", "valid", "reason", "speed_mm_s", "set_speed_mm_s", "speed_err", "angle_deg",
           "set_angle_deg", "angle_err_deg", "speed_px", "expected_px", "vx_px", "vy_px", "vx_mm_s", "vy_mm_s",
-          "quality", "threshold", "quality_perp", "geba", "in_range", "isotropic", "roi", "static", "exposures",
+          "quality", "threshold", "quality_perp", "geba", "in_range", "isotropic", "quality_blur", "blur_length",
+          "blur_like", "saturated", "roi", "static", "exposures",
           "flash_period_s", "duty", "gsd_mm_per_px", "exposure_s", "ref_frame_a", "ref_frame_b", "ref_dt_s",
           "ref_dx_px", "ref_dy_px", "ref_peak", "ref_angle_deg", "ref_angle_diff_deg", "ref_speed_px",
           "ref_speed_diff", "ref_speed_mm_s", "warnings", "error", "note")
@@ -80,7 +81,6 @@ DEFAULT_ROI = 512
 TOL_SPEED = 0.05        # an estimate counts as correct within 5 % of the set speed ...
 TOL_ANGLE = 2.0         # ... and 2 deg of the set direction, as in the simulated studies
 CONFIDENCE = 0.95       # of the Clopper-Pearson upper bounds
-SATURATED = 0.005       # warn when more than this share of the pixels sits at the maximum
 FRAME = re.compile(r"^(.*)#(\d+)$")
 
 
@@ -312,7 +312,7 @@ def build_tasks(rows, clip_outliers: bool = False):
             h, w = img.shape
             side = min(h, w) if row["roi"] == 0 else min(row["roi"], h, w)
             task = dict(row=row, name=name, image=central(img, side).copy(), clip=clip_outliers,
-                        warnings=_image_warnings(row, img, side))
+                        warnings=_image_warnings(row))
             key = (str(row["path"].resolve()), label or "#1")
             if key in seen:
                 task["warnings"].append(f"the same image as in line {seen[key]}, so it counts twice in "
@@ -325,7 +325,7 @@ def build_tasks(rows, clip_outliers: bool = False):
     return tasks, failed
 
 
-def _image_warnings(row, img, side):
+def _image_warnings(row):
     out = []
     K, T, duty = row["exposures"], row["flash_period_s"], row["duty"]
     if str(row["path"]).lower().endswith((".jpg", ".jpeg", ".jfif")):
@@ -333,12 +333,6 @@ def _image_warnings(row, img, side):
     if row["exposure_s"] is not None and T is not None and row["exposure_s"] < (K - 1 + duty) * T:
         out.append(f"exposure {row['exposure_s']:g} s is shorter than (K - 1 + duty) * T = "
                    f"{(K - 1 + duty) * T:g} s, so the image holds fewer than {K} flashes")
-    crop = central(img, side)
-    if crop.dtype.kind in "iu":
-        share = float(np.mean(crop == crop.max()))
-        if share > SATURATED:
-            out.append(f"{100 * share:.1f} % of the analysed pixels are at the maximum {crop.max()} "
-                       f"(saturation or glints; try --clip-outliers)")
     return out
 
 
@@ -390,8 +384,20 @@ def analyse(task):
         reason.append("isotropic")
     res.update(roi=e.n, angle_deg=e.angle_deg, speed_px=e.speed, vx_px=e.vx, vy_px=e.vy,
                quality=e.quality, quality_perp=e.quality_perp, threshold=e.threshold, geba=e.geba,
-               in_range=int(e.in_range), isotropic=int(e.isotropic), valid=int(e.valid),
-               reason="; ".join(reason))
+               in_range=int(e.in_range), isotropic=int(e.isotropic), quality_blur=e.quality_blur,
+               blur_length=e.blur_length, blur_like=int(e.blur_like), saturated=e.saturated,
+               valid=int(e.valid), reason="; ".join(reason))
+    if e.valid and e.blur_like:
+        warnings.append(f"one continuous exposure blurred over {e.blur_length:.3g} px (no flashes) fits better "
+                        f"than the flashes. Below about 2.2 px per flash this is common for multi-flash images "
+                        f"with noise too, so it only means that the image cannot tell the two apart; if light "
+                        f"other than the flashes reaches the sensor, check with an image taken without flashes, "
+                        f"which must come out not valid")
+    if e.saturated > SAT_WARN:
+        top = task["image"].max()
+        warnings.append(f"{100 * e.saturated:.1f} % of the analysed pixels are saturated (at the maximum "
+                        f"{top:g}); saturation and glints can give wrong results that are marked valid "
+                        f"(try --clip-outliers, or lower the exposure)")
     mm = physical(e, gsd, T)
     res["speed_mm_s"] = None if mm is None else mm.speed
     if mm is not None:
@@ -703,7 +709,8 @@ def main(argv=None):
                    help=f"side of the analysed central square for rows without roi (default {DEFAULT_ROI}; "
                         f"0: the largest square). The run time grows with its square")
     p.add_argument("--clip-outliers", action="store_true",
-                   help="set pixels more than 6 robust sigma from the median to the median (glints)")
+                   help="set pixels more than 6 robust sigma from the median, and all pixels within 3 px "
+                        "of them, to the median (glints)")
     p.add_argument("--tol-speed", type=float, default=TOL_SPEED,
                    help=f"relative speed error up to which a valid estimate counts as correct (default {TOL_SPEED})")
     p.add_argument("--tol-angle", type=float, default=TOL_ANGLE,

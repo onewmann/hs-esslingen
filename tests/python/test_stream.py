@@ -92,6 +92,22 @@ def test_flash_frame():
         estimate_frame(bp, flash_period=-1)
 
 
+def test_saturation_warning():
+    bp = simulate_pulsed_image(128, (3.0, -2.0), 4, rng=2)
+    frame = np.round(100 + 15 * bp / bp.std()).astype(np.uint8)
+    r = estimate_frame(frame)
+    assert r.warning == "" and r.estimate.saturated == 0
+    frame[:20, :20] = 255                                   # 2.4 % of the pixels
+    with pytest.warns(UserWarning, match="saturated"):
+        r = estimate_frame(frame)
+    assert r.warning == "2.4 % of the analysed pixels are saturated"
+    assert r.estimate.saturated == pytest.approx(400 / 128**2)
+    burst = [(frame, k / 50.0) for k in range(9)]           # average mode: the mean keeps the 255s
+    with pytest.warns(UserWarning, match="saturated"):
+        r = estimate_window(burst, L=4)
+    assert r.warning.startswith("2.4 %")
+
+
 def test_window_options():
     _, fr = simulate_pulsed_image(160, (4.0, -1.0), 4, rng=1, return_frames=True, exposures=8, duty=0.2)
     burst = [(fr[:, :, k], k / 50.0) for k in range(8)]

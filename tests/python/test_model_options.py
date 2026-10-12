@@ -1,7 +1,10 @@
-"""Model options (exposures, duty), ROI, outlier clipping, isotropy check and frame stacks.
+"""Model options (exposures, duty), ROI, outlier clipping, isotropy check, blur check, saturation
+and frame stacks.
 
 The same checks are in tests/matlab/test_model_options.m.
 """
+
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -9,7 +12,8 @@ from scipy.io import loadmat
 from scipy.signal import fftconvolve
 
 from fftvel import angle_difference, estimate_velocity, pulsed_from_stack, simulate_pulsed_image
-from fftvel.core import crop_square
+from fftvel.core import (BLUR_STEP, CLIP_RADIUS, box_template, crop_square, dilate, dirichlet_template,
+                         log_spectrum, saturated_share)
 
 
 @pytest.fixture(scope="module")
@@ -88,6 +92,99 @@ def test_clip_outliers(seed):
     assert_correct(estimate_velocity(x, clip_outliers=True), np.hypot(1.5, 0.5),
                    np.rad2deg(np.arctan2(0.5, 1.5)))
     assert estimate_velocity(clean, clip_outliers=True) == estimate_velocity(clean)
+
+
+def test_clip_outliers_takes_the_rim_along():
+    # the clipped pixels and all pixels within CLIP_RADIUS of them are set to the median
+    _, x = hot_pixel_image(0)
+    y = x.copy()
+    rows, cols = np.mgrid[0:96, 0:96]
+    for r, c in ((30, 30), (50, 60)):
+        y[(rows - r) ** 2 + (cols - c) ** 2 <= CLIP_RADIUS**2] = np.median(x)
+    assert np.array_equal(log_spectrum(x, clip_outliers=True)[0], log_spectrum(y)[0])
+
+
+def test_box_template_is_the_dirichlet_template_of_close_exposures():
+    j = np.arange(2, 230)
+    for K in (2, 9, 40):
+        a = box_template(j, [K * BLUR_STEP], 512, 256, 30.0)
+        b = dirichlet_template(j, [BLUR_STEP], 4, 512, 256, 30.0, exposures=K)
+        assert np.abs(a - b).max() < 1e-12, K
+
+
+def blurred(n, length, angle, seed):
+    """One continuous exposure: the texture moves by ``length`` px (10 exposures of duty 0.99, no gaps),
+    with 10 % noise as a camera adds."""
+    return simulate_pulsed_image(n, velocity(length / 10, angle), 4, exposures=10, duty=0.99, noise=0.1,
+                                 rng=seed)
+
+
+@pytest.mark.parametrize("length, angle", [(5.0, 30.0), (9.0, 100.0)])
+def test_single_exposure_is_blur_like(length, angle):
+    # a blur of d px looks like K flashes d/K apart; the blur check flags it
+    bp = blurred(128, length, angle, 3)
+    e = estimate_velocity(bp)
+    assert e.valid and abs(e.speed * e.exposures / length - 1) < 0.05
+    assert e.blur_like and abs(e.blur_length / length - 1) < 0.05
+    r = estimate_velocity(bp, reject_blur=True)
+    assert not r.valid and r == replace(e, valid=False)
+
+
+def test_fast_flashes_are_not_blur_like():
+    bp = simulate_pulsed_image(128, (7.0, 3.0), 4, rng=1)
+    e = estimate_velocity(bp)
+    assert not e.blur_like and e.quality - e.quality_blur > 0.3
+    assert estimate_velocity(bp, reject_blur=True) == e
+
+
+def test_dilate():
+    m = np.zeros((7, 9), dtype=bool)
+    m[3, 4] = True
+    d = dilate(m, 2)
+    assert d.sum() == 13 and d[3, 2] and d[1, 4] and d[2, 3] and not d[1, 3]     # a disc of radius 2
+    m[3, 4], m[0, 0] = False, True
+    assert dilate(m, 2).sum() == 6                        # a quarter disc at the corner, nothing wraps
+    assert np.array_equal(dilate(m, 0), m)
+    assert not dilate(np.zeros((5, 5), dtype=bool), 3).any()
+
+
+def test_saturated_share():
+    # same rules as tests/matlab/test_model_options.m
+    x = np.full((20, 20), 7, dtype=np.uint8)
+    x[0, :2] = 255
+    assert saturated_share(x) == 2 / 400                  # at the uint8 maximum: any share counts
+    x[0, :2] = 254
+    assert saturated_share(x) == 2 / 400                  # below it: counts from 0.5 %
+    x[0, 1] = 7
+    assert saturated_share(x) == 0                        # 0.25 %
+    assert saturated_share(x.astype(float)) == 0
+    x[0, 1] = 254
+    assert saturated_share(x.astype(np.float32)) == 2 / 400
+    big = np.full((100, 100), 50, dtype=np.uint16)
+    big[0, 0] = 65535
+    assert saturated_share(big) == 1e-4
+    assert saturated_share(big.astype(float)) == 0        # one pixel at a float maximum is no evidence
+    assert saturated_share(np.full((8, 8), 255, dtype=np.uint8)) == 1
+    assert saturated_share(np.full((8, 8), 255.0)) == 0   # constant: nothing to compare with
+    assert saturated_share(np.full((8, 8), 7, dtype=np.int16)) == 0
+    i16 = np.zeros((10, 10), dtype=np.int16)
+    i16[0, 0] = 32767
+    assert saturated_share(i16) == 0.01
+    b = np.zeros((10, 10), dtype=bool)
+    b[0, 0] = True
+    assert saturated_share(b) == 0.01
+
+
+def test_saturated_counts_the_analysed_square_before_clipping():
+    bp = simulate_pulsed_image(160, (3.0, -1.0), 4, rng=5)
+    x = np.clip(np.round(100 + 15 * bp / bp.std()), 0, 255).astype(np.uint8)
+    x[:16, :16] = 255                                     # outside the central 128 px
+    assert estimate_velocity(x, roi=128).saturated == 0
+    assert estimate_velocity(x).saturated == 256 / 160**2
+    x[60:70, 60:70] = 255                                 # inside
+    e = estimate_velocity(x, roi=128, clip_outliers=True)
+    assert e.saturated == 100 / 128**2 and estimate_velocity(x, roi=128).saturated == e.saturated
+    assert estimate_velocity(x.astype(float), roi=128).saturated == 100 / 128**2   # float: >= 0.5 %
 
 
 def test_defocused_static_texture_is_not_valid(texture):

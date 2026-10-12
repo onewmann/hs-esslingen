@@ -2,8 +2,8 @@
 
 The model, the ripple profile WR and the quality measure GEBA follow Chapter 3
 of J. Horn's doctoral thesis (Universitaet Karlsruhe, 2007; full reference in
-README.md). The speed fit, the validity threshold and the isotropy check were
-added in this implementation.
+README.md). The speed fit, the validity threshold, the isotropy check and the
+blur check were added in this implementation.
 
 This module mirrors the MATLAB/Octave package ``matlab/+fftvel`` line by
 line, so that both give the same numbers for the same input (see
@@ -25,8 +25,9 @@ from typing import Optional
 import numpy as np
 
 # Public names; the helpers below (log_spectrum, mean_projection, ripple_profile,
-# fit_speed, null_quality, dirichlet_template, parabolic_offset, hann_window,
-# crop_square) are imported from fftvel.core by the tests and experiments.
+# fit_speed, fit_blur, null_quality, dirichlet_template, box_template,
+# parabolic_offset, hann_window, crop_square, dilate, saturated_share) are
+# imported from fftvel.core by the tests and experiments.
 __all__ = [
     "Estimate",
     "PhysicalVelocity",
@@ -56,6 +57,7 @@ LOG_FLOOR = 0.05             # S = log(|B| + LOG_FLOOR*median|B|), mean|B| if th
 BLANK_FLOOR = 1.0            # floor instead when |B| is 0 everywhere (blank image)
 CLIP_SIGMA = 6               # clip_outliers: robust standard deviations from the median ...
 MAD_SCALE = 1.4826           # ... with robust standard deviation = MAD_SCALE * MAD
+CLIP_RADIUS = 3              # ... and the pixels within this distance (px) of such a pixel
 
 # Direction
 ANGLE_STEP = 1.0             # angle grid 0, ANGLE_STEP, ..., 180 - ANGLE_STEP degrees
@@ -78,6 +80,12 @@ NULL_OFFSET = 5              # ... with TREND_DEGREE + 1 points taken by the pol
 INDEPENDENT_PAD = 2          # m = min(points, floor(INDEPENDENT_PAD*n*points/npad)) independent points
 ISO_GAP = 0.15               # isotropic if quality - quality_perp is below this ...
 ISO_LOG_SPEED = 0.12         # ... and |log(speed_perp/speed)| is below this
+BLUR_STEP = 0.5              # px between the samples of the continuous blur in box_template
+BLUR_GAP = 0.0               # blur_like if quality - quality_blur is below this (and the speed is low)
+
+# Saturation
+SAT_SHARE = 0.005            # saturated: least share of pixels at the maximum (unless it is the integer maximum)
+SAT_WARN = 0.01              # command line, stream and experiments warn above this share
 
 # Simulation (simulate.py) and grey conversion of colour input
 SIM_MARGIN = 32              # extra texture size in px beyond n + (K-1+duty)*max|v|
@@ -108,12 +116,33 @@ class Estimate:
         ``min_quality`` and ``tanh(9/sqrt(m-5))``. ``m`` counts independent
         profile points: ``min(points, floor(2*n*points/npad))``, so zero
         padding beyond ``pad_factor = 2`` does not lower the threshold.
-    valid : ``quality >= threshold`` and ``in_range`` and not ``isotropic``.
+    valid : ``quality >= threshold`` and ``in_range`` and not ``isotropic``
+        (and not ``blur_like`` with ``reject_blur``).
     L : ``L`` as passed.
     exposures : number of exposures ``K`` used in the model (``2L+1``
         unless ``exposures`` was given).
     n : side of the analysed central square in pixels.
     npad : FFT length.
+    quality_blur : quality of the same fit along ``angle_deg`` with a single
+        continuous exposure (motion blur of a free length, no flashes) in
+        place of the ``K`` flashes.
+    blur_length : blur length in pixels of that fit; a blur of ``d`` px
+        looks like ``K`` flashes about ``d/K`` apart.
+    blur_like : True if the blur model fits better (``quality_blur >
+        quality``) and the speed is below ``npad/max(profile_j)``, about
+        2.2 px per step, so that the repeated lines of the flashes
+        (``npad/speed`` bins apart), which alone tell flashes from a blur,
+        lie beyond the fitted profile. Most single exposures of a moving
+        surface are blur-like, but below that speed so are most multi-flash
+        images with noise: there the flag says that the image cannot tell
+        flashes from a blur, not that it is a blur. Only ``reject_blur``
+        makes it count for ``valid``.
+    saturated : share of the analysed pixels at the maximum of the square,
+        before any processing (:func:`saturated_share`): for an integer
+        image whose maximum is the largest value of its type, the share at
+        that value; otherwise the share at the maximum if it is at least
+        0.5 % and the square is not constant, else 0. Saturated areas and
+        glints can give wrong results that are marked valid.
     """
 
     angle_deg: float
@@ -131,6 +160,10 @@ class Estimate:
     exposures: int
     n: int
     npad: int
+    quality_blur: float = float("nan")
+    blur_length: float = float("nan")
+    blur_like: bool = False
+    saturated: float = 0.0
     diag: Optional[dict] = field(default=None, repr=False)
 
 
@@ -273,6 +306,46 @@ def pulsed_from_stack(frames, *, L: Optional[int] = None, exposures: Optional[in
     return a[:, :, :K].astype(float).mean(axis=2), K
 
 
+def dilate(mask: np.ndarray, radius: int) -> np.ndarray:
+    """``mask`` grown by a disc: True where a True pixel lies within ``radius`` px.
+
+    Pixels count as within the disc when ``dy**2 + dx**2 <= radius**2``;
+    nothing is wrapped around the borders. clip_outliers uses it so that the
+    faint rim of a glint goes with its clipped core.
+    """
+    mask = np.asarray(mask, dtype=bool)
+    out = mask.copy()
+    h, w = mask.shape
+    for dy in range(-radius, radius + 1):
+        for dx in range(-radius, radius + 1):
+            if 0 < dy * dy + dx * dx <= radius * radius:
+                out[max(dy, 0):h + min(dy, 0), max(dx, 0):w + min(dx, 0)] |= \
+                    mask[max(-dy, 0):h + min(-dy, 0), max(-dx, 0):w + min(-dx, 0)]
+    return out
+
+
+def saturated_share(img) -> float:
+    """Share of the pixels of ``img`` that sit at its maximum, if that looks like saturation, else 0.
+
+    For an integer image whose maximum is the largest value of its type
+    (255 for uint8, 65535 for uint16): the share of pixels at that value,
+    however small. Otherwise (floating point or logical images, and integer
+    images whose maximum lies below that of their type, such as 12-bit data
+    in uint16): the share of pixels at the maximum when it is at least 0.5 %
+    and the image is not constant, else 0. ``img`` is used as it is, before
+    any conversion; estimate_velocity passes the analysed square.
+    """
+    a = np.asarray(img)
+    top = a.max()
+    if a.dtype.kind in "iu" and top == np.iinfo(a.dtype).max:
+        return np.count_nonzero(a == top) / a.size
+    if top > a.min():
+        share = np.count_nonzero(a == top) / a.size
+        if share >= SAT_SHARE:
+            return share
+    return 0.0
+
+
 def log_spectrum(bp: np.ndarray, pad_factor: int = DEFAULT_PAD_FACTOR, roi: Optional[int] = None,
                  clip_outliers: bool = False):
     """Centred log-magnitude spectrum of the windowed, mean-free image.
@@ -282,8 +355,8 @@ def log_spectrum(bp: np.ndarray, pad_factor: int = DEFAULT_PAD_FACTOR, roi: Opti
     ``npad // 2``. The image is cropped to its central ``roi``-by-``roi``
     square (default and for ``roi`` larger than the image: the largest
     central square). With ``clip_outliers``, pixels more than 6 robust
-    standard deviations (``1.4826 * MAD``) from the median are set to the
-    median first.
+    standard deviations (``1.4826 * MAD``) from the median, and all pixels
+    within 3 px of them (:func:`dilate`), are set to the median first.
     """
     pad_factor = _check_option(pad_factor, "pad_factor", "positive")
     img = np.asarray(bp)
@@ -302,7 +375,7 @@ def log_spectrum(bp: np.ndarray, pad_factor: int = DEFAULT_PAD_FACTOR, roi: Opti
         med = np.median(x)
         s = MAD_SCALE * np.median(np.abs(x - med))
         if s > 0:
-            x = np.where(np.abs(x - med) > CLIP_SIGMA * s, med, x)
+            x = np.where(dilate(np.abs(x - med) > CLIP_SIGMA * s, CLIP_RADIUS), med, x)
     npad = pad_factor * n
     x = x - x.mean()
     w = hann_window(n)
@@ -435,6 +508,50 @@ def dirichlet_template(jpos: np.ndarray, v: np.ndarray, L: int, npad: int, n: in
     return 0.5 * np.log(P + TEMPLATE_FLOOR)
 
 
+def box_template(jpos: np.ndarray, d: np.ndarray, npad: int, n: int, angle_deg: float) -> np.ndarray:
+    """Expected log spectrum along the motion for one continuous exposure, one column per blur length.
+
+    A single exposure during which the texture moves by ``d`` px along
+    ``angle_deg`` (motion blur, no flashes) multiplies the spectrum by
+    ``sinc(j*d/npad)**2``. As in :func:`dirichlet_template` the window is
+    included exactly: the blur is sampled every ``h = 0.5`` px, so that::
+
+        P(j) = (h/d) * [1 + 2*sum_{q>=1} max(1 - q*h/d, 0) * rho(q*h) * cos(2*pi*j*q*h/npad)]
+
+    with ``rho`` the autocorrelation of the window. For ``d = K*h`` this is
+    the template of ``K`` exposures ``h`` apart. Returns ``0.5*log(P + 1e-3)``.
+    """
+    jpos = np.asarray(jpos, dtype=float).reshape(-1, 1)
+    d = np.asarray(d, dtype=float).reshape(1, -1)
+    c = abs(np.cos(np.deg2rad(angle_deg)))
+    s = abs(np.sin(np.deg2rad(angle_deg)))
+    u = BLUR_STEP * np.arange(1, int(np.ceil(d.max() / BLUR_STEP)) + 1)      # offsets 0 < u <= max(d)
+    rho = _window_autocorr(u * c, n) * _window_autocorr(u * s, n)
+    C = np.cos(2 * np.pi * jpos * u / npad) * rho
+    W = np.maximum(1 - u.reshape(-1, 1) / d, 0)
+    P = np.maximum(BLUR_STEP / d * (1 + 2 * (C @ W)), 0)
+    return 0.5 * np.log(P + TEMPLATE_FLOOR)
+
+
+def _template_scores(g: np.ndarray, jpos: np.ndarray, T: np.ndarray):
+    """Correlation of the detrended profile ``g`` with each detrended column of ``T``.
+
+    A cubic polynomial in ``jpos`` is removed from both; columns whose
+    detrended norm is below ``1e-6`` of their norm (a flat model) score 0.
+    Returns ``(score, gp, Tp)``: the scores and the detrended profile and
+    templates. Shared by :func:`fit_speed` and :func:`fit_blur`.
+    """
+    x = jpos / jpos.max()
+    X = np.column_stack([x**p for p in range(TREND_DEGREE, -1, -1)])     # cubic: x**3, x**2, x, 1
+    Q, _ = np.linalg.qr(X)
+    gp = g - Q @ (Q.T @ g)
+    Tp = T - Q @ (Q.T @ T)
+    tn = np.sqrt((Tp**2).sum(axis=0))
+    score = (gp @ Tp) / (np.linalg.norm(gp) * tn + np.finfo(float).tiny)
+    score[tn <= FLAT_MODEL * np.sqrt((T**2).sum(axis=0))] = 0     # flat model: no information
+    return score, gp, Tp
+
+
 def fit_speed(g: np.ndarray, jpos: np.ndarray, L: int, npad: int, n: int, angle_deg: float,
               exposures: Optional[int] = None, duty: float = 0.0):
     """Speed from the projection along the direction of motion ``angle_deg``.
@@ -463,14 +580,7 @@ def fit_speed(g: np.ndarray, jpos: np.ndarray, L: int, npad: int, n: int, angle_
     v = np.exp(np.log(vmin) + np.arange(-kext, nv) * SPEED_STEP)
 
     T = dirichlet_template(jpos, v, L, npad, n, angle_deg, K, duty)
-    x = jpos / jpos.max()
-    X = np.column_stack([x**p for p in range(TREND_DEGREE, -1, -1)])     # cubic: x**3, x**2, x, 1
-    Q, _ = np.linalg.qr(X)
-    gp = g - Q @ (Q.T @ g)
-    Tp = T - Q @ (Q.T @ T)
-    tn = np.sqrt((Tp**2).sum(axis=0))
-    score = (gp @ Tp) / (np.linalg.norm(gp) * tn + np.finfo(float).tiny)
-    score[tn <= FLAT_MODEL * np.sqrt((T**2).sum(axis=0))] = 0     # flat model: no information
+    score, gp, Tp = _template_scores(g, jpos, T)
 
     k = int(np.argmax(score))
     quality = float(score[k])
@@ -482,14 +592,43 @@ def fit_speed(g: np.ndarray, jpos: np.ndarray, L: int, npad: int, n: int, angle_
     return speed, quality, {"v": v, "score": score, "vmin": vmin, "in_range": in_range, "model": model}
 
 
+def fit_blur(g: np.ndarray, jpos: np.ndarray, npad: int, n: int, angle_deg: float):
+    """Length of a continuous motion blur that explains the profile along ``angle_deg``.
+
+    The same fit as :func:`fit_speed` with :func:`box_template` (one long
+    exposure, no flashes) in place of the Dirichlet model. A blur of ``d``
+    px has the main lobe of ``K`` flashes ``d/K`` apart; only the periodic
+    side lines of the flashes tell them apart. The grid of blur lengths is
+    ``K`` times the speed grid of :func:`fit_speed` (it does not depend on
+    ``K``), from ``1.5*npad/max(jpos)/4`` up to ``npad/4``, where the zeros
+    of the sinc are four bins apart. Returns ``(length, quality, fit)``
+    with ``fit = {'d', 'score'}``.
+    """
+    jpos = np.asarray(jpos, dtype=float).ravel()
+    g = np.asarray(g, dtype=float).ravel()
+    dref = VMIN_FACTOR * npad / jpos.max()                  # K * vmin of fit_speed
+    dmax = npad / MIN_LINE_SPACING
+    nd = int(np.floor((np.log(dmax) - np.log(dref)) / SPEED_STEP)) + 1
+    kext = int(np.floor(np.log(GUARD_FACTOR) / SPEED_STEP))
+    d = np.exp(np.log(dref) + np.arange(-kext, nd) * SPEED_STEP)
+    score, _, _ = _template_scores(g, jpos, box_template(jpos, d, npad, n, angle_deg))
+    k = int(np.argmax(score))
+    dk = parabolic_offset(score, k, periodic=False)
+    length = float(np.exp(np.log(d[k]) + dk * SPEED_STEP))
+    return length, float(score[k]), {"d": d, "score": score}
+
+
 def null_quality(m: int) -> float:
     """Fit quality that images without motion stay below, for ``m`` independent profile points.
 
     Under the null hypothesis the Fisher transform ``atanh(q)`` of the best
     correlation scales with ``1/sqrt(m-5)`` (four points are taken by the
-    cubic, one by the fit). On 1008 images without motion (white noise,
-    random and camera textures, 32 to 256 px, L = 1 to 10, ``pad_factor``
-    2) the largest value was ``tanh(8.6/sqrt(m-5))``; 9 adds a margin.
+    cubic, one by the fit). On the 1008 calibration images without motion
+    of experiments/calibrate_threshold.py (white noise, random and camera
+    textures, 32 to 256 px, L = 1 to 10, ``pad_factor`` 2) the largest value
+    was ``tanh(8.41/sqrt(m-5))``; on all 2268 simulated images without
+    motion, held-out textures included, it was ``tanh(8.64/sqrt(m-5))``, and
+    none of them was valid with 9.
     """
     return float("inf") if m <= NULL_OFFSET else float(np.tanh(NULL_K / np.sqrt(m - NULL_OFFSET)))
 
@@ -497,7 +636,7 @@ def null_quality(m: int) -> float:
 def estimate_velocity(bp, *, L: int = DEFAULT_L, exposures: Optional[int] = None,
                       duty: float = 0.0, roi: Optional[int] = None,
                       clip_outliers: bool = False, pad_factor: int = DEFAULT_PAD_FACTOR,
-                      min_quality: float = DEFAULT_MIN_QUALITY,
+                      min_quality: float = DEFAULT_MIN_QUALITY, reject_blur: bool = False,
                       diagnostics: bool = False) -> Estimate:
     """Estimate direction and speed of the motion in a pulsed-exposure image.
 
@@ -526,13 +665,20 @@ def estimate_velocity(bp, *, L: int = DEFAULT_L, exposures: Optional[int] = None
         The run time grows with ``roi**2``.
     clip_outliers : bool
         Set pixels more than 6 robust standard deviations (``1.4826*MAD``)
-        from the median to the median before the FFT, against static bright
-        spots such as glints or hot pixels. Default False.
+        from the median, and all pixels within 3 px of them, to the median
+        before the FFT, against static bright spots such as glints or hot
+        pixels. Default False.
     pad_factor : int
         Zero padding factor of the FFT; default 2.
     min_quality : float
         Lowest fit quality accepted for ``valid``, in ``[0, 1]``; default
         0.6. Small images need more (see ``Estimate.threshold``).
+    reject_blur : bool
+        Also require ``Estimate.blur_like`` to be False for ``valid``,
+        against single exposures of a moving surface (motion blur, no
+        flashes). Most multi-flash images of slow motion (below about
+        2.2 px per step) with noise are blur-like too, so this rejects most
+        valid results there. Default False.
     diagnostics : bool
         Keep intermediate results in ``Estimate.diag`` (needed for plotting).
         Default False.
@@ -550,8 +696,10 @@ def estimate_velocity(bp, *, L: int = DEFAULT_L, exposures: Optional[int] = None
     pad_factor = _check_option(pad_factor, "pad_factor", "positive")
     min_quality = _check_option(min_quality, "min_quality", "unit")
     clip_outliers = _check_option(clip_outliers, "clip_outliers", "flag")
+    reject_blur = _check_option(reject_blur, "reject_blur", "flag")
     diagnostics = _check_option(diagnostics, "diagnostics", "flag")
     S, n, npad = log_spectrum(bp, pad_factor, roi, clip_outliers)
+    saturated = saturated_share(crop_square(np.asarray(bp), n))     # the analysed square as given
     rmax = npad // 2 - 1
 
     theta = np.arange(0, 180, ANGLE_STEP)
@@ -577,10 +725,18 @@ def estimate_velocity(bp, *, L: int = DEFAULT_L, exposures: Optional[int] = None
     isotropic = bool(quality - quality_perp < ISO_GAP
                      and abs(np.log(speed_perp / speed)) < ISO_LOG_SPEED)
 
+    # Blur check: one continuous exposure (motion blur, no flashes) along the same direction. Only the
+    # repeated lines of the flashes, npad/speed bins apart, tell the two apart; below npad/max(jpos)
+    # they lie beyond the profile
+    blur_length, quality_blur, fit_b = fit_blur(g, jpos, npad, n, angle)
+    blur_like = bool(quality - quality_blur < BLUR_GAP and speed * jpos.max() < npad)
+
     a = np.deg2rad(angle)
     npts = jpos.size
     m_eff = min(npts, (INDEPENDENT_PAD * n * npts) // npad)    # independent points: padding interpolates
     threshold = max(min_quality, null_quality(m_eff))
+    valid = bool(quality >= threshold and fit["in_range"] and not isotropic
+                 and not (reject_blur and blur_like))
     est = Estimate(
         angle_deg=angle,
         speed=speed,
@@ -592,11 +748,15 @@ def estimate_velocity(bp, *, L: int = DEFAULT_L, exposures: Optional[int] = None
         in_range=fit["in_range"],
         isotropic=isotropic,
         threshold=threshold,
-        valid=bool(quality >= threshold and fit["in_range"] and not isotropic),
+        valid=valid,
         L=L,
         exposures=K,
         n=n,
         npad=npad,
+        quality_blur=quality_blur,
+        blur_length=blur_length,
+        blur_like=blur_like,
+        saturated=float(saturated),
     )
     if diagnostics:
         est.diag = {
@@ -609,6 +769,8 @@ def estimate_velocity(bp, *, L: int = DEFAULT_L, exposures: Optional[int] = None
             "speed_grid": fit["v"],
             "speed_score": fit["score"],
             "speed_perp": speed_perp,
+            "blur_grid": fit_b["d"],
+            "blur_score": fit_b["score"],
         }
     return est
 

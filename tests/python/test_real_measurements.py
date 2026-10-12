@@ -187,8 +187,8 @@ def test_lowest_speed_is_the_estimator_limit(rm):
 def test_warnings_and_summary(rm, tmp_path):
     img = simulate_pulsed_image(128, (2.0, 0.0), 4, rng=5)
     img = np.clip(np.round(128 + 30 * img), 0, 254).astype(np.uint8)
-    img[:8, :8] = 255                                     # two saturated patches, 0.8 % of the pixels
-    img[-8:, -8:] = 255
+    img[:10, :10] = 255                                   # two saturated patches, 1.2 % of the pixels
+    img[-10:, -10:] = 255
     np.save(tmp_path / "a.npy", img)
     meta = write_meta(tmp_path / "meta.csv",
                       ["file", "exposures", "flash_period_s", "gsd_mm_per_px", "set_speed_mm_s",
@@ -200,7 +200,8 @@ def test_warnings_and_summary(rm, tmp_path):
     tasks, failed = rm.build_tasks(rows)
     results = [rm.analyse(t) for t in tasks]
     w0, w1 = results[0]["warnings"], results[1]["warnings"]
-    assert "shorter than (K - 1 + duty) * T" in w0 and "at the maximum 255" in w0
+    assert "shorter than (K - 1 + duty) * T" in w0 and "1.2 % of the analysed pixels are saturated" in w0
+    assert "at the maximum 255" in w0 and results[0]["saturated"] == pytest.approx(200 / 128**2)
     assert "the set speed is 0.02 px per flash, outside" in w1
     assert results[0]["expected_px"] == pytest.approx(2.0)
     lines = []

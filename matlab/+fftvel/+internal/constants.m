@@ -26,6 +26,7 @@ function c = constants()
         c.BLANK_FLOOR = 1.0;             % floor instead when |B| is 0 everywhere (blank image)
         c.CLIP_SIGMA = 6;                % ClipOutliers: robust standard deviations from the median ...
         c.MAD_SCALE = 1.4826;            % ... with robust standard deviation = MAD_SCALE*MAD
+        c.CLIP_RADIUS = 3;               % ... and the pixels within this distance (px) of such a pixel
 
         % Direction
         c.ANGLE_STEP = 1.0;              % angle grid 0:ANGLE_STEP:180-ANGLE_STEP degrees
@@ -48,6 +49,12 @@ function c = constants()
         c.INDEPENDENT_PAD = 2;           % m = min(points, floor(INDEPENDENT_PAD*n*points/npad))
         c.ISO_GAP = 0.15;                % isotropic if quality - quality_perp is below this ...
         c.ISO_LOG_SPEED = 0.12;          % ... and |log(speed_perp/speed)| is below this
+        c.BLUR_STEP = 0.5;               % px between the samples of the continuous blur in box_template
+        c.BLUR_GAP = 0.0;                % blur_like if quality - quality_blur is below this (and slow)
+
+        % Saturation
+        c.SAT_SHARE = 0.005;             % saturated: least share of pixels at the maximum (unless intmax)
+        c.SAT_WARN = 0.01;               % front ends warn above this share
 
         % Simulation and grey conversion of colour input
         c.SIM_MARGIN = 32;               % extra texture size in px beyond N + (K-1+Duty)*max|V|

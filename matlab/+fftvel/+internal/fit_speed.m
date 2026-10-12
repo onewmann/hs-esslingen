@@ -6,7 +6,8 @@ function [speed, quality, fit] = fit_speed(g, jpos, L, npad, n, angle_deg, K, du
 %   (fftvel.internal.dirichlet_template) for speeds on a logarithmic grid.
 %   A cubic polynomial in JPOS absorbs the smooth texture spectrum. SPEED
 %   maximises the correlation between the detrended profile and the
-%   detrended model; QUALITY is that correlation.
+%   detrended model (fftvel.internal.template_scores); QUALITY is that
+%   correlation.
 %
 %   fftvel.internal.fit_speed(..., K, DUTY) uses K exposures instead of
 %   2L+1 (K empty: 2L+1) and the motion blur DUTY within each exposure
@@ -41,17 +42,7 @@ function [speed, quality, fit] = fit_speed(g, jpos, L, npad, n, angle_deg, K, du
     v = exp(log(vmin) + (-kext:nv-1)*step);
 
     T = fftvel.internal.dirichlet_template(jpos, v, L, npad, n, angle_deg, K, duty);
-    x = jpos/max(jpos);
-    X = zeros(numel(x), c.TREND_DEGREE + 1);     % cubic: [x.^3, x.^2, x, 1]
-    for p = 0:c.TREND_DEGREE
-        X(:, c.TREND_DEGREE + 1 - p) = x.^p;
-    end
-    [Q, R] = qr(X, 0); %#ok<ASGLU>
-    gp = g - Q*(Q.'*g);
-    Tp = T - Q*(Q.'*T);
-    tn = sqrt(sum(Tp.^2, 1));
-    score = (gp.'*Tp) ./ (norm(gp)*tn + realmin);
-    score(tn <= c.FLAT_MODEL*sqrt(sum(T.^2, 1))) = 0;      % flat model: no information
+    [score, gp, Tp] = fftvel.internal.template_scores(g, jpos, T);
 
     [quality, k] = max(score);
     dk = fftvel.internal.parabolic_offset(score, k, false);

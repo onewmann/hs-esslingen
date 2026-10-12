@@ -1,5 +1,6 @@
 function test_model_options()
-%TEST_MODEL_OPTIONS  Exposures, Duty, ROI, ClipOutliers, isotropy check, frame stacks.
+%TEST_MODEL_OPTIONS  Exposures, Duty, ROI, ClipOutliers, isotropy and blur checks, saturation,
+%   frame stacks.
 %   The same checks are in tests/python/test_model_options.py. Random
 %   inputs are used only where every realisation passes; the rest is
 %   deterministic or loaded from tests/parity/fixed_inputs.mat.
@@ -62,6 +63,87 @@ function test_model_options()
     assert(isequal(fftvel.estimate_velocity(clean, 'ClipOutliers', true), ...
         fftvel.estimate_velocity(clean)), ...
         'ClipOutliers changes nothing on a clean image');
+    % the clipped pixels and all pixels within CLIP_RADIUS of them are set to the median
+    cst = fftvel.internal.constants();
+    y = x;
+    [cols, rows] = meshgrid(1:96, 1:96);
+    for rc = [31 31; 51 61].'
+        y((rows - rc(1)).^2 + (cols - rc(2)).^2 <= cst.CLIP_RADIUS^2) = median(x(:));
+    end
+    assert(isequal(fftvel.internal.log_spectrum(x, 2, [], true), fftvel.internal.log_spectrum(y)), ...
+        'ClipOutliers takes the rim along');
+    m = false(7, 9);
+    m(4, 5) = true;
+    d = fftvel.internal.dilate(m, 2);
+    assert(nnz(d) == 13 && d(4, 3) && d(2, 5) && d(3, 4) && ~d(2, 4), 'dilate: disc of radius 2');
+    m(4, 5) = false;
+    m(1, 1) = true;
+    assert(nnz(fftvel.internal.dilate(m, 2)) == 6, 'dilate: corner, nothing wraps');
+    assert(isequal(fftvel.internal.dilate(m, 0), m) && ~any(any(fftvel.internal.dilate(false(5), 3))), ...
+        'dilate: radius 0 and empty mask');
+
+    % blur check: the box template of a blur of K*BLUR_STEP px is the Dirichlet template of K
+    % exposures BLUR_STEP apart
+    j = (2:229).';
+    for K = [2 9 40]
+        a = fftvel.internal.box_template(j, K*cst.BLUR_STEP, 512, 256, 30);
+        b = fftvel.internal.dirichlet_template(j, cst.BLUR_STEP, 4, 512, 256, 30, K);
+        assert(max(abs(a - b)) < 1e-12, sprintf('box template, K = %d', K));
+    end
+    % one continuous exposure looks like K flashes d/K apart. The inputs are fixed (parity cases 16
+    % and 17: a single exposure blurred over 6 px with 5 % noise, no flashes), because a few noise
+    % realisations give a wrong direction and then a wrong blur length
+    pc = load(fullfile(here, '..', 'parity', 'cases.mat'), 'bp16', 'bp17');
+    for bp = {double(pc.bp16), double(pc.bp17)}
+        e = fftvel.estimate_velocity(bp{1});
+        assert(e.valid && e.blur_like && abs(e.blur_length/6 - 1) < 0.05 && abs(9*e.speed/6 - 1) < 0.05, ...
+            'blur of 6 px: valid and blur_like');
+        r = fftvel.estimate_velocity(bp{1}, 'RejectBlur', true);
+        assert(~r.valid, 'blur of 6 px: valid with RejectBlur');
+        r.valid = e.valid;
+        assert(isequal(r, e), 'RejectBlur changes only valid');
+    end
+    bp = fftvel.simulate_pulsed_image(128, [7 3], 4);
+    e = fftvel.estimate_velocity(bp);
+    assert(~e.blur_like && e.quality - e.quality_blur > 0.3, 'fast flashes: not blur_like');
+    assert(isequal(fftvel.estimate_velocity(bp, 'RejectBlur', true), e), 'fast flashes: RejectBlur');
+
+    % saturated: share of pixels at the maximum (same rules as tests/python/test_model_options.py)
+    x8 = repmat(uint8(7), 20, 20);
+    x8(1, 1:2) = 255;
+    assert(fftvel.internal.saturated_share(x8) == 2/400, 'saturated: uint8 maximum');
+    x8(1, 1:2) = 254;
+    assert(fftvel.internal.saturated_share(x8) == 2/400, 'saturated: below the maximum, 0.5 %');
+    x8(1, 2) = 7;
+    assert(fftvel.internal.saturated_share(x8) == 0 && fftvel.internal.saturated_share(double(x8)) == 0, ...
+        'saturated: 0.25 % below the maximum');
+    x8(1, 2) = 254;
+    assert(fftvel.internal.saturated_share(single(x8)) == 2/400, 'saturated: single');
+    big = repmat(uint16(50), 100, 100);
+    big(1, 1) = 65535;
+    assert(fftvel.internal.saturated_share(big) == 1e-4 && ...
+        fftvel.internal.saturated_share(double(big)) == 0, 'saturated: uint16');
+    assert(fftvel.internal.saturated_share(repmat(uint8(255), 8, 8)) == 1 && ...
+        fftvel.internal.saturated_share(repmat(255, 8, 8)) == 0 && ...
+        fftvel.internal.saturated_share(repmat(int16(7), 8, 8)) == 0, 'saturated: constant images');
+    i16 = zeros(10, 'int16');
+    i16(1, 1) = 32767;
+    lg = false(10);
+    lg(1, 1) = true;
+    assert(fftvel.internal.saturated_share(i16) == 0.01 && fftvel.internal.saturated_share(lg) == 0.01, ...
+        'saturated: int16 and logical');
+    bp = fftvel.simulate_pulsed_image(160, [3 -1], 4);
+    x8 = uint8(min(max(round(100 + 15*bp/std(bp(:))), 0), 255));
+    x8(1:16, 1:16) = 255;                       % outside the central 128 px
+    e1 = fftvel.estimate_velocity(x8, 'ROI', 128);
+    e2 = fftvel.estimate_velocity(x8);
+    assert(e1.saturated == 0 && e2.saturated == 256/160^2, 'saturated: analysed square only');
+    x8(61:70, 61:70) = 255;                     % inside
+    e = fftvel.estimate_velocity(x8, 'ROI', 128, 'ClipOutliers', true);
+    e1 = fftvel.estimate_velocity(x8, 'ROI', 128);
+    e2 = fftvel.estimate_velocity(double(x8), 'ROI', 128);
+    assert(e.saturated == 100/128^2 && e1.saturated == e.saturated, 'saturated: before clipping');
+    assert(e2.saturated == 100/128^2, 'saturated: double');
 
     % isotropic spectra: defocused static texture and a square repeating texture
     [xx, yy] = meshgrid(-6:6);

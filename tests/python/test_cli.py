@@ -351,6 +351,34 @@ def test_float64_tiff_through_tifffile(shot, tmp_path, capsys):
     assert "tifffile" in err
 
 
+def test_saturation_warning(shot, tmp_path, capsys):
+    bp, _ = shot
+    g = np.round(100 + 15 * bp / bp.std()).astype(np.uint8)
+    np.save(tmp_path / "ok.npy", g)
+    r, err = run(["estimate", tmp_path / "ok.npy", "--L", "4"], capsys)
+    assert r["saturated"] == 0 and "saturated" not in err
+    g[:12, :12] = 255                                       # 144 of 16384 px, 0.9 %: no warning yet
+    np.save(tmp_path / "a.npy", g)
+    r, err = run(["estimate", tmp_path / "a.npy", "--L", "4"], capsys)
+    assert r["saturated"] == round(144 / 128**2, 4) and "saturated" not in err
+    g[-12:, -12:] = 255                                     # 1.8 %
+    np.save(tmp_path / "b.npy", g)
+    r, err = run(["estimate", tmp_path / "b.npy", "--L", "4"], capsys)
+    assert r["saturated"] == round(288 / 128**2, 4)
+    assert "warning: 1.8 % of the analysed pixels are saturated" in err
+
+
+def test_blur_warning(shot, tmp_path, capsys):
+    # one exposure blurred over 6 px (10 exposures of duty 0.99), read as 9 flashes 0.67 px apart
+    blur = simulate_pulsed_image(128, (6 / 10, 0.0), 4, exposures=10, duty=0.99, noise=0.1, rng=4)
+    np.save(tmp_path / "blur.npy", blur)
+    r, err = run(["estimate", tmp_path / "blur.npy", "--L", "4"], capsys)
+    assert r["valid"] and r["blur_like"] and "fits better than the flashes" in err
+    np.save(tmp_path / "flashes.npy", shot[0])
+    r, err = run(["estimate", tmp_path / "flashes.npy", "--L", "4"], capsys)
+    assert r["valid"] and not r["blur_like"] and "fits better" not in err
+
+
 def test_jpeg_warning(shot, tmp_path, capsys):
     Image = pytest.importorskip("PIL.Image")
     bp, _ = shot

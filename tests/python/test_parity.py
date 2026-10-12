@@ -10,7 +10,7 @@ def test_parity(repo):
     pdir = repo / "tests" / "parity"
     cases = loadmat(pdir / "cases.mat")
     ex = np.loadtxt(pdir / "expected.csv", delimiter=",", skiprows=1)
-    assert ex.shape == (15, 16)
+    assert ex.shape == (20, 22)
     for row in ex:
         i, L, pad = int(row[0]), int(row[1]), int(row[2])
         exposures = int(row[8]) or None
@@ -19,10 +19,13 @@ def test_parity(repo):
         if row[12]:
             bp, K = pulsed_from_stack(x, L=L, exposures=exposures)
             assert K == (exposures or 2 * L + 1), i
+        elif row[17]:
+            assert x.dtype == np.uint8, i
+            bp = x                                        # integer input: saturated counts the 255 pixels
         else:
             bp = x.astype(float)
         e = estimate_velocity(bp, L=L, pad_factor=pad, exposures=exposures, duty=row[9], roi=roi,
-                              clip_outliers=bool(row[11]))
+                              clip_outliers=bool(row[11]), reject_blur=bool(row[16]))
         assert abs(angle_difference(e.angle_deg, row[3])) < 1e-9, i
         assert abs(e.speed / row[4] - 1) < 1e-9, i
         assert abs(e.geba / row[5] - 1) < 1e-9, i
@@ -31,3 +34,7 @@ def test_parity(repo):
         assert abs(e.threshold - row[13]) < 1e-12, i
         assert abs(e.quality_perp - row[14]) < 1e-9, i
         assert e.isotropic == bool(row[15]), i
+        assert abs(e.quality_blur - row[18]) < 1e-9, i
+        assert abs(e.blur_length / row[19] - 1) < 1e-9, i
+        assert e.blur_like == bool(row[20]), i
+        assert abs(e.saturated - row[21]) < 1e-12, i

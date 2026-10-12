@@ -17,7 +17,11 @@ Columns of ``expected.csv`` after ``valid`` give the options of each case
 ``exposures`` (0: 2L+1), ``duty``, ``roi`` (0: largest square), ``clip``
 (clip_outliers), ``stack`` (1: the input is a rows x cols x 1 x frames uint8
 stack, averaged with pulsed_from_stack first), ``threshold``,
-``quality_perp`` and ``isotropic``.
+``quality_perp``, ``isotropic``, ``reject_blur`` (option), ``uint8`` (1: the
+image is stored and passed as uint8, not converted to float),
+``quality_blur``, ``blur_length``, ``blur_like`` and ``saturated``.
+New cases go at the end of CASES: all cases draw from one random generator
+in turn, so the inputs of the earlier cases stay the same.
 """
 
 from pathlib import Path
@@ -32,8 +36,10 @@ from fftvel.simulate import make_texture
 HERE = Path(__file__).resolve().parent
 
 # (n_rows, n_cols, vx, vy, L, pad_factor, noise, options)
-# options: exposures, duty, roi, clip (estimator); sim_exposures, sim_duty (simulator);
-# hot (two saturated pixels on an 8-bit image), stack (frames in a uint8 stack), tile
+# options: exposures, duty, roi, clip, reject_blur (estimator); sim_exposures, sim_duty (simulator);
+# hot (two saturated pixels on an 8-bit image), stack (frames in a uint8 stack), tile;
+# blur (one continuous exposure over this many px, no flashes), sat (uint8 image with a saturated
+# block), glints (two bright spots clipped at a float maximum)
 CASES = [
     (128, 128, 3.0, -2.0, 4, 2, 0.0, {}),
     (128, 128, -1.2, 0.7, 4, 2, 0.0, {}),
@@ -50,6 +56,11 @@ CASES = [
     (96, 96, 2.0, -1.5, 5, 2, 0.0, {"stack": 10, "exposures": 10}),         # 10-frame camera stack
     (64, 64, 2.0, 1.0, 4, 4, 0.0, {}),                                      # threshold with pad 4
     (96, 96, 0.0, 0.0, 4, 2, 0.0, {"tile": True}),                          # repeating texture: isotropic
+    (128, 128, 0.0, 0.0, 4, 2, 0.05, {"blur": 6.0}),                         # single exposure, blur 6 px
+    (128, 128, 0.0, 0.0, 4, 2, 0.05, {"blur": 6.0, "reject_blur": True}),    # the same with reject_blur
+    (128, 128, 7.0, 3.0, 4, 2, 0.0, {"reject_blur": True}),                 # fast flashes: not blur-like
+    (96, 96, 5.0, 2.0, 4, 2, 0.0, {"sat": True}),                           # uint8 with 255 pixels
+    (96, 96, 2.5, -1.0, 4, 2, 0.0, {"glints": True, "clip": True}),         # float maximum, clipped glints
 ]
 
 
@@ -64,6 +75,20 @@ def tile_texture(m, period, overlay, seed):
 def eight_bit(bp):
     """Texture with mean 100 and standard deviation 15 DN, rounded to 0..255."""
     return np.clip(np.round(100 + 15 * bp / bp.std()), 0, 255)
+
+
+def blurred(n, length, angle_deg, rng):
+    """One continuous exposure of a random texture moving by ``length`` px: 10 exposures of duty 0.99."""
+    a = np.deg2rad(angle_deg)
+    v = (length / 10 * np.cos(a), -length / 10 * np.sin(a))
+    return simulate_pulsed_image(n, v, 4, exposures=10, duty=0.99, rng=rng)
+
+
+def with_glints(x, top):
+    """``x`` plus two Gaussian spots (sigma 2.5 px) of peak 20 standard deviations, clipped at ``top``."""
+    y, c = np.mgrid[0:x.shape[0], 0:x.shape[1]]
+    spots = sum(np.exp(-((c - cx) ** 2 + (y - cy) ** 2) / (2 * 2.5 ** 2)) for cy, cx in ((30, 40), (60, 70)))
+    return np.minimum(x + 20 * x.std() * spots, top)
 
 
 def fixed_inputs():
@@ -105,28 +130,43 @@ def main():
         else:
             if opt.get("tile"):
                 x = tile_texture(512, 16, 0.3, 8)[:h, :w]
+            elif "blur" in opt:
+                x = blurred(n, opt["blur"], 30.0, rng)
+                x = x + noise * x.std() * rng.standard_normal(x.shape)
             else:
                 x = simulate_pulsed_image(n, (vx, vy), L, **sim)[:h, :w]
             if opt.get("hot"):
                 x = eight_bit(x)
                 x[30, 30] = 255                               # static hot pixels 36 px apart
                 x[50, 60] = 255
-            x = x.astype(np.float32)
-            bp = x.astype(float)
+            if opt.get("glints"):
+                x = with_glints(x, x.max() + 0.5 * x.std())
+            if opt.get("sat"):
+                x = eight_bit(x)
+                x[10:20, 60:75] = 255                         # a saturated block, 150 px
+                x = x.astype(np.uint8)                        # passed as uint8
+                bp = x
+            else:
+                x = x.astype(np.float32)
+                bp = x.astype(float)
         mats[f"bp{i:02d}"] = x
         est = estimate_velocity(bp, L=L, pad_factor=pad, exposures=exposures, duty=opt.get("duty", 0.0),
-                                roi=opt.get("roi"), clip_outliers=opt.get("clip", False))
+                                roi=opt.get("roi"), clip_outliers=opt.get("clip", False),
+                                reject_blur=opt.get("reject_blur", False))
         rows.append([i, L, pad, est.angle_deg, est.speed, est.geba, est.quality, int(est.valid),
                      exposures or 0, opt.get("duty", 0.0), opt.get("roi", 0), int(opt.get("clip", False)),
-                     int("stack" in opt), est.threshold, est.quality_perp, int(est.isotropic)])
+                     int("stack" in opt), est.threshold, est.quality_perp, int(est.isotropic),
+                     int(opt.get("reject_blur", False)), int(x.dtype == np.uint8 and "stack" not in opt),
+                     est.quality_blur, est.blur_length, int(est.blur_like), est.saturated])
     mats["params"] = np.array([[r[1], r[2]] for r in rows], dtype=float)
     savemat(HERE / "cases.mat", mats, do_compression=True)
     header = ("case,L,pad,angle_deg,speed,geba,quality,valid,exposures,duty,roi,clip,stack,"
-              "threshold,quality_perp,isotropic")
+              "threshold,quality_perp,isotropic,reject_blur,uint8,quality_blur,blur_length,blur_like,saturated")
     np.savetxt(HERE / "expected.csv", np.array(rows, dtype=float), delimiter=",",
                header=header, comments="",
                fmt=["%d", "%d", "%d", "%.17g", "%.17g", "%.17g", "%.17g", "%d",
-                    "%d", "%.17g", "%d", "%d", "%d", "%.17g", "%.17g", "%d"])
+                    "%d", "%.17g", "%d", "%d", "%d", "%.17g", "%.17g", "%d",
+                    "%d", "%d", "%.17g", "%.17g", "%d", "%.17g"])
     for r in rows:
         print(r)
     savemat(HERE / "fixed_inputs.mat", fixed_inputs(), do_compression=True)

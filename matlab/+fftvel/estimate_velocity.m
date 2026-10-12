@@ -26,9 +26,16 @@ function est = estimate_velocity(bp, varargin)
 %                     (default 0.6); small images need more, see
 %                     EST.threshold
 %     'ClipOutliers'  set pixels more than 6 robust standard deviations
-%                     (1.4826*MAD) from the median to the median before the
-%                     FFT, against static bright spots such as glints or hot
-%                     pixels (default false)
+%                     (1.4826*MAD) from the median, and all pixels within
+%                     3 px of them, to the median before the FFT, against
+%                     static bright spots such as glints or hot pixels
+%                     (default false)
+%     'RejectBlur'    also require EST.blur_like to be false for EST.valid
+%                     (default false), against single exposures of a moving
+%                     surface (motion blur, no flashes). Most multi-flash
+%                     images of slow motion (below about 2.2 px per step)
+%                     with noise are blur-like too, so this rejects most
+%                     valid results there.
 %     'Diagnostics'   also return intermediate results in EST.diag
 %                     (default false)
 %   All option values are checked; text such as '4' is an error.
@@ -56,10 +63,34 @@ function est = estimate_velocity(bp, varargin)
 %                   floor(2*n*points/npad)); padding beyond PadFactor 2
 %                   does not lower it
 %     valid         quality >= threshold and in_range and not isotropic
+%                   (and not blur_like with RejectBlur)
 %     L             L as passed
 %     exposures     number of exposures K used in the model
 %     n             side of the analysed central square in pixels
 %     npad          FFT length
+%     quality_blur  quality of the same fit along angle_deg with a single
+%                   continuous exposure (motion blur of a free length, no
+%                   flashes) in place of the K flashes
+%     blur_length   blur length in pixels of that fit; a blur of d px
+%                   looks like K flashes about d/K apart
+%     blur_like     true if the blur model fits better (quality_blur >
+%                   quality) and the speed is below npad/max(profile_j),
+%                   about 2.2 px per step, so that the repeated lines of
+%                   the flashes (npad/speed bins apart), which alone tell
+%                   flashes from a blur, lie beyond the fitted profile.
+%                   Most single exposures of a moving surface are
+%                   blur-like, but below that speed so are most
+%                   multi-flash images with noise: there the flag says
+%                   that the image cannot tell flashes from a blur, not
+%                   that it is a blur. Only RejectBlur makes it count for
+%                   valid
+%     saturated     share of the analysed pixels at the maximum of the
+%                   square, before any processing: for an integer image
+%                   whose maximum is INTMAX of its class, the share at that
+%                   value; otherwise the share at the maximum if it is at
+%                   least 0.5 % and the square is not constant, else 0.
+%                   Saturated areas and glints can give wrong results that
+%                   are marked valid
 %
 %   Method: the motion multiplies the image spectrum by a Dirichlet kernel,
 %   which shows up as straight lines perpendicular to v, spaced
@@ -70,8 +101,8 @@ function est = estimate_velocity(bp, varargin)
 %
 %   The model, the ripple profile WR and GEBA follow Chapter 3 of J. Horn's
 %   doctoral thesis (Universitaet Karlsruhe, 2007; full reference in
-%   README.md). The speed fit, the validity threshold and the isotropy check
-%   were added in this implementation.
+%   README.md). The speed fit, the validity threshold, the isotropy check
+%   and the blur check were added in this implementation.
 %
 %   Non-square images are cropped to the central square. They are never
 %   resized, so the speed stays in camera pixels.
@@ -87,7 +118,7 @@ function est = estimate_velocity(bp, varargin)
     c = fftvel.internal.constants();
     opts = fftvel.internal.parse_options(varargin, struct('L', c.DEFAULT_L, 'Exposures', [], ...
         'Duty', 0, 'ROI', [], 'PadFactor', c.DEFAULT_PAD_FACTOR, 'MinQuality', ...
-        c.DEFAULT_MIN_QUALITY, 'ClipOutliers', false, 'Diagnostics', false));
+        c.DEFAULT_MIN_QUALITY, 'ClipOutliers', false, 'RejectBlur', false, 'Diagnostics', false));
     L = fftvel.internal.check_option(opts.L, 'L', 'positive', 'estimate_velocity:L');
     if isempty(opts.Exposures)
         K = 2*L + 1;
@@ -106,10 +137,13 @@ function est = estimate_velocity(bp, varargin)
         'estimate_velocity:MinQuality');
     clip = fftvel.internal.check_option(opts.ClipOutliers, 'ClipOutliers', 'flag', ...
         'estimate_velocity:ClipOutliers');
+    reject_blur = fftvel.internal.check_option(opts.RejectBlur, 'RejectBlur', 'flag', ...
+        'estimate_velocity:RejectBlur');
     diagnostics = fftvel.internal.check_option(opts.Diagnostics, 'Diagnostics', 'flag', ...
         'estimate_velocity:Diagnostics');
 
     [S, n, npad] = fftvel.internal.log_spectrum(bp, pad, roi, clip);
+    saturated = fftvel.internal.saturated_share(fftvel.internal.crop_square(bp, n));  % as given
     rmax = floor(npad/2) - 1;
     rfrac = c.RFRAC;
 
@@ -141,6 +175,12 @@ function est = estimate_velocity(bp, varargin)
         npad, n, ap, K, duty);
     isotropic = quality - quality_perp < c.ISO_GAP && abs(log(speed_perp/speed)) < c.ISO_LOG_SPEED;
 
+    % Blur check: one continuous exposure (motion blur, no flashes) along the same direction. Only the
+    % repeated lines of the flashes, npad/speed bins apart, tell the two apart; below npad/max(jpos)
+    % they lie beyond the profile
+    [blur_length, quality_blur, fitb] = fftvel.internal.fit_blur(g, jpos, npad, n, angle);
+    blur_like = quality - quality_blur < c.BLUR_GAP && speed*max(jpos) < npad;
+
     % Independent profile points: zero padding beyond 2 only interpolates
     npts = numel(jpos);
     m_eff = min(npts, floor(c.INDEPENDENT_PAD*n*npts/npad));
@@ -156,11 +196,15 @@ function est = estimate_velocity(bp, varargin)
     est.in_range = fit.in_range;
     est.isotropic = isotropic;
     est.threshold = max(min_quality, null_quality(m_eff, c));
-    est.valid = quality >= est.threshold && fit.in_range && ~isotropic;
+    est.valid = quality >= est.threshold && fit.in_range && ~isotropic && ~(reject_blur && blur_like);
     est.L = L;
     est.exposures = K;
     est.n = n;
     est.npad = npad;
+    est.quality_blur = quality_blur;
+    est.blur_length = blur_length;
+    est.blur_like = blur_like;
+    est.saturated = saturated;
     if diagnostics
         d = struct();
         d.spectrum = S;
@@ -172,6 +216,8 @@ function est = estimate_velocity(bp, varargin)
         d.speed_grid = fit.v;
         d.speed_score = fit.score;
         d.speed_perp = speed_perp;
+        d.blur_grid = fitb.d;
+        d.blur_score = fitb.score;
         est.diag = d;
     end
 end
@@ -182,10 +228,12 @@ function q = null_quality(m, c)
 %   tanh(C.NULL_K/sqrt(M - C.NULL_OFFSET)), that is tanh(9/sqrt(M-5)).
 %   Under the null hypothesis the Fisher transform atanh(q) of the best
 %   correlation scales with 1/sqrt(m-5) for a profile of m independent
-%   points (four are taken by the cubic, one by the fit). On 1008 images
-%   without motion (white noise, random and camera textures, 32 to 256 px,
-%   L = 1 to 10, PadFactor 2) the largest value was tanh(8.6/sqrt(m-5));
-%   9 adds a margin.
+%   points (four are taken by the cubic, one by the fit). On the 1008
+%   calibration images without motion of experiments/calibrate_threshold.py
+%   (white noise, random and camera textures, 32 to 256 px, L = 1 to 10,
+%   PadFactor 2) the largest value was tanh(8.41/sqrt(m-5)); on all 2268
+%   simulated images without motion, held-out textures included, it was
+%   tanh(8.64/sqrt(m-5)), and none of them was valid with 9.
     if m <= c.NULL_OFFSET
         q = Inf;
     else

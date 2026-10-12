@@ -46,6 +46,11 @@
       "meaning": "Robust standard deviation = MAD_SCALE * median absolute deviation (1.4826 for normal noise).",
       "used_in": "log_spectrum"
     },
+    "CLIP_RADIUS": {
+      "value": 3,
+      "meaning": "clip_outliers: the pixels within CLIP_RADIUS px (dy^2 + dx^2 <= CLIP_RADIUS^2) of a clipped pixel are set to the median as well, so that the faint rim of a glint goes with its core.",
+      "used_in": "log_spectrum (dilate)"
+    },
     "ANGLE_STEP": {
       "value": 1.0,
       "meaning": "Step of the angle grid in degrees: 0, ANGLE_STEP, ..., 180 - ANGLE_STEP (0..179). The maximum of WR is refined by a parabola through three neighbouring angles (periodic); the speed maximum likewise on the speed grid.",
@@ -103,7 +108,7 @@
     },
     "NULL_K": {
       "value": 9,
-      "meaning": "Null quality tanh(NULL_K/sqrt(m - NULL_OFFSET)): the largest quality on 1008 images without motion was tanh(8.6/sqrt(m-5)); 9 adds a margin.",
+      "meaning": "Null quality tanh(NULL_K/sqrt(m - NULL_OFFSET)): the largest quality was tanh(8.41/sqrt(m-5)) on the 1008 calibration images without motion and tanh(8.64/sqrt(m-5)) on all 2268 simulated images without motion (experiments/calibrate_threshold.py); none of them is valid with 9.",
       "used_in": "estimate_velocity (null_quality)"
     },
     "NULL_OFFSET": {
@@ -125,6 +130,26 @@
       "value": 0.12,
       "meaning": "... |log(speed_perp/speed)| < ISO_LOG_SPEED (defocus blur or a square repeating texture, not motion).",
       "used_in": "estimate_velocity"
+    },
+    "BLUR_STEP": {
+      "value": 0.5,
+      "meaning": "Blur check: the continuous blur of box_template is sampled every BLUR_STEP px (for a blur of K*BLUR_STEP px it equals the Dirichlet template of K exposures BLUR_STEP apart).",
+      "used_in": "box_template"
+    },
+    "BLUR_GAP": {
+      "value": 0.0,
+      "meaning": "Blur check: blur_like if quality - quality_blur < BLUR_GAP (0: one continuous exposure, motion blur without flashes, fits better than the K flashes) and the speed is below npad/max(profile_j), where the repeated lines of the flashes lie beyond the fitted profile.",
+      "used_in": "estimate_velocity"
+    },
+    "SAT_SHARE": {
+      "value": 0.005,
+      "meaning": "saturated: the share of pixels at the maximum counts only when it is at least SAT_SHARE, unless the maximum is the largest value of an integer type (then any share counts).",
+      "used_in": "saturated_share"
+    },
+    "SAT_WARN": {
+      "value": 0.01,
+      "meaning": "Front ends (command line, stream, experiments/real_measurements.py) warn when saturated exceeds SAT_WARN.",
+      "used_in": "command line, stream, real_measurements"
     },
     "SIM_MARGIN": {
       "value": 32,

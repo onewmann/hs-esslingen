@@ -13,7 +13,8 @@ function [S, n, npad] = log_spectrum(bp, pad_factor, roi, clip_outliers)
 %
 %   [S, N, NPAD] = fftvel.internal.log_spectrum(..., ROI, CLIP_OUTLIERS) with
 %   CLIP_OUTLIERS true first sets the pixels more than 6 robust standard
-%   deviations (1.4826*MAD) from the median to the median.
+%   deviations (1.4826*MAD) from the median, and all pixels within 3 px of
+%   them (fftvel.internal.dilate), to the median.
 
     c = fftvel.internal.constants();
     if nargin < 2
@@ -47,7 +48,7 @@ function [S, n, npad] = log_spectrum(bp, pad_factor, roi, clip_outliers)
         med = median(x(:));
         s = c.MAD_SCALE*median(abs(x(:) - med));
         if s > 0
-            x(abs(x - med) > c.CLIP_SIGMA*s) = med;
+            x(fftvel.internal.dilate(abs(x - med) > c.CLIP_SIGMA*s, c.CLIP_RADIUS)) = med;
         end
     end
     npad = pad_factor*n;

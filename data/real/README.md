@@ -229,8 +229,8 @@ square.
   the room or use an enclosure or a band-pass filter for the flash colour,
   check that an image with the flash switched off is black, and record the
   single-flash controls described under [Static images](#static-images).
-* No saturation: the script warns when more than 0.5 % of the analysed
-  pixels sit at the image maximum. Glints of the flash on shiny surfaces
+* No saturation: the script warns when more than 1 % of the analysed
+  pixels are saturated (the `saturated` column says how many). Glints of the flash on shiny surfaces
   can be reported as motion; `--clip-outliers` helps against small ones.
 * Focus: a defocused image can look like slow motion. The static images
   below check this.
@@ -280,6 +280,8 @@ comma); a double click puts each row into one cell.
 | `speed_mm_s`, `vx_mm_s`, `vy_mm_s` | the same in mm/s, from `fftvel.to_physical` |
 | `quality`, `quality_perp`, `threshold`, `geba` | fit quality, quality of the perpendicular fit, quality needed, ripple ratio |
 | `in_range`, `isotropic`, `valid` | 1 or 0, as in the estimate |
+| `quality_blur`, `blur_length`, `blur_like` | fit quality and length of a continuous blur along the found direction; `blur_like` is 1 when that fits at least as well and the speed is below about 2.2 px per flash, where one blurred exposure and the flashes cannot be told apart |
+| `saturated` | share of the analysed pixels that are saturated |
 | `reason` | why the estimate is not valid |
 | `expected_px` | set speed in px per flash, `set_speed_mm_s * flash_period_s / gsd_mm_per_px` |
 | `speed_err` | `speed_mm_s / set_speed_mm_s - 1` (signed) |

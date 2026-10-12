@@ -16,14 +16,15 @@ Two ways to get a pulsed image from a camera:
 
 from __future__ import annotations
 
+import warnings
 from collections import deque
 from dataclasses import dataclass
 from typing import Iterable, Iterator, Optional, Tuple
 
 import numpy as np
 
-from .core import (DEFAULT_L, DEFAULT_MIN_QUALITY, GREY_WEIGHTS, Estimate, _check_option, crop_square,
-                   estimate_velocity)
+from .core import (DEFAULT_L, DEFAULT_MIN_QUALITY, GREY_WEIGHTS, SAT_WARN, Estimate, _check_option,
+                   crop_square, estimate_velocity)
 
 __all__ = ["FrameWindow", "StreamEstimate", "estimate_frame", "estimate_stream", "estimate_window",
            "frame_step", "to_grey"]
@@ -136,6 +137,21 @@ class StreamEstimate:
     regular: bool          # frame steps equal within the tolerance (always True in flash mode)
     step: float = float("nan")              # time step in s: frame step or flash period (nan if unknown)
     estimate: Optional[Estimate] = None     # full result of estimate_velocity
+    warning: str = ""                       # saturated pixels (see _saturation_warning); "" if none
+
+
+def _saturation_warning(e: Estimate) -> str:
+    """Text of the warning for more than SAT_WARN saturated pixels, or ''; also issued once as a UserWarning.
+
+    Python shows a UserWarning with the same text only once, so a live loop
+    is not flooded; the share of every estimate is in ``warning`` and in
+    ``estimate.saturated``.
+    """
+    if e.saturated <= SAT_WARN:
+        return ""
+    warnings.warn(f"more than {100 * SAT_WARN:g} % of the analysed pixels are saturated; saturated areas and "
+                  f"glints can give wrong results that are marked valid", stacklevel=3)
+    return f"{100 * e.saturated:.1f} % of the analysed pixels are saturated"
 
 
 def estimate_frame(frame: np.ndarray, t: float = float("nan"), L: int = DEFAULT_L,
@@ -160,7 +176,7 @@ def estimate_frame(frame: np.ndarray, t: float = float("nan"), L: int = DEFAULT_
     step = float("nan") if flash_period is None else flash_period
     return StreamEstimate(
         t=float(t), angle_deg=e.angle_deg, speed=e.speed, speed_per_s=e.speed / step,
-        quality=e.quality, valid=e.valid, regular=True, step=step, estimate=e)
+        quality=e.quality, valid=e.valid, regular=True, step=step, estimate=e, warning=_saturation_warning(e))
 
 
 def estimate_window(frames: Iterable[Tuple[np.ndarray, float]], L: int = DEFAULT_L,
@@ -189,7 +205,8 @@ def _estimate(win: FrameWindow, t: float, min_quality: float, duty: float,
     return StreamEstimate(
         t=float(t), angle_deg=e.angle_deg, speed=e.speed,
         speed_per_s=e.speed / step if step > 0 else float("nan"),
-        quality=e.quality, valid=e.valid and regular, regular=regular, step=step, estimate=e)
+        quality=e.quality, valid=e.valid and regular, regular=regular, step=step, estimate=e,
+        warning=_saturation_warning(e))
 
 
 def estimate_stream(frames: Iterable[Tuple[np.ndarray, float]], L: int = DEFAULT_L,

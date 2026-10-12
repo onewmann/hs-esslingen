@@ -9,8 +9,8 @@ import sys
 
 import numpy as np
 
-from .core import (DEFAULT_L, GREY_WEIGHTS, MIN_EXPOSURES, MIN_SIZE, estimate_velocity, pulsed_from_stack,
-                   to_physical)
+from .core import (DEFAULT_L, GREY_WEIGHTS, MIN_EXPOSURES, MIN_SIZE, SAT_WARN, estimate_velocity,
+                   pulsed_from_stack, to_physical)
 from .simulate import simulate_pulsed_image
 
 NUMERIC = ("double", "single", "int8", "uint8", "int16", "uint16", "int32", "uint32",
@@ -293,6 +293,19 @@ def _pulsed_image(a: np.ndarray, stack: bool, L: int | None = None, exposures: i
     return bp, K
 
 
+def _warnings(est) -> None:
+    """Warn on stderr about saturated pixels (more than SAT_WARN) and valid but blur-like results."""
+    if est.valid and est.blur_like:
+        _note(f"warning: one continuous exposure blurred over {est.blur_length:.3g} px (no flashes) fits better "
+              f"than the flashes. Below about 2.2 px per flash this is common for multi-flash images with noise "
+              f"too, so it only means that the image cannot tell the two apart; if light other than the flashes "
+              f"reaches the sensor, check with an image taken without flashes, which must come out not valid")
+    if est.saturated > SAT_WARN:
+        _note(f"warning: {100 * est.saturated:.1f} % of the analysed pixels are saturated (at the maximum "
+              f"value); saturated areas and glints can give wrong results that are marked valid. Lower the "
+              f"exposure or the flash energy, or crop them out with --roi")
+
+
 def _summary(est) -> dict:
     d = {k: (round(v, 4) if isinstance(v, float) else v)
          for k, v in vars(est).items() if k != "diag"}
@@ -347,8 +360,8 @@ def main(argv=None) -> int:
                    help="side of the analysed central square in px (default 512; 0: the largest "
                         "square). The run time grows with its square")
     e.add_argument("--clip-outliers", action="store_true",
-                   help="set pixels more than 6 robust sigma from the median to the median "
-                        "(static glints, hot pixels)")
+                   help="set pixels more than 6 robust sigma from the median, and all pixels within "
+                        "3 px of them, to the median (static glints, hot pixels)")
     e.add_argument("--stack", action="store_true",
                    help="the file holds frames; average the first K (or 2L+1) of them")
     e.add_argument("--frames-axis", choices=("auto", "first", "last"), default="auto",
@@ -405,6 +418,7 @@ def main(argv=None) -> int:
                                     roi=roi, clip_outliers=a.clip_outliers)
         except ValueError as err:
             raise SystemExit(f"{a.file}: {err}") from None
+    _warnings(est)
     out = _summary(est)
     if a.cmd == "estimate" and a.gsd is not None:
         _note(f"units: speed_per_s = speed * gsd / period, gsd {a.gsd:g} (length unit) per px, "
