@@ -98,8 +98,9 @@ def test_replot_all_skips_parts_without_csv_files(repo, tmp_path):
     for part in ("accuracy", "noise", "before_after", "recordings", "calibration", "baselines", "violations"):
         assert f"\n{part}: skipped, " in r.stdout, part
     assert "windows valid" in r.stdout and "Run time of estimate_velocity" in r.stdout
-    # the pipeline figure has no CSV file and is computed again; timing has no figure
-    assert sorted(p.name for p in (tmp_path / "figures").iterdir()) == ["pipeline.png", "testsequences.png"]
+    # the pipeline figures have no CSV file and are computed again; timing has no figure
+    assert sorted(p.name for p in (tmp_path / "figures").iterdir()) == ["hero.png", "pipeline.png",
+                                                                         "testsequences.png"]
 
 
 def test_default_folders(repo, experiments):

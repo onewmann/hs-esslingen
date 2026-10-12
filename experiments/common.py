@@ -150,18 +150,23 @@ def style(ax, xlabel, ylabel):
     ax.set_ylabel(ylabel, color=INK2, fontsize=10)
 
 
-def figure(ncols=1, width=6.4):
+# title, subtitle and the top of the axes, in inches below the top edge of the figure
+TITLE_Y, SUBTITLE_Y, HEADER = 0.147, 0.399, 0.588
+
+
+def figure(ncols=1, width=6.4, height=4.2):
     import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(1, ncols, figsize=(width, 4.2), layout="constrained")
-    fig.get_layout_engine().set(rect=(0, 0, 1, 0.86))     # room for title and subtitle
+    fig, axes = plt.subplots(1, ncols, figsize=(width, height), layout="constrained")
+    fig.get_layout_engine().set(rect=(0, 0, 1, 1 - HEADER / height))     # room for title and subtitle
     fig.patch.set_facecolor(SURFACE)
     return fig, np.atleast_1d(axes)
 
 
 def title(fig, text, sub=None):
-    fig.text(0.012, 0.965, text, ha="left", va="center", color=INK, fontsize=12, fontweight="bold")
+    h = fig.get_figheight()
+    fig.text(0.012, 1 - TITLE_Y / h, text, ha="left", va="center", color=INK, fontsize=12, fontweight="bold")
     if sub:
-        fig.text(0.012, 0.905, sub, ha="left", va="center", color=INK2, fontsize=9)
+        fig.text(0.012, 1 - SUBTITLE_Y / h, sub, ha="left", va="center", color=INK2, fontsize=9)
 
 
 def plain_log_ticks(ax, axis="y"):

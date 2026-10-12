@@ -41,43 +41,73 @@ def run(pool, quick):
     return rows, srows
 
 
+TEXTURES = (("surface", "Camera texture"), ("random", "Random texture"))     # camera texture first
+
+
+def threshold_at(n):
+    """Validity threshold of estimate_velocity for n-by-n images; it depends on the size, not on the content."""
+    from fftvel import estimate_velocity, simulate_pulsed_image
+    return estimate_velocity(simulate_pulsed_image(n, (0, 0), 4, rng=0), L=4).threshold
+
+
 def plot(rows, srows):
     levels = sorted({r["noise"] for r in rows})
-    fig, (ax1, ax2) = common.figure(2, 9.6)
-    for texture, col, label in (("random", BLUE, "random texture"), ("surface", ORANGE, "camera texture")):
-        corr, valid = [], []
+    per_level = sorted({sum(1 for r in rows if r["texture"] == t and r["noise"] == nl)
+                        for t, _ in TEXTURES for nl in levels})
+    flashes = sorted({2 * int(r["L"]) + 1 for r in rows})
+    fig, axes = common.figure(2, 9.6)
+    for ax, (texture, name) in zip(axes, TEXTURES):
+        corr, valid, wrong = [], [], []
         for nl in levels:
             sel = [r for r in rows if r["texture"] == texture and r["noise"] == nl]
             corr.append(100 * np.mean([r["correct"] for r in sel]))
             valid.append(100 * np.mean([r["valid"] for r in sel]))
-        ax1.plot(levels, corr, "-o", color=col, lw=2, ms=4.5, label=label)
-        ax2.plot(levels, valid, "-o", color=col, lw=2, ms=4.5, label=label)
-    common.style(ax1, "noise / signal (standard deviation)", "correct estimates (%)")
-    common.style(ax2, "noise / signal (standard deviation)", "marked valid (%)")
-    for ax in (ax1, ax2):
-        ax.set_ylim(0, 104)
-    ax1.legend(frameon=False, fontsize=9, labelcolor=INK2, loc="lower left")
-    val = [r for r in rows if r["valid"]]
-    wrong_valid = int(sum(1 - r["correct"] for r in val))
+            wrong.append(100 * np.mean([r["valid"] * (1 - r["correct"]) for r in sel]))
+        ax.plot(levels, corr, "-o", color=BLUE, lw=2, ms=4.5, label="correct estimate")
+        ax.plot(levels, valid, "--", color=INK2, lw=1.6, label="marked valid")
+        ax.plot(levels, wrong, "-o", color=ORANGE, lw=2, ms=4.5, label="valid but wrong")
+        sel = [r for r in rows if r["texture"] == texture]
+        val = [r for r in sel if r["valid"]]
+        ax.set_title(f"{name}: {len(sel)} images, {int(sum(1 - r['correct'] for r in val))} of {len(val)} "
+                     "valid estimates wrong", color=INK2, fontsize=10, loc="left")
+        common.style(ax, "noise / signal (standard deviation)", "images (%)" if ax is axes[0] else "")
+        ax.set_ylim(-2, 104)
+    axes[0].legend(frameon=False, fontsize=9, labelcolor=INK2, loc="center left")
     common.title(fig, "Sensor noise",
-                 f"correct = direction within 2 deg and speed within 5 %; random velocities, 1 to 32 px per step; "
-                 f"{wrong_valid} of {len(val)} valid estimates were wrong")
+                 f"in simulation: {_join(per_level)} images per noise level and texture ({common.N} \u00d7 {common.N} px, "
+                 f"{_join(flashes)} flashes, 1 to 32 px per step); correct = within 2 deg and 5 %")
     common.save(fig, "noise.png")
 
-    fig, (ax,) = common.figure(1, 6.4)
+    fig, (ax,) = common.figure(1, 9.6)
     bins = np.linspace(0, 1, 41)
-    groups = [([r["quality"] for r in srows], MUTED, "no motion"),
-              ([r["quality"] for r in rows if not r["correct"]], ORANGE, "moving, wrong estimate"),
-              ([r["quality"] for r in rows if r["correct"]], BLUE, "moving, correct estimate")]
+    moving_wrong = [r["quality"] for r in rows if not r["correct"]]
+    groups = [([r["quality"] for r in srows], MUTED, f"no motion ({len(srows)} images)"),
+              (moving_wrong, ORANGE, f"moving, wrong estimate ({len(moving_wrong)} images)"),
+              ([r["quality"] for r in rows if r["correct"]], BLUE,
+               f"moving, correct estimate ({int(sum(r['correct'] for r in rows))} images)")]
     ax.hist([g[0] for g in groups], bins=bins, stacked=True, color=[g[1] for g in groups],
             label=[g[2] for g in groups], edgecolor=SURFACE, linewidth=0.6)
-    ax.axvline(0.6, color=INK, ls="--", lw=1.2)
-    ax.text(0.61, ax.get_ylim()[1] * 0.92, "threshold 0.6", color=INK, fontsize=9)
+    thr = threshold_at(common.N)
+    ax.axvline(thr, color=INK, ls="--", lw=1.2)
+    ax.text(thr + 0.01, 0.96, f"threshold {thr:.2g}\n({common.N} px images)", color=INK, fontsize=9, va="top",
+            transform=ax.get_xaxis_transform())
     common.style(ax, "fit quality", "images")
+    ax.set_xlim(0, 1.02)
     ax.legend(frameon=False, fontsize=9, labelcolor=INK2, loc="upper left")
-    common.title(fig, "Fit quality separates usable from unusable images",
-                 "simulated images with and without motion, all noise levels")
+    over_wrong = sum(q >= thr for q in moving_wrong)
+    valid_wrong = int(sum(r["valid"] * (1 - r["correct"]) for r in rows))
+    over_static = sum(r["quality"] >= thr for r in srows)
+    common.title(fig, "Fit quality of moving images and of images without motion",
+                 f"in simulation, {common.N} \u00d7 {common.N} px, all noise levels: {over_wrong} of {len(moving_wrong)} "
+                 f"wrong estimates reach the threshold ({valid_wrong} marked valid), {over_static} of {len(srows)} "
+                 "images without motion")
     common.save(fig, "quality.png")
+
+
+def _join(values):
+    """'60' for one value, '12 to 60' for several (the --quick grid has the same count everywhere)."""
+    values = [f"{v:g}" for v in values]
+    return values[0] if len(values) == 1 else f"{values[0]} to {values[-1]}"
 
 
 def summary(rows=None, srows=None):

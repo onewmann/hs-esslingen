@@ -21,8 +21,8 @@ CSV = ["testsequences.csv"]
 
 SEQUENCES = (("model", "model: (5, 5) px/frame"),
              ("tyre", "tyre: (4, 4) px/frame"),
-             ("accelerating", "accelerating: vx 2-8, vy 3"),
-             ("vehicle", "vehicle: irregular steps 3.5-9.9 px"))
+             ("accelerating", "accelerating: vx 2 to 8, vy 3"),
+             ("vehicle", "vehicle: steps of 3.5 to 9.9 px"))
 
 
 def _zero_border(frame):
@@ -57,24 +57,26 @@ def run():
 
 def plot(rows):
     fig, axes = common.figure(4, 14.5)
+    handles = {}
     for ax, (name, title) in zip(axes, SEQUENCES):
         sel = [r for r in rows if r["sequence"] == name]
         first = np.array([r["first_frame"] for r in sel])
         est = np.array([r["est_speed"] for r in sel])
         ref = np.array([r["ref_speed"] for r in sel])
         valid = np.array([bool(r["valid"]) for r in sel])
-        ax.plot(first, ref, color=INK2, lw=2, label="phase correlation (reference)")
-        ax.plot(first[valid], est[valid], "o", color=BLUE, ms=6, mec=SURFACE, mew=1.2,
-                label="single-image estimate")
-        if (~valid).any():
-            ax.plot(first[~valid], est[~valid], "o", color=ORANGE, ms=6, mfc="none", label="not valid")
+        handles["ref"], = ax.plot(first, ref, color=INK2, lw=2, label="phase correlation of the frames (reference)")
+        handles["valid"], = ax.plot(first[valid], est[valid], "o", color=BLUE, ms=6, mec=SURFACE, mew=1.2,
+                                    label="single-image estimate, valid")
+        handles["not"], = ax.plot(first[~valid], est[~valid], "o", color=ORANGE, ms=6, mfc="none",
+                                  label="single-image estimate, not valid")
         ax.set_ylim(0, 16.5)
-        ax.set_title(title, color=INK2, fontsize=10, loc="left")
+        ax.set_title(f"{title}; {int(valid.sum())} of {len(sel)} valid", color=INK2, fontsize=10, loc="left")
         common.style(ax, "first frame of the 9-frame window", "speed (px/frame)" if ax is axes[0] else "")
-    axes[0].legend(frameon=False, fontsize=9, labelcolor=INK2, loc="lower left")
-    common.title(fig, "Test sequences with known motion",
-                 "every window of 9 frames, cropped to the area without zero-filled borders; "
-                 "the method assumes equal steps, which the last two sequences break")
+    axes[0].legend(handles=[handles[k] for k in ("ref", "valid", "not")], frameon=False, fontsize=9,
+                   labelcolor=INK2, loc="lower left")
+    common.title(fig, "Synthetic test sequences with known motion",
+                 "each window of 9 frames averaged into one image and cropped to the area without zero-filled "
+                 "borders; the method assumes equal steps, which the last two sequences break")
     common.save(fig, "testsequences.png")
 
 

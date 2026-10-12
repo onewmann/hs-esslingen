@@ -589,8 +589,21 @@ def run(pool, quick, recordings=None):
 
 # Figure
 
+def floor_k(rows, n=256):
+    """(m, k) at which the floor DEFAULT_MIN_QUALITY binds for n-by-n images: quality 0.6 is k = atanh(0.6) sqrt(m - 5).
+
+    Above this k the threshold of n-by-n images is the constant c, below it the floor; for 256 px the floor
+    binds for every c up to this k. ``m`` is taken from the rows of that size.
+    """
+    ms = {int(r["m_eff"]) for r in rows if int(r["n"]) == n}
+    if len(ms) != 1:
+        return None, math.nan
+    m = ms.pop()
+    return m, math.atanh(DEFAULT_MIN_QUALITY) * math.sqrt(m - NULL_OFFSET)
+
+
 def plot(res):
-    fig, (ax1, ax2) = common.figure(2, 9.6)
+    fig, (ax1, ax2) = common.figure(2, 9.6, 5.2)
     sets = [(np.array([r["k"] for r in res[key]]), key) for key in ("cal", "held", "real")]
     lo = float(np.floor(min(k.min() for k, _ in sets))) - 1
     hi = K_MAX_SHOWN
@@ -600,12 +613,17 @@ def plot(res):
     ax1.hist(clip[0], bins=bins, color=BLUE, edgecolor=SURFACE, linewidth=0.4,
              label=f"calibration ({sets[0][0].size} images, {nvalid[0]} valid)")
     ax1.hist(clip[1], bins=bins, histtype="step", color=ORANGE, lw=1.6,
-             label=f"held out ({sets[1][0].size}, {nvalid[1]} valid)")
+             label=f"held out ({sets[1][0].size} images, {nvalid[1]} valid)")
     ax1.hist(clip[2], bins=bins, histtype="step", color=AQUA, lw=1.6,
-             label=f"single camera frames ({sets[2][0].size}, {nvalid[2]} valid)")
+             label=f"single camera frames ({sets[2][0].size} images, {nvalid[2]} valid)")
     ax1.axvline(NULL_K, color=INK, ls="--", lw=1.2)
-    ax1.text(NULL_K + 0.15, 0.95, f"constant {NULL_K:g}", color=INK, fontsize=9, va="top",
+    ax1.text(NULL_K + 0.12, 0.95, f"c = {NULL_K:g}", color=INK, fontsize=9, va="top",
              transform=ax1.get_xaxis_transform())
+    _, k256 = floor_k(res["cal"] + res["held"] + res["real"])
+    if math.isfinite(k256):
+        ax1.axvline(k256, color=INK, ls="-.", lw=1.2)
+        ax1.text(k256 + 0.12, 0.95, f"256 px images:\nquality {DEFAULT_MIN_QUALITY:g},\nk = {k256:.2f}", color=INK,
+                 fontsize=8.5, va="top", transform=ax1.get_xaxis_transform())
     st = res["cal_stats"]
     ax1.axvline(st["k_max"], color=INK2, ls=":", lw=1.2)
     ax1.text(st["k_max"] - 0.15, 0.72, f"largest in\ncalibration\n{st['k_max']:.2f}", color=INK2, fontsize=8.5,
@@ -613,26 +631,33 @@ def plot(res):
     over = [r for r in res["real"] + res["held"] if r["k"] >= hi]
     common.style(ax1, "k = atanh(quality) * sqrt(m - 5)", "images (no repeated exposures)")
     ax1.set_xlim(lo, hi)
-    ax1.legend(frameon=False, fontsize=8.5, labelcolor=INK2, loc="upper left")
+    ax1.legend(frameon=False, fontsize=8.5, labelcolor=INK2, loc="upper left", bbox_to_anchor=(-0.02, -0.16))
     if over:
-        ax1.text(0.99, 0.42, f"{len(over)} images with k > {hi:g}\nin the last bin,\n"
-                 f"{int(sum(r['valid'] for r in over))} of them valid", color=INK2, fontsize=8.5, ha="right",
-                 transform=ax1.transAxes)
+        ax1.text(0.99, 0.66, f"{len(over)} images\nwith k > {hi:g}\nin the last bin,\n"
+                 f"{int(sum(r['valid'] for r in over))} of them\nvalid", color=INK2, fontsize=8.5, ha="right",
+                 va="top", transform=ax1.transAxes)
 
     correct = [r for r in res["power"] if r["correct"]]
     for (label, sel), col in zip(power_groups(correct), (BLUE, ORANGE, AQUA, INK2)):
-        ax2.plot(CURVE, res["curve"][label], color=col, lw=2, label=f"correct, {label} ({len(sel)})")
+        ax2.plot(CURVE, res["curve"][label], color=col, lw=2, label=f"correct, {label} ({len(sel)} images)")
     ax2.plot(CURVE, res["curve"]["null"], color=MUTED, lw=2, ls="--",
-             label=f"no motion, calibration and held out ({len(res['null'])})")
+             label=f"no motion, calibration and held out ({len(res['null'])} images)")
     ax2.axvline(NULL_K, color=INK, ls="--", lw=1.2)
+    ax2.text(NULL_K - 0.08, 0.03, f"c = {NULL_K:g}", color=INK, fontsize=9, ha="right", va="bottom",
+             transform=ax2.get_xaxis_transform())
+    if CURVE[0] < k256 < CURVE[-1]:
+        ax2.axvline(k256, color=INK, ls="-.", lw=1.2)
+        ax2.text(k256 + 0.08, 0.03, f"256 px: floor {DEFAULT_MIN_QUALITY:g}\nbinds up to\nc = {k256:.2f}",
+                 color=INK, fontsize=8.5, va="bottom", transform=ax2.get_xaxis_transform())
     common.style(ax2, "constant c in tanh(c / sqrt(m - 5))", "marked valid (%)")
     ax2.set_ylim(0, 104)
     ax2.set_xlim(CURVE[0], CURVE[-1])
-    ax2.legend(frameon=False, fontsize=8.5, labelcolor=INK2, loc="center left")
+    ax2.legend(frameon=False, fontsize=8.5, labelcolor=INK2, loc="upper left", bbox_to_anchor=(-0.02, -0.16))
     p9 = share_valid(correct, NULL_K)
     common.title(fig, "Validity threshold: images without motion and correct estimates",
-                 f"{st['n']} calibration images: largest k {st['k_max']:.2f}, 99th percentile {st['k_p99']:.2f}; "
-                 f"with c = {NULL_K:g}, {p9:.1f} % of {len(correct)} correct moving estimates are valid")
+                 f"in simulation, {st['n']} calibration images: largest k {st['k_max']:.2f}, 99th percentile "
+                 f"{st['k_p99']:.2f}; with c = {NULL_K:g}, {p9:.1f} % of {len(correct)} correct moving estimates "
+                 "are valid")
     common.save(fig, "threshold.png")
 
 
