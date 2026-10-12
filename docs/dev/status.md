@@ -107,6 +107,10 @@ Follow-ups done on 12 October:
   `CITATION.cff`, `CONTRIBUTING.md`. Numbers checked against the CSV files,
   style checked (British spelling, no dashes, no bold in sentences).
 - 306 Python tests and 9 Octave test files pass.
+- Final review (commit `4a15cd2`): test inputs that depended on Octave's
+  random stream are stored, so the first MATLAB run checks the same images;
+  float comparisons in the baseline tests tolerate other CPUs and the
+  minimum numpy; several docstrings and doc statements corrected.
 
 ## Next steps
 
