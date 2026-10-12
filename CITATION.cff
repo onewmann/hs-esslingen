@@ -1,0 +1,45 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite it as below. The method comes from the
+  doctoral thesis of Jan Horn listed under references; please cite it as well.
+type: software
+title: "Surface velocity from a single multi-flash image"
+abstract: >-
+  Direction and speed of a moving textured surface from one multi-flash camera
+  image, using the 2-D FFT and the Radon transform. Python package fftvel and
+  MATLAB/Octave package +fftvel; parity tests in Python and GNU Octave check
+  that both give the same results to 1e-9. Tested in simulation and on
+  synthetic image sequences; not yet on real multi-flash images.
+authors:
+  - family-names: Neumann
+    given-names: Oliver
+version: 0.1.0
+license: MIT
+repository-code: "https://github.com/onewmann/2D-FFT-Code"
+keywords:
+  - machine vision
+  - signal processing
+  - FFT
+  - Radon transform
+  - velocity measurement
+  - Python
+  - MATLAB
+  - GNU Octave
+references:
+  - type: thesis
+    title: "Zweidimensionale Geschwindigkeitsmessung texturierter Oberflächen mit flächenhaften bildgebenden Sensoren"
+    authors:
+      - family-names: Horn
+        given-names: Jan
+    thesis-type: Dissertation
+    institution:
+      name: "Universität Karlsruhe (TH)"
+    year: 2006
+    collection-title: "Schriftenreihe des Instituts für Mess- und Regelungstechnik"
+    volume: "006"
+    publisher:
+      name: "Universitätsverlag Karlsruhe"
+    isbn: "978-3-86644-076-0"
+    url: "https://publikationen.bibliothek.kit.edu/1000006276"
+    languages:
+      - de

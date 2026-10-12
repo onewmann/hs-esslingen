@@ -1,506 +1,192 @@
-# 2D-FFT velocity estimation from a single image
+# Surface velocity from a single multi-flash image
+
+2-D FFT and Radon transform, Python and MATLAB/Octave
 
 [![tests](https://github.com/onewmann/2D-FFT-Code/actions/workflows/ci.yml/badge.svg)](https://github.com/onewmann/2D-FFT-Code/actions/workflows/ci.yml)
 
-Estimates direction and speed of a moving surface from one image. The camera
-integrates several short exposures (pulses) into one frame while the surface
-moves. That motion leaves a pattern of straight lines in the image spectrum:
-their orientation gives the direction, their spacing the speed. A Radon
-transform of the log spectrum finds both.
+A strobe flashes K = 2L+1 times (9 by default) during one camera exposure, so a moving textured surface appears K times in one image, shifted by the same step each time.
+In the 2-D spectrum of that image the shifts become evenly spaced straight lines: their angle gives the direction of motion, their spacing the distance moved per flash.
+The intended use is contactless measurement of a vehicle's speed over ground and sideslip angle, as in the thesis the method comes from, or of a conveyor belt or a paper web, with one image per measurement.
 
-The method is not my own. It comes from the doctoral thesis of Jan Horn at
-Universität Karlsruhe (TH) ([reference](#reference)), which I implemented in
-my student project. This repository is a reworked version of that
-implementation, done with the assistance of AI;
-[How this was built](#how-this-was-built) says from which point on. What it changes compared with the thesis is listed under
-[Background](#background).
+## Status
 
-The same algorithm runs in MATLAB, GNU Octave and Python and gives identical
-results (differences below 1e-9). The MATLAB/Octave code needs no toolbox.
+| | |
+|---|---|
+| Simulation and synthetic sequences | Works. In simulation (256 px, 9 flashes, no noise) the direction is within 0.70 deg and the speed within 0.47 % from 0.4 to 64 px per flash. On the two synthetic test sequences with constant motion all 24 windows are valid. |
+| Real multi-flash images | Recordings are being prepared and are not in the repository yet. The 2025 camera recordings are frame sequences with uneven steps; the estimator rejects all 6 of their windows, as it should. |
+| Camera scripts | Experimental. Neither live script has run on camera hardware; the Python one was checked with the pylon camera emulator. |
+| Tests | CI with Python 3.10 and 3.13 and GNU Octave. A MATLAB job exists and runs for the first time once the repository is on GitHub; until then the code has not run in MATLAB. |
 
-![Every stage of one estimate](docs/figures/pipeline.png)
+## Who did what
 
-*Simulated pulsed image of a real surface (recorded with a Basler camera), moving
-by (5, -3) px per exposure. Estimate: 30.98 deg and 5.83 px per step, true
-values 30.96 deg and 5.83 px.*
+The method comes from Jan Horn's doctoral thesis ([reference](#reference)): the pulsed-exposure model, the log spectrum and Radon transform, the ripple profile WR for the direction, the speed from the spacing of the repeated structures and the quality measure GEBA.
+In a student project in 2025 I implemented it in MATLAB; those scripts are kept unchanged at tag [`student-project-2025`](https://github.com/onewmann/2D-FFT-Code/tree/student-project-2025/2D-FFT).
+Everything after commit `8f0aec4` was done with the assistance of AI (Claude by Anthropic), as [How this was built](#how-this-was-built) describes.
 
-## How it works
+![One exposure of a real surface texture, the same surface moving under 9 flashes in one image, and the log spectrum of that image](docs/figures/hero.png)
 
-The pulsed-exposure model, steps 1 and 2 and the quality measure GEBA follow
-Chapter 3 of the thesis. The thesis takes the speed from the spacing of the
-peaks in the projection; steps 3 and 4 replace that with a model fit and a
-validity check added in this implementation.
+*In simulation: the 9 copies in (b) turn into the lines in (c), perpendicular to the motion and 1/5.83 cycles per px apart.*
 
-A pulsed-exposure image is the mean of $2L+1$ exposures of a texture $b$ that
-moves by $\mathbf v$ between two exposures:
+## Try it
 
-$$b_p(\mathbf x) = \frac{1}{2L+1}\sum_{k=-L}^{L} b(\mathbf x - k\mathbf v)
-\quad\Longrightarrow\quad
-B_p(\mathbf f) = B(\mathbf f)\,D(\mathbf f\cdot\mathbf v),\qquad
-D(u) = \frac{\sin\big((2L+1)\pi u\big)}{(2L+1)\sin(\pi u)}$$
-
-The Dirichlet kernel $D$ is 1 wherever $\mathbf f\cdot\mathbf v$ is an integer,
-so the spectrum carries lines perpendicular to $\mathbf v$, spaced $1/|\mathbf v|$
-cycles per pixel apart, with $2L-1$ weaker side lobes in between.
-
-1. **Spectrum.** Remove the mean, apply a 2-D Hann window, zero-pad the FFT to
-   twice the image size and take $\log(|B_p| + 0.05\,\mathrm{median}|B_p|)$.
-   A non-square image is cropped to its central square (or a smaller central
-   square, option `roi`), never resized. With the option `clip_outliers`,
-   pixels more than 6 robust standard deviations from the median are first set
-   to the median.
-2. **Direction.** Average the log spectrum along parallel lines for every angle
-   $\theta$ (a Radon transform that uses the mean instead of the sum, so the
-   square support does not favour the diagonals). Only the projection along
-   $\mathbf v$ turns the lines into a sharp comb, so the ripple profile
-   $WR(\theta) = \sum_r |\partial_r R(r,\theta)|$ peaks at the direction of
-   motion. GEBA $= \max WR / \mathrm{mean}\, WR$ measures how clearly it does.
-3. **Speed.** Compare the projection along that direction with the expected
-   profile for $2L+1$ exposures on a grid of speeds. For a random texture the
-   expected power at bin $j$ is
-
-   $$P(j) = \frac{1}{(2L+1)^2}\Big[(2L+1) + 2\sum_{m=1}^{2L}(2L+1-m)\,
-   \rho(m\mathbf v)\cos\Big(\frac{2\pi j m |\mathbf v|}{N_\mathrm{pad}}\Big)\Big]$$
-
-   where $\rho(m\mathbf v)$ is the autocorrelation of the window at the offset
-   between two exposures $m$ steps apart. This closed form includes the blur
-   caused by the window and cannot alias. For another number of exposures $K$
-   (option `exposures`, also even) $2L+1$ is replaced by $K$. If each exposure
-   lasts the fraction $d$ of a step (option `duty`), the texture moves by
-   $d\,|\mathbf v|$ during it, and $P(j)$ is multiplied by
-   $\mathrm{sinc}^2(j\,d\,|\mathbf v|/N_\mathrm{pad})$. A cubic polynomial
-   absorbs the smooth spectrum of the texture; the speed with the highest
-   correlation wins, and that correlation is the fit quality.
-4. **Validity.** An estimate counts as valid if the fit quality reaches a
-   threshold, the speed lies inside the measurable range and the spectrum is
-   not isotropic. The threshold is 0.6 for images from about 200 px upwards.
-   Smaller images need more, $\tanh(9/\sqrt{m-5})$ for a profile of $m$
-   independent points (0.70 at 128 px, 0.85 at 64 px), because a short profile
-   matches some model speed by chance. Zero padding beyond the default factor 2
-   adds no independent points and does not lower the threshold. The constant
-   comes from 1008 images without motion (32 to 256 px), none of which passes;
-   at 32 px about 1 in 1000 such images still passes. For the isotropy check
-   the profile perpendicular to the found direction is fitted as well. Motion
-   makes the spectrum anisotropic, so that fit is clearly worse or gives
-   another speed. If its quality is less than 0.15 lower and its speed within a
-   factor $e^{0.12} \approx 1.13$, the structure is isotropic (for example
-   defocus blur or a square repeating texture) and the estimate is not valid.
-   Images of a static, non-repeating texture in focus, images with strong noise
-   and images with erratic steps are rejected. A regular pattern of uneven
-   steps (one dropped exposure, alternating intervals) or a speed that changes
-   during the exposures can still pass with a wrong speed, often twice the
-   true one, so the acquisition has to guarantee equal steps. The
-   [Limitations](#limitations) list further cases that can pass with a wrong
-   speed.
-
-Directions are given in degrees, counter-clockwise from the x axis as seen on
-screen, in [0, 180). One image cannot tell $\mathbf v$ from $-\mathbf v$.
-
-## Results
-
-All numbers come from `experiments/run.py` with default options; the CSV
-files are in `experiments/results/`. `--quick` runs smaller grids and writes
-to `experiments/results_quick/` instead, which git ignores. Each study can also
-run on its own, for example `python experiments/noise.py --quick`.
-
-**Accuracy.** For 256 x 256 px and 9 exposures the direction is within
-0.71 deg and the speed within 0.5 % from 0.4 to 64 px per step (within 0.09 deg
-from 1 px per step up). With 41 exposures the range starts at 0.1 px per step.
-A real surface texture gives the same accuracy as a random one. Slower motion
-is reported as out of range, not as a wrong speed.
-
-![Accuracy over the speed range](docs/figures/accuracy.png)
-
-**Ground truth.** On the test sequences of the original project, which move by
-exactly (5, 5) and (4, 4) px per frame, every 9-frame window gives
-135.0 &plusmn; 0.07 deg and a speed within 0.005 px per frame. The other two
-sequences break the model on purpose. Where the speed changes inside the window
-(third panel), 17 of 22 windows are valid and within 11.1 % of the mean motion.
-With irregular steps of 3.5 to 9.9 px (fourth panel), only 4 of 22 windows
-pass, within 14.4 %; the rest, including estimates of almost twice the speed,
-are rejected.
-
-![Test sequences](docs/figures/testsequences.png)
-
-**Noise.** With random velocities between 1 and 32 px per step and white noise
-of half the signal's standard deviation, 81 % of the estimates are correct
-(direction within 2 deg, speed within 5 %); with noise as strong as the signal,
-61 %. The validity check keeps most failures out: 11 of 592 valid estimates
-missed the criterion, six by a direction error of 2.0 to 3.7 deg and five
-with twice the true speed (these five at noise of half the signal or more).
-None of 120 images without motion was marked valid. The isotropy check
-changes none of these numbers: the 16 images it flags also fail the quality
-threshold.
-
-![Noise](docs/figures/noise.png)
-![Fit quality](docs/figures/quality.png)
-
-**Before and after.** On the same 36 simulated images the speed estimate of
-the original code is off by 733 % (median), the rewrite by 0.018 %. The
-original code found the direction in 31 of 36 cases but took its speed from
-noise peaks, so it reported 32 to 78 px per step whatever the true speed.
-
-![Before and after](docs/figures/before_after.png)
-
-## Quick start
-
-### Python
-
-Python 3.10 or newer. Upgrade pip first: editable installs without `setup.py`
-need pip 21.3 or newer, and older Python versions bring an older one.
+From a clone of this repository, with Python 3.10 or newer (the editable install needs pip 21.3 or newer, hence the first line):
 
 ```bash
 python -m pip install --upgrade pip
 python -m pip install -e "./python[examples]"
 python -m fftvel simulate --vx 5 --vy -3 --plot estimate.png
-python -m fftvel estimate my_pulsed_image.png --L 4          # 2L+1 = 9 exposures
-python -m fftvel estimate frames.mat --stack --L 4           # mean of the first 9 frames of a stack
 ```
 
-The core (`python -m pip install -e ./python`) needs only numpy and reads
-`.npy` files. The extras add: `data` scipy, h5py and Pillow for `.mat` and
-image files, `plot` matplotlib for `--plot` and the figures, `video` OpenCV
-for webcams and video files in the live script, `test` pytest and the test
-dependencies; `examples` holds `plot`, `data` and `video`. `examples` and
-`video` install `opencv-python-headless`. If `opencv-python` is already
-installed (for example for other scripts that open windows), install
-`"./python[plot,data]"` instead and keep your OpenCV: both packages provide the
-same `cv2` module and overwrite each other's files. The live script works with
-either.
+This simulates a 256 x 256 px image with 9 flashes, prints the true velocity and the estimate and saves the diagnostic figure. In MATLAB or GNU Octave, from the repository root and without any toolbox:
 
-`python -m fftvel estimate FILE` writes the result as JSON to stdout and notes
-on what was read and used (variable, frames, analysed square, model) to
-stderr. Its options:
+```matlab
+addpath('matlab');
+bp = fftvel.simulate_pulsed_image(256, [5 -3], 4);
+est = fftvel.estimate_velocity(bp, 'L', 4)
+```
 
-* `--L L` or `--exposures K`: the number of exposures, 2L+1 or any K >= 2
-  (also even). A single image needs one of them; a wrong count scales the
-  speed by K_true/K, and the result can still be marked valid. In the JSON, `L`
-  is null for an even K.
-* `--stack`: the file holds frames, and their mean is the pulsed image:
-  all frames (an odd number is required) or the first 2L+1 or K. MATLAB
-  `getdata` stacks (H x W x 1 x F) and frames-first arrays (F x H x W, for
-  example `np.stack` of a list of frames) work as they are;
-  `--frames-axis first|last` decides when the shape does not tell.
-* `--duty D`: duration of one exposure (camera exposure time or flash pulse)
-  divided by the time step, see [Limitations](#limitations).
-* `--roi N`: side of the analysed central square, default 512 px, 0 for the
-  largest square (the default of the functions). The run time grows with N^2.
-* `--clip-outliers`: set static bright spots and hot pixels to the median
-  before the FFT.
-* `--var NAME`: the variable in a `.mat` file. Needed if the file holds
-  several arrays and none is the only image (with `--stack`: the only stack).
-* `--plot PNG`: save the diagnostic figure; works without a display.
+## Why one image
 
-Files: PNG, TIFF, BMP and JPEG are read with Pillow and keep 16-bit, 32-bit
-integer and float32 data; colour becomes grey, a multi-page TIFF a stack, and
-float64 TIFF needs tifffile. `.npy` files are memory-mapped, so only the frames
-used are read. `.mat` files need scipy, MATLAB v7.3 files also h5py. Octave's
-default `save` writes text, which is not a MAT-file: use
-`save('-v7', file, 'frames')`. Struct and cell variables must be saved as plain
-arrays. Use lossless formats for measurements: JPEG adds an 8 x 8 px block
-grid, and the command line warns for JPEG input.
+A camera that takes separate frames measures motion against the frame period, 10 ms at 100 frames per second. A multi-flash image measures it against the flash period, which a controller can set in microseconds. Take a vehicle at 30 m/s, a ground sample distance (the length on the surface that one pixel covers) of 0.2 mm/px and a 256 px field, 51.2 mm wide. At 100 frames per second two consecutive frames are 300 mm apart and share no content; frames 20 px apart would need 7500 frames per second. Flashes 133 µs apart give 20 px per flash inside one exposure, well within the 0.4 to 64 px per flash tested for a 256 px square.
+
+If you have separate frames that overlap, use phase correlation (the shift between two images from the phase of their cross-power spectrum). It was correct more often in simulation and also gives the sign of the motion, which one multi-flash image cannot. On the 840 noisy images of the noise study, in simulation:
+
+| Method | Input | Correct, random texture | Correct, camera texture |
+|---|---|---:|---:|
+| this method (`fftvel`) | one multi-flash image | 80.2 % | 63.3 % |
+| cepstrum / autocorrelation | one multi-flash image | 69.5 % / 72.1 % | 59.8 % / 55.0 % |
+| phase correlation | two overlapping single exposures | 95.0 % | 87.9 % |
+
+"Correct" means a direction within 2 deg and a speed within 5 %. Only `fftvel` also marks its results as valid or not. [results.md](docs/results.md#baselines) has the results per speed and the 2025 peak-spacing rule in corrected form.
+
+## How it works
+
+Between two flashes the surface moves by the step $\mathbf v$ pixels. The image is the mean of $K$ shifted copies of the texture $b$, so its spectrum is the spectrum $B$ of the texture times a Dirichlet kernel $D$:
+
+$$B_p(\mathbf f) = B(\mathbf f)\,D(\mathbf f\cdot\mathbf v),\qquad D(u) = \frac{\sin(K\pi u)}{K\sin(\pi u)}$$
+
+The magnitude of $D$ is 1 wherever $\mathbf f\cdot\mathbf v$ is an integer, so the magnitude spectrum carries straight lines perpendicular to $\mathbf v$, spaced $1/|\mathbf v|$ cycles per pixel apart. The estimator finds them in four steps:
+
+1. Spectrum. The image is multiplied by a 2-D Hann window and its FFT zero padded to twice the size. [thesis] The estimator works on the logarithm of the magnitude, which turns the product $B\cdot D$ into a sum. [rework] A non-square image is cropped to a central square, never resized, so both axes keep the camera's pixel scale.
+2. Direction [thesis]. A Radon transform projects the log spectrum along parallel lines for every angle. Along the direction of motion the projection becomes a sharp comb, and the ripple profile WR (the sum of absolute differences between neighbouring bins of a projection) peaks there. The thesis's quality measure GEBA $= \max WR/\mathrm{mean}\,WR$ is reported. [rework] The projection averages along each line instead of summing, which removes a bias towards 45 and 135 deg.
+3. Speed [rework]. The thesis takes the speed from the spacing of the repeated structures. The rework fits a closed-form model of the whole projection for $K$ flashes, including the autocorrelation of the Hann window, on a grid of speeds 0.5 % apart. The speed with the best correlation wins, and that correlation is the fit quality.
+4. Validity [rework]. An estimate is valid if the fit quality reaches $\max\big(0.6,\ \tanh(9/\sqrt{m-5})\big)$ for a profile of $m$ independent points, the speed lies inside the measurable range (`in_range`) and the spectrum is not isotropic, as it is for defocus or a square repeating texture.
+
+The options `exposures`, `duty`, `roi`, `clip_outliers` and `reject_blur` come from the rework as well. [docs/method.md](docs/method.md) gives the full model, the threshold calibration, all options and the 33 constants.
+
+## Results
+
+Ordered by how independent the data are of the estimator's own model. All numbers come from `experiments/results/*.csv`.
+
+| Study | Data | Result |
+|---|---|---|
+| [Synthetic test sequences](docs/results.md#synthetic-test-sequences) | 4 sequences from the 2025 student project, made without `fftvel`; windows of 9 frames | Constant motion: 24 of 24 windows valid, 134.93 to 135.03 deg (true 135), speed within 0.005 px. Changing speed: 17 of 22 valid, errors up to 11.1 %. Irregular steps: 4 of 22 valid, errors up to 14.4 % |
+| [2025 recordings](docs/results.md#the-2025-recordings) | 3 Basler frame sequences of a moving surface | Steps vary by a factor of 2.8 to 4.0 within a recording; all 6 windows rejected (quality 0.23 to 0.40, threshold 0.6) |
+| [Single camera frames](docs/results.md#single-camera-frames-a-real-null-test) | 1360 crops of single frames of the 2025 recordings: one exposure each, so nothing repeats | 59 valid, all false alarms; 41 of the 47 on the moving surface look like motion blur |
+| [Accuracy](docs/results.md#accuracy-and-noise-in-simulation) | in simulation: 256 px, 9 flashes, no noise, random and camera texture | Within 0.70 deg and 0.47 % from 0.4 to 64 px per flash; 0 of 24 valid at 0.3 px per flash, below the range |
+| [Noise](docs/results.md#accuracy-and-noise-in-simulation) | in simulation: 60 images per noise level and texture | Noise at half the signal: 91.7 % correct (random texture) and 70.0 % (camera texture); noise as strong as the signal: 71.7 % and 50.0 %. 11 of 592 valid estimates wrong; 0 of 120 images without motion valid |
+| [Baselines](docs/results.md#baselines) | in simulation: the 840 noise images | Correct (random / camera texture): `fftvel` 80.2 / 63.3 %, single-image baselines at most 72.1 / 59.8 %, phase correlation of two frames 95.0 / 87.9 % |
+
+The simulated images come from the model the estimator fits. They check the implementation and say nothing about how well that model describes a real camera. Most numbers in the next section come from an independent forward model, which does not use the estimator's simulator and adds sensor noise, flash jitter and other violations of the model ([results.md](docs/results.md#model-violations-in-an-independent-forward-model)).
+
+## Where it fails
+
+Silent failures first: these give a wrong result that is still marked valid. All numbers are in simulation unless the row says otherwise.
+
+| Cause | What happens | Remedy |
+|---|---|---|
+| Long flashes, `duty` not set | flashes of 0.25 and 0.5 of the period: 12.5 % and 18.8 % wrong but valid, speed near duty x speed / K | short flashes, or `duty` / `--duty`; with the true duty all images were correct and valid ([duty](docs/hardware.md#flash-duration-and-duty)) |
+| Wrong flash count | 7, 8, 10 or 11 assumed for 9: 34.4 % wrong but valid, speed scaled by 9/K | the exact K with `L` or `exposures`; count the pulses once with a photodiode ([flash count](docs/hardware.md#the-exact-flash-count)) |
+| Continuous light, or motion blur at slow speed | real single camera frames: 59 of 1360 crops valid. Continuous light for 3/4 of the signal: 34.4 % wrong but valid | dark enclosure or band-pass filter, control images with one flash; `reject_blur`, which costs correct results below about 2.2 px per flash ([ambient light](docs/hardware.md#ambient-light)) |
+| Glints, saturated spots | two static glints of 3 times the mean signal: 96.9 % wrong but valid | `clip_outliers`, with which all were correct and valid; diffuse light, no saturated pixels ([glints](docs/hardware.md#saturation-and-glints)) |
+| Strong static edges | an edge of twice the mean signal: 28.1 % wrong but valid | keep edges and masks out of the analysed square (`roi`), fill masked areas with the image mean ([edges](docs/hardware.md#saturation-and-glints)) |
+| Periodic texture | a pattern repeating every 64 or 128 px: 100 % wrong but valid; every 160 px: 50.0 % | a non-repeating texture ([assumptions](docs/method.md#assumptions)) |
+| Uneven flash intervals, changing speed | intervals alternating between 0.8 and 1.2 periods: 87 of 240 valid at twice the speed; one missing flash: 22 of 240 valid but wrong; accelerating test sequence: 17 of 22 windows valid, errors up to 11.1 % | flashes from a hardware timer, period checked with a photodiode ([flash count](docs/hardware.md#the-exact-flash-count)) |
+
+These are flagged (marked not valid) in most cases:
+
+| Cause | What happens | Remedy |
+|---|---|---|
+| Motion below the measurable range, about 3.35/K px per flash | 0 of 24 valid at 0.3 px per flash with 9 flashes | longer flash period or more flashes ([flash period](docs/hardware.md#choosing-the-flash-period)) |
+| Heavy noise | camera texture with noise as strong as the signal: 50.0 % correct, 50.0 % valid; over all noise levels 11 of 592 valid estimates wrong | more light, more pixels per flash ([flash period](docs/hardware.md#choosing-the-flash-period)) |
+| No texture or no motion | 0 of 120 images without motion valid, and 0 of 2268 simulated ones in the threshold calibration; real crops of a static room scene: 4 of 252 valid | keep saturated areas out of the image ([glints](docs/hardware.md#saturation-and-glints)) |
+| Defocus | the isotropy check rejects the ring pattern of a static defocused surface; with sensor noise, correct and valid falls from 84.4 % in focus to 40.6 % at a blur radius of 2 px | focus at the working distance ([focus](docs/hardware.md#focus)) |
+
+The direction is known only modulo 180 deg: one image cannot tell $\mathbf v$ from $-\mathbf v$.
+
+## Use it
+
+Python. The options after the image are keyword-only; the MATLAB name-value pairs correspond one to one ([options](docs/method.md#options-and-when-to-use-them)).
 
 ```python
-from fftvel import estimate_velocity, pulsed_from_stack, simulate_pulsed_image
+from fftvel import estimate_velocity, simulate_pulsed_image, to_physical
 
-bp = simulate_pulsed_image(256, v=(5, -3), L=4)    # or: bp, K = pulsed_from_stack(frames, L=4)
-est = estimate_velocity(bp, L=4)                   # or: estimate_velocity(bp, exposures=K)
+bp = simulate_pulsed_image(256, (5, -3), 4)     # 9 flashes, 5 px right and 3 px up per flash
+est = estimate_velocity(bp, L=4)                # or exposures=K for any flash count
 print(est.angle_deg, est.speed, est.quality, est.valid)
+p = to_physical(est, gsd=0.05, period=0.001)    # 0.05 mm per px, 1 ms between flashes
+print(p.speed)                                  # mm/s
 ```
 
-### MATLAB or GNU Octave
-
-```matlab
-addpath('matlab')                       % the folder that holds +fftvel
-bp  = fftvel.simulate_pulsed_image(256, [5 -3], 4);
-est = fftvel.estimate_velocity(bp, 'L', 4, 'Diagnostics', true);
-fftvel.plot_estimate(bp, est);
-
-frames  = getdata(vid, 9);                     % camera frames, H x W x 1 x 9
-[bp, K] = fftvel.pulsed_from_stack(frames);    % mean of the 9 frames
-est = fftvel.estimate_velocity(bp, 'Exposures', K, 'ROI', 512);
-```
-
-`fftvel.pulsed_from_stack` (same name in Python) takes the frames
-along the last dimension and drops other dimensions of length 1. Without
-`'L'` or `'Exposures'` it averages all frames, which must then be an odd
-number; with one of them it averages the first 2L+1 or K frames. Pass K on to
-`estimate_velocity`.
-
-Options, the same in both languages (MATLAB name-value pairs, Python keyword
-arguments):
-
-| MATLAB | Python | Default | Meaning |
-|---|---|---|---|
-| `'L'` | `L` | 4 | half the number of exposures, 2L+1 in total |
-| `'Exposures'` | `exposures` | `[]` / `None` (2L+1) | exact number of exposures K >= 2, also even; overrides L |
-| `'Duty'` | `duty` | 0 | duration of one exposure (flash pulse or camera exposure time) divided by the time step, in [0, 1) |
-| `'ROI'` | `roi` | `[]` / `None` (largest square) | side of the analysed central square, at least 16 px |
-| `'ClipOutliers'` | `clip_outliers` | false | set pixels more than 6 robust standard deviations from the median to the median |
-| `'PadFactor'` | `pad_factor` | 2 | zero padding factor of the FFT |
-| `'MinQuality'` | `min_quality` | 0.6 | lowest fit quality accepted; small images need more |
-| `'Diagnostics'` | `diagnostics` | false | keep intermediate results for `fftvel.plot_estimate` |
-
-The result has the fields `angle_deg`, `speed` (px per exposure step), `vx`,
-`vy`, `geba`, `quality`, `quality_perp` (the fit perpendicular to the
-direction), `in_range`, `isotropic`, `threshold`, `valid` (quality >= threshold
-and in range and not isotropic), `L`, `exposures` (K used in the model), `n`
-(side of the analysed square) and `npad`. Option values are checked: text such
-as `'4'` is an error, so MATLAB command syntax does not work for numeric
-options.
-
-`matlab/examples/demo_simulation.m` and `demo_testsequences.m` run unchanged in
-both. On a 2.8 GHz Xeon a 256 x 256 image takes about 0.8 s in Python and
-1.2 s in Octave (the first call in a session 1.1 s and 1.7 s), a 512 x 512
-square about 5 s and 6 s. A full camera frame of 1216 x 1936 px, analysed as a
-1216 px square, takes about 50 s and 85 s, so analyse a central square of 256
-to 512 px (`roi`, `--roi`, or a camera ROI).
-
-### Live camera
-
-* MATLAB: `matlab/examples/live_basler.m` streams from a Basler camera through
-  the Image Acquisition Toolbox (GenTL).
-* Python: `python/examples/live_camera.py --source pylon` does the same with
-  [pypylon](https://github.com/basler/pypylon); `--source 0` uses any webcam
-  and `--source video.avi` a recording (both through OpenCV).
-
-Both need an explicit mode:
-
-* `flash`: every camera frame holds K = 2L+1 strobe flashes (or
-  `--exposures K` / `'Exposures', K`) and is estimated on its own. The speed is
-  in px per flash step, and in px/s only with the time between flashes
-  (`--flash-period` / `'FlashPeriod'`, in s). `--duty` / `'Duty'` is the flash
-  pulse length divided by the flash period. The exposure must cover all K
-  flashes; with the flash period given, both scripts read the exposure time
-  of a Basler camera and warn when it is shorter than (K - 1 + duty) flash
-  periods. With a strobe that is not synchronised with the exposure, the
-  number of flashes per frame can change from frame to frame.
-* `average`: continuous light, K consecutive frames are averaged into a pulsed
-  image. The speed is in px per frame and px/s. Never use this mode for
-  multi-flash frames.
+`fftvel.pulsed_from_stack` averages a stack of frames into one image. The command line reads PNG, TIFF, BMP, `.npy` and `.mat` files, writes the result as JSON to stdout and notes on what it read to stderr. A single image needs `--L` or `--exposures`. With `--gsd` (length per pixel) and `--period` (seconds between flashes) the JSON also holds `speed_per_s`, `vx_per_s` and `vy_per_s`: 200.11 mm/s for this synthetic image, made with 200 mm/s.
 
 ```bash
-python python/examples/live_camera.py --mode flash --source pylon --L 4 --flash-period 0.001
-python python/examples/live_camera.py --mode average --source pylon --exposure-us 500
-python python/examples/live_camera.py --mode flash --source recording.avi
+python -m fftvel estimate data/real/example/flash_a.png --L 4 --duty 0.02 --gsd 0.05 --period 0.001
 ```
+
+Further options are `--roi` (side of the analysed square, default 512 px), `--clip-outliers`, `--stack` and `--plot`; `python -m fftvel estimate --help` lists them all, and [python/README.md](python/README.md) explains the install extras. The same estimate in MATLAB or GNU Octave:
 
 ```matlab
-live_basler('Mode', 'flash', 'L', 4, 'FlashPeriod', 1e-3)
-live_basler('Mode', 'average', 'Exposure', 500)
+addpath('matlab')                                        % the folder that holds +fftvel
+bp = double(imread('data/real/example/flash_a.png'));
+est = fftvel.estimate_velocity(bp, 'L', 4, 'Duty', 0.02, 'Diagnostics', true);
+p = fftvel.to_physical(est, 0.05, 1e-3);                 % 0.05 mm per px, 1 ms between flashes
+fprintf('%.1f mm/s at %.1f deg, valid %d\n', p.speed, est.angle_deg, est.valid);
+fftvel.plot_estimate(bp, est);
 ```
 
-Frame times (average mode). The model needs equal steps, so both scripts check
-the frame times. A window is accepted if the spread of its frame intervals
-(max - min) is at most 0.1 times their median (`--tol` / `'Tol'`); Python
-reports other windows as not valid ("uneven frame steps"), MATLAB skips them.
-The Python script uses the camera clock of Basler cameras. If the camera sends
-no timestamps (as the pylon emulator), it uses the host clock and checks the
-window against the nominal frame period. Webcams use the driver's buffer time
-or the host clock. The MATLAB script gets its times from `getdata`, which
-takes them on the host when a frame arrives, not from the camera clock (that
-would need GenICam chunk data, which the script does not use). It therefore
-checks windows against the frame rate the camera reports: if the mean
-interval agrees with it within `Tol`, the window is accepted unless an
-interval is off by half a period or more (a dropped frame). This assumes a
-free-running camera, not a hardware trigger. Without a reported rate, or if
-the mean interval does not agree with it, MATLAB uses the spread test. The
-Python host-clock fallback for Basler cameras uses the same rule. Video files
-only carry nominal times (frame number divided by the frame rate stored in the
-file): they cannot reveal dropped frames, and px/s is only as right as that
-frame rate. Image sequences need `--fps`.
+The live scripts are experimental. [`python/examples/live_camera.py`](python/examples/live_camera.py) streams from a Basler camera through pypylon or from a webcam or video file through OpenCV, [`matlab/examples/live_basler.m`](matlab/examples/live_basler.m) from a Basler camera through the Image Acquisition Toolbox. Neither has run on camera hardware. The Python script was checked with the pylon camera emulator and has 13 tests with fake camera modules; `live_basler.m` has not run in MATLAB. Their flash mode estimates every multi-flash frame on its own, while their average mode, which averages K consecutive frames under continuous light, is a test harness. At the default 512 px square one estimate takes about 4 s in Python ([live scripts](docs/hardware.md#live-scripts)).
 
-Exposure (average mode). Each frame is blurred over its exposure time.
-`--exposure-us` / `'Exposure'` (in us) sets a fixed exposure and switches auto
-exposure off (`ExposureTime`, or `ExposureTimeAbs` on older GigE cameras).
-For Basler cameras both scripts read the exposure back and pass
-duty = exposure / frame step to the estimator (webcams and video files use
-duty 0 unless `--duty` is given). They warn between 0.4 and 0.6, where the
-result depends strongly on the exact value, and above 0.9. Keep the exposure
-below about 0.3 of the frame step.
+To evaluate your own recordings, list the images in a `meta.csv` with flash count, flash period, duty, ground sample distance and the set speed and direction, and add images of the stopped surface as controls. [`data/real/README.md`](data/real/README.md) describes the format and the procedure, [docs/hardware.md](docs/hardware.md) what the set-up needs. On the synthetic example the tool marks both moving images valid with speed errors below 0.06 % and the static image not valid:
 
-The Python script grabs a fresh burst of K frames for every estimate in
-average mode and the newest frame in flash mode, so frames buffered while it
-computes never end up in a window. It reads the pixel format back: Mono8,
-Mono10, Mono12 and Mono16 are used directly, packed Mono formats are converted,
-Bayer and colour formats are refused with a message. Failed grabs are
-printed; it stops after 20 failed grabs or incomplete bursts in a row, or
-after 10 failed webcam reads. `--show` plots the speed over time and keeps the
-plot open at the end. The default `--roi 512` takes several seconds per
-estimate.
-
-Neither script has been run on camera hardware for this repository. The
-Python script was checked against the pylon camera emulator in both modes (in
-flash mode with simulated 9-flash frames: 3.60 to 3.61 px per flash, true
-3.61) and on video files and image sequences through OpenCV. `live_basler.m`
-was run in GNU Octave with mock Image Acquisition Toolbox objects only, not in
-MATLAB.
-
-## Repository layout
-
-```
-matlab/+fftvel/       MATLAB/Octave package fftvel (no toolboxes); helpers in +internal/
-matlab/examples/      demos and the live Basler GUI
-python/               the same as the Python package fftvel, plus examples
-tests/                test suites for both languages and shared parity cases
-experiments/          one script per study; run.py runs them all
-experiments/history/  the 2025 estimator ported to Python, before/after comparison
-experiments/results/  CSV files of the full run (--quick writes to the ignored results_quick/)
-data/                 test sequences, a real surface texture, the Basler recordings
-docs/figures/         figures of this README
+```bash
+python experiments/real_measurements.py data/real/example/meta.csv --out results.csv
 ```
 
-## Tests
+## Development
 
 ```bash
 python -m pip install -e "./python[test]"
-python -m pytest tests/python
-octave --no-gui --eval "cd tests/matlab; run_tests"     # or: matlab -batch "cd tests/matlab; run_tests"
+python -m pytest -q tests/python
+cd tests/matlab && octave --no-gui --eval run_tests
 ```
 
-The suites check the angle convention, known motion in simulations and on the
-test sequences, rejection of static scenes and white noise from 32 to 256 px,
-of defocused images and square repeating textures (isotropy check) and of
-motion below the measurable range, the options `exposures`, `duty`, `roi` and
-`clip_outliers`, the checks of all option values, `pulsed_from_stack`, and
-parity: the same 15 cases (including odd sizes, a non-square image, other FFT
-lengths, 8 exposures, a duty, a small ROI, clipped hot pixels, a uint8 frame
-stack and a static repeating tile) must give the same result in both
-languages within 1e-9. The no-motion checks at 32 px use stored images
-(`tests/parity/fixed_inputs.mat`, written by `tests/parity/make_cases.py`), so
-they do not depend on the random number generator. The Python suite also
-covers the command line, the argument checks and output folders of the
-experiment scripts, and the live script, the latter with fake camera modules.
-`run_tests` prints the file and line of every failure and ends with
-an error, so `octave --eval` and `matlab -batch` exit with a non-zero status.
-GitHub Actions runs the Python suite on Python 3.10 and 3.13 and the MATLAB
-suite in GNU Octave on every push.
+The tests check the implementation: known motion in simulation and on the test sequences, rejection of images without motion, every option and its argument checks, and parity, which means that the Python and MATLAB/Octave packages give the same results to 1e-9 on 20 shared cases (so far checked in GNU Octave). They do not show that the model holds for a given camera; that takes real multi-flash images. Because the two languages are compared case by case, Python and MATLAB change together; [CONTRIBUTING.md](CONTRIBUTING.md) lists the steps.
 
-## Background
+```
+python/src/fftvel/   Python package; python -m fftvel is the command line
+python/examples/     demos and the live camera script
+matlab/+fftvel/      MATLAB/Octave package, helpers in +internal/; matlab/examples/ the same demos
+tests/               both test suites, the parity cases and constants.json
+experiments/         one script per study, run.py runs them; results/ holds the CSV files
+data/                test sequences, a camera texture, the 2025 recordings, real/ for new recordings
+docs/                method, results, acquisition, history of the code; figures/
+```
 
-The method comes from Chapter 3 of Jan Horn's doctoral thesis
-([reference](#reference)):
-the pulsed-exposure model, the analysis of the log spectrum with the Radon
-transform, the ripple profile WR for the direction, the speed from the
-spacing of the repeated structures and the quality measure GEBA. In my
-student project (2025) I implemented it in MATLAB and tested it with simulated
-sequences and recordings from a Basler camera. Those original scripts are
-kept unchanged at tag
-[`student-project-2025`](https://github.com/onewmann/2D-FFT-Code/tree/student-project-2025/2D-FFT).
+A full clone is about 120 MB, because the history also holds the files of the 2025 student project. A partial clone fetches only the files of the version you check out (about 70 MB, most of it the four recordings in `data/recordings/`) and older files when they are needed:
 
-A review of those scripts found the speed estimate was wrong in every script
-that computed it, mainly because peaks were picked with a fixed threshold that
-let noise through. Live frames were also resized to 256 x 256 px with different
-scale factors per axis, which distorted both direction and speed. In addition,
-the recorded videos do not have equal steps between frames, which the method
-needs:
+```bash
+git clone --filter=blob:none https://github.com/onewmann/2D-FFT-Code
+```
 
-![Frame-to-frame motion in the original recordings](docs/figures/recordings.png)
+## How this was built
 
-The rewrite keeps the method of the thesis (log spectrum, Radon transform,
-ripple profile and GEBA) and changes the implementation:
-
-* the speed comes from a fit of the Dirichlet model instead of peak counting,
-  and the fit quality, together with a check for isotropic structures,
-  decides whether a result is valid;
-* images are cropped to a square, never resized, so the speed stays in camera
-  pixels;
-* the Radon step averages instead of summing, which removes the bias towards
-  45 and 135 deg;
-* simulations move a fixed window over a larger texture instead of shifting
-  with zero-filled borders, which better matches a camera;
-* one implementation per language instead of about 40 script versions, with
-  tests that run in CI.
-
-### How this was built
-
-The scripts of the student project are kept unchanged at tag
-[`student-project-2025`](https://github.com/onewmann/2D-FFT-Code/tree/student-project-2025/2D-FFT)
-(folder `2D-FFT/`, uploaded on 8 October 2026 in commits `54b90cc` and
-`8f0aec4`; the tag points to `8f0aec4`). Everything after commit `8f0aec4` was done with the assistance of
-AI (Claude by Anthropic): first a code review of those scripts, then the
-rework in this repository, starting with the commit "Rewrite the 2D-FFT
-velocity estimator for MATLAB, Octave and Python". That covers the code in
-`matlab/` and `python/`, the tests, the experiments, the figures and this
-documentation.
-
-## Limitations
-
-* The surface needs texture, and the motion has to be constant during the
-  exposures, which must be equally spaced in time. The fit quality does not
-  reliably detect a regular pattern of uneven steps or a changing speed (see
-  Validity above).
-* The number of exposures has to be exact: `L` for 2L+1 exposures, or
-  `exposures` for any number K, also an even one. For slow motion a wrong
-  count scales the speed by K_true/K without lowering the quality, so the
-  result can still be marked valid. The command line therefore asks for `--L`
-  or `--exposures` for a single image; the functions default to L = 4.
-* Each exposure takes time: the camera exposure time when frames are
-  averaged, the flash pulse in a multi-flash image. The texture moves by
-  duty x |v| px during it. Without `duty` this blur has to stay well below
-  about 3 px; otherwise the speed comes out near duty x |v| / K and can still
-  be marked valid. With `duty` the model includes the blur, but the value has
-  to be known to within a few percent: in simulations a duty set 10 % too high
-  at large blur also gave wrong results marked valid. Near duty 0.5, for
-  example with a 50 % square-wave strobe, every second spectral line vanishes;
-  avoid it. Examples: a 0.2 ms flash every 1 ms gives duty 0.2, a 5 ms exposure
-  at 100 frames per second 0.5.
-* The camera has to be in focus. A defocused image has ring-shaped zeros in
-  its spectrum, which look like slow motion of about 0.2 times the blur radius
-  per step. The isotropy check rejected almost all such images of a static or
-  slowly moving surface in simulations (blur radius 2 to 6 px; 2 of 236 still
-  passed), so check that an image of the stopped surface comes out not valid.
-* Textures that repeat with a fixed period P (woven fabric, mesh, embossed or
-  knurled surfaces, printed patterns) can be reported as motion of P px per
-  step along the repeat axis, even without motion, and can hide the real
-  motion when the rest of the texture is weak. The isotropy check rejects
-  square repeats (the same period along both axes), not rectangular ones. Use
-  a non-repeating texture.
-* Static bright spots, such as glints of the flash on a shiny surface or hot
-  pixels, give fringes at their spacing and can be reported as motion with
-  that speed, marked valid. `clip_outliers` (`'ClipOutliers'`,
-  `--clip-outliers`) sets pixels more than 6 robust standard deviations from
-  the median to the median. It is off by default and misses spots that are
-  not that bright compared with the texture. Otherwise mask the spots and fill
-  them with the image mean.
-* JPEG compression adds an 8 x 8 px block grid, which can give wrong results
-  marked valid. Use lossless formats (PNG, TIFF, BMP) for measurements.
-* In average mode the live scripts check the frame times of each window.
-  With camera timestamps (the Python script with a Basler camera) the spread
-  of the frame intervals (max - min) must be at most 0.1 times their median,
-  so a regular pattern such as alternating intervals that differ by more than
-  about 10 % is rejected; it can give twice the speed marked valid. Smaller
-  irregularities pass. Host-side times (MATLAB, Basler cameras without
-  timestamps) are checked against the camera's nominal period where it is
-  known, which detects dropped frames but not such patterns (see
-  [Live camera](#live-camera)). Host-clock times of webcams jitter, so good
-  windows can be rejected; `--tol` loosens the check. In flash mode the flash
-  timing cannot be checked, and video files carry only nominal times.
-* The measurable range depends on the image size N and on the number of
-  exposures K. The lower end is about $3.3/K$ px per step (0.4 for L = 4,
-  0.08 for L = 20), where the first zero of the Dirichlet kernel still lies
-  inside the spectrum. The experiments cover speeds up to N/4 (64 px per step
-  for N = 256).
-* Images need at least about 64 x 64 px to give valid results with any
-  regularity; below 128 px the stricter threshold rejects many of them.
-* A sharp, straight static edge in the analysed square, for example a
-  zero-filled mask, has a line spectrum of its own and can be mistaken for
-  motion. Fill masked areas with the image mean instead.
-* Direction is only known modulo 180 deg.
-* The MATLAB code is written for base MATLAB and tested in GNU Octave 8.4; it
-  has not been run in MATLAB yet.
+The scripts of the 2025 student project are kept unchanged at tag [`student-project-2025`](https://github.com/onewmann/2D-FFT-Code/tree/student-project-2025/2D-FFT), which points to commit `8f0aec4`. The tag also holds a Basler camera driver for MATLAB by another author (MIT licence), which this repository does not use. Everything after commit `8f0aec4` was done with the assistance of AI (Claude by Anthropic): first a code review of those scripts, then the rework in this repository, starting with the commit "Rewrite the 2D-FFT velocity estimator for MATLAB, Octave and Python". That covers the code in `matlab/` and `python/`, the tests, the experiments, the figures and this documentation. [docs/history.md](docs/history.md) indexes the 2025 scripts by function, lists what the review found and compares the 2025 estimator with the current one.
 
 ## Reference
 
-Jan Horn: *Zweidimensionale Geschwindigkeitsmessung texturierter Oberflächen
-mit flächenhaften bildgebenden Sensoren* (two-dimensional velocity measurement
-of textured surfaces with area image sensors). Dissertation, Universität
-Karlsruhe (TH), 2006. Schriftenreihe des Instituts für Mess- und
-Regelungstechnik, Band 006, Universitätsverlag Karlsruhe, 2007.
-ISBN 978-3-86644-076-0.
-[Full text (CC BY-NC-ND 2.0 DE)](https://publikationen.bibliothek.kit.edu/1000006276)
+Jan Horn: *Zweidimensionale Geschwindigkeitsmessung texturierter Oberflächen mit flächenhaften bildgebenden Sensoren* (two-dimensional velocity measurement of textured surfaces with area image sensors). Dissertation, Universität Karlsruhe (TH), 2006. Schriftenreihe des Instituts für Mess- und Regelungstechnik, Band 006, Universitätsverlag Karlsruhe, 2007. ISBN 978-3-86644-076-0. [Full text (CC BY-NC-ND 2.0 DE)](https://publikationen.bibliothek.kit.edu/1000006276)
 
-## License
+## Citation and licence
 
-The code in this repository is MIT licensed, see [LICENSE](LICENSE).
-Oliver Neumann. The method itself is described in the thesis above.
+[CITATION.cff](CITATION.cff) holds the citation of this code, and GitHub offers it under "Cite this repository". For the method, cite the thesis above. The code is under the MIT licence, see [LICENSE](LICENSE). The test sequences, the camera texture and the recordings in `data/` come from the 2025 student project; [data/README.md](data/README.md) describes them.

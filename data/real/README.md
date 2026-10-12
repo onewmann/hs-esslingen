@@ -189,10 +189,12 @@ The motion per flash in px is
     v_px = v * T / gsd
 
 with v the speed in mm/s, T the flash period in s and gsd in mm/px. The
-estimator measures from about 3.3/K px per flash (0.37 px for K = 9) up to
+estimator measures from about 3.35/K px per flash (0.37 px for K = 9) up to
 about n/4 px for an n px square (128 px for the default 512 px); the
-simulations test up to n/4. Aim for a few px per flash, about 2 to 10, so
-that T = v_px * gsd / v.
+simulations test up to n/4. Aim for a few px per flash, about 4 to 10, so
+that T = v_px * gsd / v. Below about 2.2 px per flash a single blurred
+exposure looks like the flash pattern (see the blur check in
+[docs/method.md](../../docs/method.md#blur-check-optional)).
 
 Worked example: v = 500 mm/s, gsd = 0.05 mm/px (the 1936 px wide sensor
 covers 97 mm), 5 px per flash: T = 5 * 0.05 / 500 s = 0.5 ms, a flash rate
@@ -224,8 +226,8 @@ square.
   `vid4.mat`, read as if they held 9 flashes, gave 3 of 10 frames valid with
   0.48 to 0.54 px per flash, all at 90 deg, that is a blur of about 4.3 to
   4.8 px, vertical on the screen. The cause of that blur is not known; from
-  frame to frame the surface moved 1.6 to 6.2 px in directions of 89 to
-  128 deg (phase correlation of the central 512 px square). Darken
+  frame to frame the surface moved 1.6 to 6.0 px in directions of 89 to
+  129 deg (phase correlation of the central 512 px square). Darken
   the room or use an enclosure or a band-pass filter for the flash colour,
   check that an image with the flash switched off is black, and record the
   single-flash controls described under [Static images](#static-images).

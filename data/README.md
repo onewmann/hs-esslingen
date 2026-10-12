@@ -15,7 +15,7 @@ holds image content in every frame of a window (see `tests/matlab/test_testseque
 |---|---|---|
 | `model` | 20 | (5, 5) px, constant |
 | `tyre` | 20 | (4, 4) px, constant |
-| `vehicle` | 30 | about (5, 5) px, single steps with vx and vy between 1.9 and 7.9 px |
+| `vehicle` | 30 | about (5, 5) px, single steps with vx and vy between 1.7 and 7.8 px (3.50 to 9.93 px long) |
 | `accelerating` | 30 | vy = 3 px, vx varies smoothly between 2 and 8 px |
 
 Converted from `Testsequenzen1.mat` of the original project (variables
@@ -40,9 +40,9 @@ columns x 1 colour channel x frames).
 | File | Content |
 |---|---|
 | `vid1.mat` | static room scene, no motion (the mean brightness rises from about 110 to 136 over the 10 frames) |
-| `vid2.mat` | moving textured surface, steps of 3.0 to 8.2 px between frames |
-| `vid3.mat` | moving textured surface, steps of 4.6 to 18.0 px between frames |
-| `vid4.mat` | moving textured surface, steps of 1.6 to 6.1 px between frames |
+| `vid2.mat` | moving textured surface, steps of 2.9 to 8.2 px between frames |
+| `vid3.mat` | moving textured surface, steps of 4.5 to 18.0 px between frames |
+| `vid4.mat` | moving textured surface, steps of 1.6 to 6.0 px between frames |
 
 The steps are the displacement between consecutive frames by phase
 correlation of the central 1024 x 1024 px. They are not uniform, while the
