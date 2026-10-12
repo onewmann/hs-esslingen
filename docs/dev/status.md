@@ -135,9 +135,9 @@ files pass.
 
 ## Next steps
 
-1. Write 2 or 3 sentences on your own part in the rework into the README
-   section "Who did what" (an HTML comment marks the place; delete the
-   comment either way before publishing).
+1. Done: the README section "Who did what" now says that the owner noticed
+   errors in the 2025 results and rebuilt the project with Claude. Be ready
+   to name a concrete error in an interview.
 2. Record the test without a flash (`data/measurements/README.md`, section
    "Testing without a flash") and later multi-flash images; evaluate them
    with `experiments/real_measurements.py`; update Status and Results.
