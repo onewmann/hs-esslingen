@@ -13,6 +13,10 @@ identical and what a change to the algorithm involves.
 The public functions have the same names in both packages. Python takes the
 options as keyword arguments (`duty=0.2`), MATLAB as name-value pairs
 (`'Duty', 0.2`, matched without regard to case).
+[`matlab/+fftvel/Contents.m`](matlab/+fftvel/Contents.m) lists the public
+MATLAB functions (`help fftvel.Contents`), and `tests/matlab/test_contents.m`
+checks that it names every one with its H1 line and the version of
+`python/pyproject.toml` and `CITATION.cff`.
 
 | Python | MATLAB/Octave | Purpose |
 |---|---|---|
@@ -22,8 +26,8 @@ options as keyword arguments (`duty=0.2`), MATLAB as name-value pairs
 | `fftvel.angle_difference` (`core.py`) | `fftvel.angle_difference` | difference of two directions modulo 180 deg |
 | `fftvel.simulate_pulsed_image` (`simulate.py`) | `fftvel.simulate_pulsed_image` | simulated multi-flash image with known motion |
 | `fftvel.make_texture` (`simulate.py`) | `fftvel.make_texture` | random texture for the simulator |
-| `fftvel.phase_correlation` (`reference.py`) | `fftvel.phase_correlation` | shift between two frames, the independent reference |
-| `fftvel.plotting.plot_estimate` | `fftvel.plot_estimate` | diagnostic figure; needs `diagnostics=True` (`'Diagnostics', true`) |
+| `fftvel.phase_correlation` (`phasecorr.py`) | `fftvel.phase_correlation` | shift between two frames, the independent reference |
+| `fftvel.plot_estimate` (`plotting.py`) | `fftvel.plot_estimate` | diagnostic figure; needs `diagnostics=True` (`'Diagnostics', true`) |
 
 The steps of the estimator are module functions of `core.py` in Python and
 functions of the subpackage `+internal` in MATLAB. Neither set is part of the
@@ -49,10 +53,11 @@ public API.
 | `fit_speed` | `fit_speed` |
 | `fit_blur` | `fit_blur` |
 | `null_quality` | local function `null_quality` in `estimate_velocity.m` |
-| `_upsampled_peak` (`reference.py`) | local function `upsampled_peak` in `phase_correlation.m` |
+| `_upsampled_peak` (`phasecorr.py`) | local function `upsampled_peak` in `phase_correlation.m` |
 
-Only in Python: the command line (`__main__.py`), `fftvel.stream` and
-`python/examples/live_camera.py`. Only in MATLAB: `matlab/examples/live_basler.m`.
+Only in Python: the command line (`__main__.py`), the file readers of
+`fftvel.io`, `fftvel.stream` and `python/examples/live_camera.py`. Only in
+MATLAB: `matlab/examples/live_basler.m`.
 The demos `demo_simulation` and `demo_testsequences` exist in both
 `python/examples/` and `matlab/examples/`.
 
@@ -66,8 +71,9 @@ of each constant and the functions that use it. `tests/python/test_constants.py`
 and `tests/matlab/test_constants.m` check that both packages hold exactly the
 names and values of the JSON file. A new constant therefore goes into all
 three files, and a changed value as well. The table in
-[docs/method.md](docs/method.md#constants) is a copy of the JSON file and has
-to be updated by hand.
+[docs/method.md](docs/method.md#constants) is a copy of the JSON file, and
+`tests/python/test_docs_constants.py` checks that it holds the same names,
+values and meanings in the same order, so it changes with the JSON file.
 
 ## Parity cases
 
@@ -80,7 +86,7 @@ implementation on 20 input images and writes three files:
   options of each case;
 * `fixed_inputs.mat`: images without motion at 32 and 64 px, a static
   repeating tile, and the hot-pixel image, the image of 8 exposures at
-  0.6 px per step and the texture that the Python option and
+  0.6 px per flash and the texture that the Python option and
   phase-correlation tests draw. They are stored because MATLAB and Octave
   draw different random numbers from the same seed and some draws fail these
   checks; the MATLAB tests load them instead of drawing them.
@@ -88,7 +94,12 @@ implementation on 20 input images and writes three files:
 `tests/python/test_parity.py` and `tests/matlab/test_parity.m` estimate the
 inputs of `cases.mat` and compare with `expected.csv`: angle, speed, GEBA,
 quality, perpendicular quality and blur fit to $10^{-9}$, threshold and
-saturated share to $10^{-12}$, and the flags exactly.
+saturated share to $10^{-12}$, and the flags `valid`, `isotropic` and
+`blur_like` exactly. The cases cover odd sizes and FFT lengths, a non-square
+image, padding factors 3 and 4, 8 and 10 exposures, a duty, a small `roi`,
+clipped hot pixels and glints, a `uint8` frame stack, a `uint8` image with
+saturated pixels, a static repeating tile, an image without motion and single
+blurred exposures with and without `reject_blur`.
 [`tests/parity/make_phase_cases.py`](tests/parity/make_phase_cases.py) does
 the same for `phase_correlation` with 10 image pairs in `phase_cases.mat`.
 
@@ -117,13 +128,16 @@ their content has changed.
    if `phase_correlation` changed). Never edit `expected.csv` or the `.mat`
    files by hand, and check that the differences in `expected.csv` are the
    ones the change should cause.
-4. Run both suites. A new MATLAB test file has to be added to the list in
-   `tests/matlab/run_tests.m`, which runs only the files named there.
+4. Run both suites. `tests/matlab/run_tests.m` runs every
+   `tests/matlab/test_*.m` it finds.
 
    ```bash
    python -m pytest -q tests/python
    cd tests/matlab && octave --no-gui --eval run_tests
    ```
+
+   With MATLAB, from the repository root:
+   `matlab -batch "cd tests/matlab; run_tests"`.
 
 5. Rerun the studies. `python experiments/run.py --all` rewrites the CSV files
    in `experiments/results/` and the figures in `docs/figures/` (its docstring
@@ -138,15 +152,21 @@ their content has changed.
 
    The last command redraws the figures from the CSV files and prints the
    numbers that the documentation quotes.
-6. Update every number in `README.md` and `docs/*.md` that the new CSV files
-   change, and the test counts if tests were added.
+6. Update every number in `README.md`, `docs/*.md` and
+   `data/measurements/README.md` that the new CSV files change.
 
 The MATLAB code has to run in GNU Octave 8.4 as well as in MATLAB, without
-toolboxes. Three constructs do not work in Octave 8.4 (checked): a function in
-`+fftvel/private/` is undefined when called from a function of the package
-(hence `+internal` with fully qualified calls such as
-`fftvel.internal.fit_speed`), `import fftvel.*` is not implemented, and
-`exist('fftvel.estimate_velocity')` returns 0.
+toolboxes. Five constructs do not work in Octave 8.4 (checked):
+
+* a function in `+fftvel/private/` is undefined when called from a function
+  of the package, hence `+internal` with fully qualified calls such as
+  `fftvel.internal.fit_speed`;
+* `import fftvel.*` is not implemented;
+* `exist('fftvel.estimate_velocity')` returns 0;
+* `arguments` blocks are a parse error;
+* the call syntax `f(Name=Value)` of MATLAB R2021a and newer is read as an
+  assignment, so only the value is passed; examples and tests give options as
+  pairs (`'Duty', 0.02`).
 
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
 the Python suite on Python 3.10 and 3.13 together with a small subset of the

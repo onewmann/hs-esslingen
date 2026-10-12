@@ -1,10 +1,11 @@
 # Acquisition
 
 What a camera set-up needs so that one image satisfies the model of
-[method.md](method.md). No real multi-flash image has been recorded for this
-repository yet. The numbers on this page come from the simulations and the
-independent forward model in [results.md](results.md), from the 2025 camera
-recordings, and from worked examples computed here.
+[method.md](method.md), and how to record and evaluate your own measurements.
+No real multi-flash image has been recorded for this repository yet. The
+numbers on this page come from the simulations and the independent forward
+model in [results.md](results.md), from the 2025 camera recordings, and from
+worked examples computed here.
 
 ## Timing of one image
 
@@ -52,7 +53,8 @@ Worked example. A surface moves at 500 mm/s under a camera with
 GSD = 0.05 mm/px (the 1936 px wide sensor then covers 96.8 mm). For 5 px per
 flash, $T = 5 \cdot 0.05 / 500$ s = 0.5 ms, a flash rate of 2 kHz. With K = 9
 the exposure must cover $(K-1+d)\,T$; with 20 µs flashes, $d$ = 0.04 and the
-exposure needs at least 8.04 x 0.5 ms = 4.02 ms. The blur per flash is
+exposure needs at least 8.04 x 0.5 ms = 4.02 ms. Set, for example, 4.5 ms and
+make sure that exactly 9 flashes fall into it. The blur per flash is
 $`d\,v_\text{px}`$ = 0.2 px, negligible. With the same T, speeds from 100 to
 1000 mm/s give 1 to 10 px per flash; the lower end of 0.37 px corresponds to
 37 mm/s. During the 9 flashes the surface moves 40 px, a small part of a
@@ -76,11 +78,13 @@ be exact.
 
 ## The exact flash count
 
-The estimator needs the true K (`L` for 2L+1 flashes, or `exposures` for any K,
-also even). For slow motion a wrong K scales the speed by $`K_\text{true}/K`$
-without lowering the fit quality. In simulation with the forward model, telling
-the estimator 7, 8, 10 or 11 flashes for an image with 9 made 34.4 % of the
-images wrong but valid, with the speed off by the factor 9/K.
+The estimator needs the true number of flashes K: `exposures` (`--exposures`,
+`'Exposures'`) for any K of at least 2, also even, or `L` for K = 2L+1, the
+half-count used in the thesis. For slow motion a wrong K scales the speed by
+$`K_\text{true}/K`$ without lowering the fit quality. In simulation with the
+forward model, telling the estimator 7, 8, 10 or 11 flashes for an image with
+9 made 34.4 % of the images wrong but valid, with the speed off by the factor
+9/K.
 
 The flashes must also be equally spaced. Intervals alternating between 0.8 and
 1.2 periods gave 87 of 240 images valid at twice the true speed; one missing
@@ -110,11 +114,12 @@ correct and valid.
 
 Darken the room, or use an enclosure or a band-pass filter for the flash
 colour, and check that an image taken with the flashes switched off is black.
-Record controls that must come out not valid: images of the stopped surface,
-and images of the moving surface with a single flash in the same exposure
-time. A valid control shows blur from other light or from vibration.
-`reject_blur` rejects blur-like results, at the cost of many correct ones
-below about 2.2 px per flash.
+Record controls that must come out not valid
+([static images](#static-images)): images of the stopped surface, and images
+of the moving surface with a single flash in the same exposure time. A valid
+control shows blur from other light or from vibration. `reject_blur` rejects
+blur-like results, at the cost of many correct ones below about 2.2 px per
+flash.
 
 ## Focus
 
@@ -146,7 +151,7 @@ the scripts warn above 1 %. Shiny surfaces need diffuse light or polarisers. Do
 not expose too dark either: 8-bit quantisation caused no failures in simulation
 with the forward model, 6 bits gave 6.2 % wrong but valid results, and 8 bits
 at a quarter of full scale are about 6 bits. Store images in a lossless format
-(PNG, TIFF, BMP, `.npy`, `.mat`); JPEG adds an 8 x 8 px block grid.
+(PNG, TIFF, BMP, `.npy`, `.npz`, `.mat`); JPEG adds an 8 x 8 px block grid.
 
 ## Ground sample distance and physical units
 
@@ -160,29 +165,43 @@ command line takes `--gsd` and `--period` and then adds `speed_per_s`,
 per second:
 
 ```bash
-python -m fftvel estimate data/real/example/flash_b.png --exposures 8 --duty 0.2 --gsd 0.05 --period 0.0005
+python -m fftvel estimate data/measurements/synthetic_flash/flash_b.png --exposures 8 --duty 0.2 --gsd 0.05 --period 0.0005
 ```
 
 ```python
 from fftvel import estimate_velocity, simulate_pulsed_image, to_physical
-bp = simulate_pulsed_image(256, (5, -3), 4)        # or your own 2-D image
-est = estimate_velocity(bp, L=4)
+bp = simulate_pulsed_image(256, (5, -3), 4)        # L = 4, so K = 2L+1 = 9 flashes; or your own 2-D image
+est = estimate_velocity(bp, exposures=9)
 p = to_physical(est, gsd=0.05, period=0.0005)      # mm/s for the GSD in mm/px
 ```
 
 `to_physical` converts every estimate, valid or not, so check `est.valid`
 first.
 
-Measure the GSD with a ruler or a checkerboard in the plane of the moving
-surface, at the working distance, focus and zoom of the measurements, near the
-centre of the image where the analysed square lies. Two marks far apart, each
-read to within 1 px, give the GSD to 0.09 % when they are 1600 px apart and to
-0.88 % at 160 px. Measure along x and y: a difference of more than about
-0.5 % means that the camera looks at the surface at an angle. The axis that
-moves the surface can measure it too: move it by a known distance between two
-images of the stopped surface and take the displacement in pixels from
-`fftvel.phase_correlation`. [`data/real/README.md`](../data/real/README.md)
-gives both procedures step by step.
+The relative error of the GSD passes one to one into every speed in mm/s.
+Measure it with a ruler or a checkerboard:
+
+1. Put the checkerboard or the ruler in the plane of the moving surface, at
+   the same height, with the camera, lens, focus, zoom and working distance of
+   the measurements. Refocusing or moving the camera changes the GSD.
+2. Take an image and find the pixel coordinates of two marks far apart, for
+   example 80 mm on the ruler or 10 squares of the checkerboard, near the
+   centre of the image where the analysed square lies (lens distortion
+   changes the GSD towards the corners). In MATLAB:
+   `imshow(I); [x, y] = ginput(2); d = hypot(diff(x), diff(y))`.
+3. GSD = known length / pixel distance. Two marks, each read to within 1 px,
+   give the GSD to 0.09 % when they are 1600 px apart and to 0.88 % at
+   160 px.
+4. Measure along x and along y. If the two differ by more than about 0.5 %,
+   the camera looks at the surface at an angle, and one GSD does not fit both
+   directions.
+
+The axis that moves the surface can measure it too: take an image of the
+stopped surface, move the axis by a known distance D (say 10 mm), take
+another, and get the displacement d in px from `fftvel.phase_correlation`
+([angle convention](../data/measurements/README.md#angle-convention) shows the
+call). Then GSD = D / |d|. Keep |d| below a quarter of the analysed square
+(with a 1216 px square, below about 300 px).
 
 ## Error budget
 
@@ -221,58 +240,98 @@ explicit mode:
   the use case is the flash mode.
 
 ```bash
-python python/examples/live_camera.py --mode flash --source pylon --L 4 --flash-period 0.0005 --duty 0.04
-python python/examples/live_camera.py --mode average --source pylon --exposure-us 500
-python python/examples/live_camera.py --mode flash --source recording.avi
+python python/examples/live_camera.py --mode flash --source pylon --exposures 9 --flash-period 0.0005 --duty 0.04
+python python/examples/live_camera.py --mode average --source pylon --exposures 9 --exposure-us 500
+python python/examples/live_camera.py --mode flash --source recording.avi --exposures 9
 ```
 
 ```matlab
-live_basler('Mode', 'flash', 'L', 4, 'FlashPeriod', 5e-4, 'Duty', 0.04)
-live_basler('Mode', 'average', 'Exposure', 500)
+addpath('matlab', 'matlab/examples')       % from the repository root
+live_basler('Mode', 'flash', 'Exposures', 9, 'FlashPeriod', 5e-4, 'Duty', 0.04)
+live_basler('Mode', 'average', 'Exposures', 9, 'ExposureUs', 500)
 ```
 
 [`python/examples/live_camera.py`](../python/examples/live_camera.py) reads
 Basler cameras through pypylon, and webcams and video files through OpenCV.
 [`matlab/examples/live_basler.m`](../matlab/examples/live_basler.m) uses the
-Image Acquisition Toolbox with the GenTL adaptor. Both default to a 512 px
-square, which takes about 4 s per estimate in Python (repeated call,
-[results.md](results.md#run-time)), so they give a reading every few seconds.
+Image Acquisition Toolbox with the GenTL adaptor; `'ExposureUs'` is the
+exposure time in µs and `'UpdateInterval'` the time between estimates in s.
+Both default to a 512 px square, which takes about 4 s per estimate in Python
+(repeated call, [results.md](results.md#run-time)), so they give a reading
+every few seconds.
 
 Test status: neither script has run on camera hardware. The Python script is
-covered by 16 tests with fake pypylon and OpenCV modules
+covered by tests with fake pypylon and OpenCV modules
 (`tests/python/test_live_camera.py`), and its pylon path was checked with the
 pylon camera emulator. `live_basler.m` has no automated test, because GNU
 Octave has no Image Acquisition Toolbox, and it has not run in MATLAB.
 
-## Evaluating recordings
+## Evaluating your own measurements
 
 [`experiments/real_measurements.py`](../experiments/real_measurements.py)
 estimates every image listed in a `meta.csv`, converts the results to mm/s and
 compares them with the set motion.
-[`data/real/README.md`](../data/real/README.md) describes the columns (file,
-flash count, flash period, duty, GSD, set speed and direction, static flag,
-optional single-flash reference frames), the angle convention, the static
-controls with their Clopper-Pearson bound, and how to report the result. Try it
-on the synthetic example first:
+[`data/measurements/README.md`](../data/measurements/README.md) describes the
+folder layout, the columns of `meta.csv` (file, flash count, flash period,
+duty, GSD, set speed and direction, static flag, optional single-flash
+reference frames), the angle convention, the columns of `results.csv` and how
+to report the result. Try it on the synthetic example first:
 
 ```bash
-python experiments/real_measurements.py data/real/example/meta.csv --out results.csv
+python experiments/real_measurements.py data/measurements/synthetic_flash/meta.csv --out results.csv
 ```
 
 On that example (simulated images with exactly known motion) it marks both
 moving images valid with speed errors of 0.055 and 0.057 % and the static
-image not valid, so any larger error on real images comes from the
-acquisition or the reference. Real multi-flash recordings are being prepared
-and are not in the repository yet.
+image not valid. These errors come from the estimator alone, without the
+errors of a real axis, GSD or flash timing. Real multi-flash recordings are
+being prepared and are not in the repository yet.
+
+### Checklist
+
+* Exactly K flashes in every image, with the camera starting the burst or the
+  controller triggering the camera ([timing](#timing-of-one-image)). K goes
+  into the `exposures` column; a wrong K scales the speed by $`K_\text{true}/K`$
+  for slow motion, and the result can still be marked valid
+  ([flash count](#the-exact-flash-count)).
+* Equal flash intervals, with the number of pulses and the flash period
+  checked once with a photodiode and an oscilloscope. An error in the period
+  passes one to one into the speed in mm/s.
+* An exposure of at least $(K-1+d)\,T$ that holds exactly K flashes, and no
+  other light during it: an image with the flashes switched off is black
+  ([ambient light](#ambient-light)).
+* No saturated pixels. The script warns when more than 1 % of the analysed
+  pixels are saturated (column `saturated`); `--clip-outliers` helps against
+  small glints of the flash ([saturation](#saturation-and-glints)).
+* The surface in focus at the working distance ([focus](#focus)).
+* The GSD measured at the working distance
+  ([GSD](#ground-sample-distance-and-physical-units)) and the set direction
+  measured once
+  ([angle convention](../data/measurements/README.md#angle-convention)).
+* Static controls recorded with the same settings (next section).
+* Lossless files: PNG, TIFF, BMP, `.npy`, `.npz` or `.mat`.
+
+### Static images
+
+Record a number of images of the stopped surface with the same settings (K,
+flash period, exposure, ROI) and give them `static` 1 in `meta.csv`. All of
+them must come out not valid. `static` 1 means "must come out not valid", so it
+also fits a second control: images of the moving surface with a single flash
+in the same exposure time (listed with the `exposures` of the real
+measurements). They hold no flash pattern, and a valid one shows blur from
+other light or vibration. With none of N static images valid, the one-sided
+95 % Clopper-Pearson upper bound of the rate of static images marked valid is
+$1 - 0.05^{1/N}$: 26 % for N = 10, 9.5 % for N = 30, 4.9 % for N = 60, 3.0 %
+for N = 100. The summary of `real_measurements.py` prints this bound for the
+images given.
 
 ## Testing without a flash
 
 Before a flash controller is wired up, the method can be tried on the real
 camera under continuous light. K consecutive short exposures at a fixed frame
 rate, averaged into one image, give the image of K flashes, each exposure in
-the place of a flash, if the steps between the frames are equal; keep each
-exposure at most about a quarter of the frame interval. Both live scripts save
-such bursts (`--mode average --save DIR` in Python,
+the place of a flash, if the steps between the frames are equal. Both live
+scripts save such bursts (`--mode average --save DIR` in Python,
 `'Mode', 'average', 'SaveDir', DIR` in MATLAB), and
 `experiments/real_measurements.py` evaluates them with mode `average` in
 `meta.csv`: it averages the frames, takes the frame period from `meta.csv` or
@@ -280,12 +339,63 @@ from the files (frame rate or timestamps), and checks the steps between the
 frames by phase correlation and the frame intervals by their timestamps.
 Results of this mode are emulated multi-flash: they test the estimator on a
 real camera, lens and texture, not the flash timing.
-[`data/real/README.md`](../data/real/README.md#testing-without-a-flash-averaged-frames)
-gives the camera settings, how to choose the frame rate from the speed, the
-columns of `meta.csv` and what the step check means;
-`data/real/example_average` is a synthetic example.
+[`data/measurements/README.md`](../data/measurements/README.md#testing-without-a-flash-averaged-frames)
+gives what the recording writes, the columns of `meta.csv` in average mode and
+what the step check means; `data/measurements/synthetic_average` is a
+synthetic example.
 
 ```bash
-python python/examples/live_camera.py --mode average --source pylon --frame-rate 80 --exposure-us 2000 --save data/real/2026-10-20_average
-python experiments/real_measurements.py data/real/example_average/meta.csv --out results.csv
+python python/examples/live_camera.py --mode average --source pylon --exposures 9 --frame-rate 80 --exposure-us 2000 --save data/measurements/2026-10-20_average
+python experiments/real_measurements.py data/measurements/synthetic_average/meta.csv --out results.csv
 ```
+
+### Camera settings
+
+* A fixed frame rate: AcquisitionFrameRateEnable on and AcquisitionFrameRate
+  set (`--frame-rate` in `live_camera.py`, `'FrameRate'` in `live_basler`).
+  Both scripts print the frame rate the camera reaches (ResultingFrameRate);
+  if it is lower than the one set, the exposure, the ROI or the bandwidth
+  limits it.
+* ExposureAuto and GainAuto off, so that all frames have the same exposure
+  and gain. `--exposure-us` and `'ExposureUs'` set the exposure in µs and
+  switch ExposureAuto off; set the gain and GainAuto off in the pylon Viewer
+  and save them in the user set the camera starts with.
+* An exposure of at most a quarter of the frame interval (duty at most
+  0.25). During one exposure the surface moves duty times the step, which
+  blurs every frame along the motion. `real_measurements.py` warns above
+  0.25, and in particular between 0.4 and 0.6, where the speed fit depends
+  strongly on the exact exposure (the live scripts warn between 0.4 and 0.6
+  and above 0.9).
+* Continuous light without flicker, for example LEDs on a DC supply. Lamps
+  on the 50 Hz mains flicker at 100 Hz, so short exposures at a fixed frame
+  rate get different brightness, and the frames no longer count equally in
+  the mean.
+* A camera ROI, so that the camera reaches the frame rate: the maximum frame
+  rate grows when fewer rows are read out and less data is sent per frame.
+  Set Width and Height (for example 512 x 512, the analysed square) and
+  centre it with OffsetX and OffsetY in the pylon Viewer. `live_basler` sets
+  a centred square of `'ROI'` px itself.
+* Enough buffers and no dropped frames. `live_camera.py` grabs every burst
+  of K frames into K + 2 buffers (at least 10), reports grabs that failed
+  and skips bursts that lost frames; on GigE enable jumbo frames. In the
+  recordings, the timestamps and the step check show a dropped frame.
+
+### Choosing the frame rate
+
+The motion per frame in pixels is
+
+$$v_\text{px} = \frac{v\,\Delta t}{\mathrm{GSD}}$$
+
+with $v$ the speed in mm/s, $\Delta t$ = 1 / frame rate the frame interval in
+s and the GSD in mm/px. As for flashes, the estimator measures from about
+$3.35/K$ px per frame (0.37 px for K = 9) up to about $N/4$ px for an $N$ px
+square (128 px for 512 px); aim for about 4 to 10 px per frame, so
+$`\Delta t = v_\text{px}\,\mathrm{GSD}/v`$.
+
+Worked example: GSD = 0.05 mm/px, the axis at 20 mm/s, 5 px per frame:
+$\Delta t$ = 5 x 0.05 / 20 s = 12.5 ms, a frame rate of 80 Hz. The exposure
+must be at most $\Delta t/4$ = 3.1 ms; 2 ms gives duty 0.16 and a blur of
+0.16 x 5 = 0.8 px per frame. With K = 9 a window spans 8 frame intervals,
+100 ms, and the surface moves 40 px, a small part of the 512 px square. For
+100 mm/s the same 5 px per frame need $\Delta t$ = 2.5 ms, 400 Hz, and an
+exposure of at most 0.6 ms; that frame rate usually needs a small camera ROI.

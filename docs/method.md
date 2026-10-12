@@ -5,16 +5,22 @@ image, step by step, and where each step comes from. Two tags mark the origin:
 
 * [thesis]: taken from the doctoral thesis of Jan Horn (full reference at the
   end of this page).
-* [rework]: added in the rework of the 2025 student project, that is in a
-  commit after `8f0aec4` (see [history.md](history.md)).
+* [rework]: added in the rework of the 2025 student project, that is after the
+  tag `student-project-2025` (see [history.md](history.md)).
 
 The code is [`python/src/fftvel/core.py`](../python/src/fftvel/core.py) and
 [`matlab/+fftvel/estimate_velocity.m`](../matlab/+fftvel/estimate_velocity.m),
 which compute the same numbers. What the method achieves is in
 [results.md](results.md), what an acquisition needs in
-[hardware.md](hardware.md).
+[acquisition.md](acquisition.md).
 
-## The pulsed-exposure model
+## The multi-flash image model
+
+The thesis and the function names of `fftvel` call a multi-flash image a
+pulsed-exposure image (gepulste Belichtung, as the 2025 scripts write it), and
+the option `exposures` counts the flashes, or the averaged frames when a frame
+stack stands in for one image. $L$ is the half-count of the thesis, with
+$K = 2L+1$ flashes.
 
 [thesis] A strobe fires $K = 2L+1$ times during one camera exposure. Between
 two flashes the textured surface moves by $\mathbf v$ pixels; this is the flash
@@ -51,10 +57,12 @@ per flash with 9 flashes.
 ## Step 1: window and log spectrum
 
 [rework] The analysed region is the central square of the image, of side $N$:
-the largest square, or a smaller one with `roi`. Non-square images are
-cropped, never resized, so both axes keep the camera's pixel scale. The live
-and video scripts of 2025 resized every frame to 256 x 256 px, which scaled
-the two axes differently ([history.md](history.md#what-the-review-found)).
+the largest square, or a smaller one with `roi` (the command line, the live
+scripts and `experiments/real_measurements.py` default to 512 px). Non-square
+images are cropped, never resized, so both axes keep the camera's pixel scale.
+The live and video scripts of 2025 resized every frame to 256 x 256 px, which
+scaled the two axes differently
+([history.md](history.md#what-the-review-found)).
 
 [rework] With `clip_outliers`, every pixel more than 6 robust standard
 deviations from the median (1.4826 times the median absolute deviation), and
@@ -77,29 +85,32 @@ shifts $S$ by a constant and changes nothing else.
 
 ## Step 2: direction
 
-[thesis] A Radon transform integrates the log spectrum along parallel lines,
-one projection for every angle $\theta$. Along the direction of motion the
-projection crosses the spectral lines at right angles and becomes a sharp
-comb; at other angles the lines are smeared over many bins. The ripple
-profile measures how strongly each projection oscillates,
+[thesis] A Radon transform integrates the log spectrum along parallel
+projection paths, one projection for every angle $\theta$. Along the direction
+of motion the projection crosses the spectral lines at right angles and
+becomes a sharp comb; at other angles the lines are smeared over many bins.
+The ripple profile WR (Welligkeitsprofil in the 2025 scripts) measures how
+strongly each projection oscillates,
 
 $$WR(\theta) = \sum_{j} \big|M(j+1,\theta) - M(j,\theta)\big|,$$
 
 taken over the bins $|j| \le 0.9\,(\tilde N/2 - 1)$, and the direction of
 motion is the angle where WR is largest.
 
-[rework] $M(j,\theta)$ is the mean of $S$ along each line instead of the sum.
-Every sample inside the disc of radius $\tilde N/2 - 1$ is split linearly
-between its two nearest bins, and every bin is divided by its weight. With
-sums over the square spectrum, as in the 2025 scripts, the lines through the
-corners at 45 and 135 deg are longer, which biases the maximum towards the
-diagonals. The angle grid runs from 0 to 179 deg
-in steps of 1 deg, and a parabola through the maximum and its two neighbours
-(periodic over 180 deg) refines it.
+[rework] $M(j,\theta)$ is the mean of $S$ along each projection path instead
+of the sum. Every sample inside the disc of radius $\tilde N/2 - 1$ is split
+linearly between its two nearest bins, and every bin is divided by its weight.
+With sums over the square spectrum, as in the 2025 scripts, the projection
+paths through the corners at 45 and 135 deg are longer, which biases the
+maximum towards the diagonals. The angle grid runs from 0 to 179 deg in steps
+of 1 deg, and a parabola through the maximum and its two neighbours (periodic
+over 180 deg) refines it.
 
 [thesis] GEBA $= \max WR / \mathrm{mean}\,WR$ is the quality measure of the
-thesis: it says how clearly one direction stands out. `fftvel` reports it as
-`geba` and does not use it for `valid`. In the threshold calibration the fit
+thesis: it says how clearly one direction stands out. The 2025 scripts expand
+the name as Güte der Einzelbild-Analyse (quality of the single-image
+analysis) in the header of `main.m`. `fftvel` reports it as `geba` and does
+not use it for `valid`. In the threshold calibration the fit
 quality of step 3, scaled by the profile length, separated correct estimates
 from images without motion better than GEBA, in simulation: the area under the
 ROC curve (the probability that a randomly chosen correct estimate scores
@@ -248,11 +259,11 @@ speed is below $`\tilde N/j_{\max}`$. The result reports `quality_blur`,
 of the 47 correct valid estimates below 2.24 px were blur-like as well, in
 simulation, so `reject_blur` would have rejected them.
 
-### Saturation
+## Saturation warning
 
-`saturated` is the share of analysed pixels at the maximum of the square,
-measured before any processing. For an integer image whose maximum is the
-largest value of its type (255 for 8 bit), any share counts; otherwise the
+[rework] `saturated` is the share of analysed pixels at the maximum of the
+square, measured before any processing. For an integer image whose maximum is
+the largest value of its type (255 for 8 bit), any share counts; otherwise the
 share counts from 0.5 % on. It does not change `valid`. The command line, the
 live scripts and `experiments/real_measurements.py` warn above 1 %, because
 glints and saturated areas are static bright structures: in the simulated
@@ -261,17 +272,56 @@ forward model of
 glints of 3 times the mean signal or more made 96.9 % of the images wrong but
 valid.
 
+## Assumptions
+
+The estimator gives a correct result only if the image satisfies the model.
+These are all the assumptions it makes; [results.md](results.md) shows what
+happens when some of them fail, and [acquisition.md](acquisition.md) how an
+acquisition meets them.
+
+1. The surface carries a random, non-repeating texture over the whole analysed
+   square. A texture that repeats every 160 px or less gave wrong results
+   marked valid in 50 to 100 % of the images, in simulation with the forward
+   model.
+2. The motion is a pure translation in the image plane during the burst: no
+   rotation, no change of scale (constant working distance) and no change of
+   perspective.
+3. The velocity is constant during the $K$ flashes.
+4. The flashes are equally spaced in time. Alternating intervals and a missing
+   flash both gave wrong results marked valid in simulation.
+5. The number of flashes $K$ is known exactly.
+6. Each flash is short compared with the flash period, or its duration is
+   known (`duty`).
+7. All flashes have about the same energy.
+8. No light other than the flashes reaches the sensor during the exposure.
+   Continuous light adds a motion-blurred image of the surface.
+9. Nothing in the analysed square stands still: no sharp static edges, masks,
+   glints or hot pixels.
+10. The camera is in focus.
+11. The sensor responds linearly and does not saturate, and the image is
+    stored without lossy compression (JPEG adds an 8 x 8 px block grid).
+12. The pixels are square and the image is not rescaled.
+13. The speed lies between about $3.35/K$ and $N/4$ px per flash.
+14. The analysed square has at least about 64 px; below 128 px the stricter
+    threshold rejects many correct estimates.
+15. The texture spectrum is smooth enough for a cubic polynomial in $j$ to
+    absorb it along the direction of motion.
+
+The sign of the motion is never known: one image gives the direction only
+modulo 180 deg.
+
 ## Options and when to use them
 
-The options are keyword arguments in Python (`estimate_velocity(bp, L=4)`)
-and name-value pairs in MATLAB (`'L', 4`).
+The options are keyword arguments in Python
+(`estimate_velocity(bp, exposures=9)`) and name-value pairs in MATLAB
+(`'Exposures', 9`).
 
 | Python | MATLAB | Default | Use it when |
 |---|---|---|---|
-| `L` | `'L'` | 4 | the image holds 2L+1 flashes |
-| `exposures` | `'Exposures'` | 2L+1 | the flash count is even or not 2L+1. Always give the true count: a wrong K scales slow speeds by K_true/K and can stay valid. In simulation with the forward model, telling the estimator 7, 8, 10 or 11 instead of 9 made 34.4 % of the images wrong but valid |
+| `exposures` | `'Exposures'` | 2L+1 | always: the image holds K flashes (or K averaged frames), also an even number. Give the true count: a wrong K scales slow speeds by K_true/K and can stay valid. In simulation with the forward model, telling the estimator 7, 8, 10 or 11 instead of 9 made 34.4 % of the images wrong but valid |
+| `L` | `'L'` | 4 | the half-count of the thesis: the image holds 2L+1 flashes. `exposures` overrides it |
 | `duty` | `'Duty'` | 0 | the motion during one flash (duty times speed) is not well below about 3 px. In simulation with the forward model without the option, duty 0.25 and 0.5 gave 12.5 % and 18.8 % wrong but valid results, with the speed near duty times speed divided by K; with `duty` set to the true value all images from 0 to 0.9 were correct and valid. Near 0.5 every second main line vanishes, so the value must be known |
-| `roi` | `'ROI'` | largest square | the image is larger than needed. Each doubling of the side multiplies the run time by 4 to 6.5: 0.61 s for 256 px and 3.96 s for 512 px per repeated call in Python. 256 to 512 px is a good range |
+| `roi` | `'ROI'` | largest square; 512 px in the command line and the live scripts | side of the analysed central square. Set it when the image is larger than needed. Each doubling of the side multiplies the run time by 4 to 6.5: 0.61 s for 256 px and 3.96 s for 512 px per repeated call in Python. 256 to 512 px is a good range |
 | `clip_outliers` | `'ClipOutliers'` | false | static bright spots (glints of the flash, hot pixels) may be in the image. In simulation with the forward model two glints of 3 times the mean signal made 96.9 % of the images wrong but valid; with the option all were correct and valid. It is off by default because it also flattens bright details of the texture |
 | `reject_blur` | `'RejectBlur'` | false | continuous light or vibration may blur the image during the exposure. Below about 2.2 px per flash it also rejects many correct multi-flash results (see the blur check) |
 | `pad_factor` | `'PadFactor'` | 2 | rarely; larger values interpolate the spectrum and cost time |
@@ -283,10 +333,11 @@ and name-value pairs in MATLAB (`'L', 4`).
 Every number of the algorithm is a named constant. The table is a copy of
 [`tests/constants.json`](../tests/constants.json), which also lists where each
 constant is used; tests in both languages check that `core.py` and
-`matlab/+fftvel/+internal/constants.m` hold exactly these names and values.
-The table itself is updated by hand ([CONTRIBUTING.md](../CONTRIBUTING.md#constants)).
+`matlab/+fftvel/+internal/constants.m` hold exactly these names and values,
+and `tests/python/test_docs_constants.py` checks this table against the file
+([CONTRIBUTING.md](../CONTRIBUTING.md#constants)).
 
-<!-- constants table: copy of tests/constants.json, update by hand -->
+<!-- constants table: copy of tests/constants.json, checked by tests/python/test_docs_constants.py -->
 | Name | Value | Meaning |
 |---|---|---|
 | `DEFAULT_L` | 4 | Default L: half the number of exposures, K = 2L+1 = 9. |
@@ -323,85 +374,11 @@ The table itself is updated by hand ([CONTRIBUTING.md](../CONTRIBUTING.md#consta
 | `DEFAULT_CORR_LEN` | 1.5 | Simulator: default correlation length of the random texture in px. |
 | `GREY_WEIGHTS` | 0.2989, 0.587, 0.114 | R, G, B weights of the conversion of colour images to grey (those of MATLAB rgb2gray). |
 
-## Assumptions
-
-The estimator gives a correct result only if the image satisfies the model.
-These are all the assumptions it makes; [results.md](results.md) shows what
-happens when some of them fail, and [hardware.md](hardware.md) how an
-acquisition meets them.
-
-1. The surface carries a random, non-repeating texture over the whole analysed
-   square. A texture that repeats every 160 px or less gave wrong results
-   marked valid in 50 to 100 % of the images, in simulation with the forward
-   model.
-2. The motion is a pure translation in the image plane during the burst: no
-   rotation, no change of scale (constant working distance) and no change of
-   perspective.
-3. The velocity is constant during the $K$ flashes.
-4. The flashes are equally spaced in time. Alternating intervals and a missing
-   flash both gave wrong results marked valid in simulation.
-5. The number of flashes $K$ is known exactly.
-6. Each flash is short compared with the flash period, or its duration is
-   known (`duty`).
-7. All flashes have about the same energy.
-8. No light other than the flashes reaches the sensor during the exposure.
-   Continuous light adds a motion-blurred image of the surface.
-9. Nothing in the analysed square stands still: no sharp static edges, masks,
-   glints or hot pixels.
-10. The camera is in focus.
-11. The sensor responds linearly and does not saturate, and the image is
-    stored without lossy compression (JPEG adds an 8 x 8 px block grid).
-12. The pixels are square and the image is not rescaled.
-13. The speed lies between about $3.35/K$ and $N/4$ px per flash.
-14. The analysed square has at least about 64 px; below 128 px the stricter
-    threshold rejects many correct estimates.
-15. The texture spectrum is smooth enough for a cubic polynomial in $j$ to
-    absorb it along the direction of motion.
-
-The sign of the motion is never known: one image gives the direction only
-modulo 180 deg.
-
-## Python and MATLAB in parity
-
-[rework] The Python module mirrors the MATLAB package line by line, and three
-kinds of tests keep the two identical.
-
-* Parity cases. [`tests/parity/make_cases.py`](../tests/parity/make_cases.py)
-  writes 20 input images to `tests/parity/cases.mat` and the Python results to
-  `tests/parity/expected.csv`. Both test suites estimate the same inputs and
-  must reproduce angle, speed, GEBA, quality, perpendicular quality and blur
-  fit to $10^{-9}$, threshold and saturated share to $10^{-12}$, and the flags
-  `valid`, `isotropic` and `blur_like` exactly. The cases cover odd sizes and
-  FFT lengths, a non-square image, padding factors 3 and 4, 8 and 10 exposures,
-  a duty, a small `roi`, clipped hot pixels and glints, a `uint8` frame stack,
-  a `uint8` image with saturated pixels, a static repeating tile, an image
-  without motion and single blurred exposures with and without `reject_blur`.
-* Phase correlation. 10 image pairs in `tests/parity/phase_cases.mat` must
-  give the same shift in both languages to $10^{-9}$.
-* Constants. The 33 constants above live in three places, `core.py`,
-  `constants.m` and `tests/constants.json`, and a test in each language checks
-  them against the file.
-
-MATLAB and Octave draw different random numbers from the same seed, so a
-MATLAB run checks random inputs that Octave has never seen. Inputs that fail a
-check for some random draws are therefore stored in
-`tests/parity/fixed_inputs.mat`, as the same images the Python tests use:
-images without motion at 32 and 64 px, a static repeating tile, the hot-pixel
-image and the image of 8 exposures at 0.6 px per step of the option tests, and
-the texture of the phase-correlation tests. Changing the algorithm means
-changing both implementations, the constants file if needed, and regenerating
-the parity cases. On 12 October 2026 the Python suite passed with 306 tests
-and the Octave suite with all 9 test files:
-
-```bash
-python3 -m pytest -q tests/python
-cd tests/matlab && octave --no-gui --eval run_tests
-```
-
-GitHub Actions runs the Python suite on Python 3.10 and 3.13 and the MATLAB
-suite in GNU Octave. A third job runs the same suite in MATLAB; it starts once
-the repository is on GitHub, and until it has passed, the code has not run in
-MATLAB.
+[rework] With these constants the Python and the MATLAB/Octave package give
+the same results to $10^{-9}$ on shared parity cases, which
+[CONTRIBUTING.md](../CONTRIBUTING.md#parity-cases) describes together with how
+the cases are regenerated. A change to the algorithm therefore changes both
+packages together.
 
 ## Reference
 

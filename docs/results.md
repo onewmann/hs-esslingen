@@ -5,8 +5,8 @@ estimator's own model. The first ones use data that `fftvel` did not generate;
 the later ones use images from models, and the closer such a model is to the
 one the estimator fits, the less a good result proves. No real multi-flash
 image has been analysed yet: those recordings are being prepared, and
-[`data/real/README.md`](../data/real/README.md) describes the format they will
-be evaluated in.
+[`data/measurements/README.md`](../data/measurements/README.md) describes the
+format they will be evaluated in.
 
 Every number comes from the CSV files in
 [`experiments/results/`](../experiments/results), written by a full run of
@@ -14,7 +14,7 @@ Every number comes from the CSV files in
 2.5.3, GNU Octave 8.4.0, see `environment.json`). "Correct" always means a
 direction within 2 deg and a speed within 5 % of the true values. How the
 estimator works is in [method.md](method.md), what an acquisition needs in
-[hardware.md](hardware.md).
+[acquisition.md](acquisition.md).
 
 ## Synthetic test sequences
 
@@ -45,7 +45,7 @@ synthetic, the shifts of the two constant sequences are whole pixels, and no
 camera or flash is involved.
 
 ```bash
-python experiments/test_sequences.py
+python experiments/testsequences.py
 ```
 
 ## The 2025 recordings
@@ -121,7 +121,7 @@ camera texture moving by d px during the exposure, without flashes.
 
 From 4 px on, the valid ones give K times the speed at a median of 1.01 to
 1.08 times d. A blur of a few pixels from continuous light or vibration is the
-main risk found so far on real images; [hardware.md](hardware.md#ambient-light)
+main risk found so far on real images; [acquisition.md](acquisition.md#ambient-light)
 says how to avoid it. This test
 measures false alarms on real camera data; it does not measure accuracy.
 
@@ -165,7 +165,7 @@ section come from simulated images.
 | Wrong K given to the estimator (true 9) | 7, 8, 10, 11 | 53.1, 56.2, 56.2, 56.2 % | 34.4 % at each, speed scaled by 9/K |
 | Wrong flash count in the image (9 assumed) | 7, 8, 10, 11 | 53.1, 56.2, 59.4, 56.2 % | 34.4 to 37.5 %; with `exposures` set, none |
 
-![Model violations](figures/failures.png)
+![Model violations](figures/violations.png)
 
 Uneven flash intervals come from part 5 of the threshold calibration, which
 renders the flashes at chosen times with the same kind of Fourier shift.
@@ -369,5 +369,5 @@ python experiments/run.py --replot --all  # redraw the figures and print the num
 
 A full run writes the CSV files to `experiments/results/` and the figures to
 `docs/figures/`; `--quick` never overwrites them. Each study also runs alone,
-as in the commands above. The before and after comparison with the 2025
-estimator is in [history.md](history.md#before-and-after).
+as in the commands above. The before and after comparison of the 2025 code
+with the rework is in [history.md](history.md#before-and-after).
