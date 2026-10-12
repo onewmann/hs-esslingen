@@ -37,7 +37,9 @@ def run(folder: Path):
         for s in (0, 1):
             e = estimate_velocity(c[:, :, s:s + 9].mean(axis=2), L=4)
             rows.append(dict(recording=f"vid{k}", window=f"{s + 1}-{s + 9}", est_speed=e.speed,
-                             quality=e.quality, isotropic=int(e.isotropic), valid=int(e.valid)))
+                             quality=e.quality, isotropic=int(e.isotropic), valid=int(e.valid),
+                             quality_blur=e.quality_blur, blur_length=e.blur_length,
+                             blur_like=int(e.blur_like), saturated=e.saturated))
     common.write_csv("recordings.csv", rows)
     plot(rows)
     return rows

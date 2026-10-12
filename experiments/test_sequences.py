@@ -48,7 +48,8 @@ def run():
             r = float(np.hypot(*shift[st:last].mean(axis=0)))
             rows.append(dict(sequence=name, first_frame=st + 1, est_speed=e.speed, ref_speed=r,
                              est_angle=e.angle_deg, quality=e.quality, quality_perp=e.quality_perp,
-                             isotropic=int(e.isotropic), valid=int(e.valid)))
+                             isotropic=int(e.isotropic), valid=int(e.valid), quality_blur=e.quality_blur,
+                             blur_length=e.blur_length, blur_like=int(e.blur_like), saturated=e.saturated))
     common.write_csv("testsequences.csv", rows)
     plot(rows)
     return rows
@@ -83,7 +84,8 @@ def summary(rows):
         val = [r for r in sel if r["valid"]]
         err = [abs(r["est_speed"] / r["ref_speed"] - 1) for r in val]
         ang = [r["est_angle"] for r in val]
-        print(f"{name:13s} {len(val)}/{len(sel)} windows valid, max relative speed error of valid "
+        blur = f", {int(sum(r['blur_like'] for r in val))} of them blur-like" if sel and "blur_like" in sel[0] else ""
+        print(f"{name:13s} {len(val)}/{len(sel)} windows valid{blur}, max relative speed error of valid "
               f"{100 * max(err) if err else float('nan'):.1f} %, angles "
               + (f"{min(ang):.2f}..{max(ang):.2f}" if ang else "-"))
 

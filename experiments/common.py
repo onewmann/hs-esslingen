@@ -8,6 +8,7 @@ which ``run.py`` sets once with :func:`set_output` before any study runs.
 from __future__ import annotations
 
 import csv
+import math
 import sys
 from pathlib import Path
 
@@ -18,6 +19,7 @@ REPO = HERE.parent
 sys.path.insert(0, str(REPO / "python" / "src"))
 
 from fftvel import angle_difference, estimate_velocity, simulate_pulsed_image  # noqa: E402
+from fftvel.core import DEFAULT_PAD_FACTOR, RFRAC  # noqa: E402
 
 COMMITTED = HERE / "results"           # full-run results quoted in the README
 QUICK = HERE / "results_quick"         # --quick results, ignored by git
@@ -70,12 +72,22 @@ def evaluate_case(case, bp):
     e = estimate_velocity(bp, L=L)
     row = dict(texture=texture, speed=speed, angle=angle, L=L, noise=noise, seed=seed,
                est_angle=e.angle_deg, est_speed=e.speed, geba=e.geba, quality=e.quality,
-               quality_perp=e.quality_perp, isotropic=int(e.isotropic), valid=int(e.valid))
+               quality_perp=e.quality_perp, isotropic=int(e.isotropic), valid=int(e.valid),
+               quality_blur=e.quality_blur, blur_length=e.blur_length, blur_like=int(e.blur_like))
     if speed > 0:
         row["angle_err"] = abs(angle_difference(e.angle_deg, angle))
         row["speed_err"] = abs(e.speed / speed - 1)
         row["correct"] = int(row["angle_err"] <= 2 and row["speed_err"] <= 0.05)
     return row
+
+
+def blur_limit(n=N, pad_factor=DEFAULT_PAD_FACTOR):
+    """Speed (px per step) below which estimate_velocity can call a result blur-like: npad / max(profile_j).
+
+    About 2.24 px for 256 px images (512 / 229); see ``Estimate.blur_like``.
+    """
+    npad = pad_factor * n
+    return npad / math.floor(RFRAC * (npad // 2 - 1))
 
 
 def run_case(case):

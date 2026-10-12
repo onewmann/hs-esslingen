@@ -100,8 +100,11 @@ whose shifted and smeared values are known in closed form.
 Writes violations.csv (one row per image and estimator variant; the check
 rows have factor ``check``) and failures.png (one panel per factor: share
 correct and valid, and share wrong but valid, against the level). The
-summary prints the check, the table per factor and level, and the levels
-from which a factor gives wrong but valid results. A full run takes about
+summary prints the check, the table per factor and level, the levels from
+which a factor gives wrong but valid results, and per factor how many valid
+results are blur-like (the columns quality_blur, blur_length and blur_like
+of the estimate) and how many images have more than 1 % of their pixels
+saturated (the column saturated). A full run takes about
 20 min on 4 cores. --quick writes to experiments/results_quick; --replot
 redraws the figure and prints the tables from the CSV file in the output
 folder. Every image has fixed seeds, so a run gives the same CSV file on the
@@ -126,6 +129,7 @@ sys.path.insert(0, str(HERE))
 import common  # noqa: E402
 from common import BLUE, GRID, INK, INK2, MUTED, ORANGE, SURFACE  # noqa: E402
 from fftvel import angle_difference, estimate_velocity, make_texture, simulate_pulsed_image  # noqa: E402
+from fftvel.core import SAT_WARN  # noqa: E402
 
 CSV = ["violations.csv"]
 
@@ -496,7 +500,8 @@ def _scores(img, e):
     speed_err = abs(e.speed / img.speed - 1)
     return dict(est_speed=e.speed, est_angle=e.angle_deg, quality=e.quality, quality_perp=e.quality_perp,
                 isotropic=int(e.isotropic), in_range=int(e.in_range), valid=int(e.valid),
-                angle_err=angle_err, speed_err=speed_err,
+                quality_blur=e.quality_blur, blur_length=e.blur_length, blur_like=int(e.blur_like),
+                saturated=e.saturated, angle_err=angle_err, speed_err=speed_err,
                 correct=int(bool(angle_err <= ANGLE_TOL and speed_err <= SPEED_TOL)))
 
 
@@ -678,6 +683,38 @@ def summary(rows, check=True):
         print(f"{o['factor']:>14s} {o['variant']:>8s}: at {f.fmt(o['reference'])} {o['ref_share']:4.1f} %; {where}")
     n = len({(r["factor"], r["level"], r["image"]) for r in rows if r["factor"] != "check"})
     print(f"({n} images in {len(t)} rows of the table)")
+    sweep = [r for r in rows if r["factor"] != "check"]
+    if sweep and all("blur_like" in r and "saturated" in r for r in sweep):    # not in runs before these fields
+        print_blur(sweep)
+
+
+def blur_table(rows):
+    """Per factor and variant, all levels: valid results, correct and wrong, and how many of them are
+    blur-like (``reject_blur`` would make them not valid); images with more than SAT_WARN saturated pixels."""
+    out = []
+    for f in FACTORS:
+        for variant in ("default", "matched"):
+            sel = [r for r in rows if r["factor"] == f.name and r["variant"] == variant]
+            if not sel:
+                continue
+            ok = [r for r in sel if r["valid"] and r["correct"]]
+            bad = [r for r in sel if r["valid"] and not r["correct"]]
+            out.append(dict(factor=f.name, variant=variant, images=len(sel), correct_valid=len(ok),
+                            correct_blur=int(sum(r["blur_like"] for r in ok)), wrong_valid=len(bad),
+                            wrong_blur=int(sum(r["blur_like"] for r in bad)),
+                            saturated=int(sum(r["saturated"] > SAT_WARN for r in sel))))
+    return out
+
+
+def print_blur(rows):
+    print(f"\nBlur check and saturation, all levels: valid results that are blur-like, and images with more than "
+          f"{100 * SAT_WARN:g} % of their pixels saturated")
+    print(f"{'factor':>14s} {'variant':>8s} {'images':>6s} {'correct+valid blur-like':>24s} "
+          f"{'wrong+valid blur-like':>22s} {'saturated':>10s}")
+    for x in blur_table(rows):
+        print(f"{x['factor']:>14s} {x['variant']:>8s} {x['images']:6d} "
+              f"{x['correct_blur']:13d} of {x['correct_valid']:<4d}  {x['wrong_blur']:11d} of {x['wrong_valid']:<4d}  "
+              f"{x['saturated']:9d}")
 
 
 def grid_figure(nrows, ncols, width, height):

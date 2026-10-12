@@ -90,9 +90,24 @@ def summary(rows=None, srows=None):
             print(f"  noise {nl:4.2f}: {100 * np.mean([r['correct'] for r in sel]):5.1f} % correct, "
                   f"{100 * len(val) / len(sel):5.1f} % valid, "
                   f"{100 * np.mean([r['correct'] for r in val]) if val else float('nan'):5.1f} % of valid correct")
+        if rows and "blur_like" in rows[0]:          # not in the CSV files of runs before the blur check
+            blur_summary(rows)
     if srows is not None:
         print(f"Static scenes marked valid: {int(sum(r['valid'] for r in srows))} of {len(srows)}, "
               f"max quality {max(r['quality'] for r in srows):.3f}")
+
+
+def blur_summary(rows):
+    """Print how many valid estimates are blur-like, so that ``reject_blur`` would make them not valid."""
+    slow = common.blur_limit()
+    val = [r for r in rows if r["valid"]]
+    groups = (("correct", [r for r in val if r["correct"]]), ("wrong", [r for r in val if not r["correct"]]))
+    parts = []
+    for name, sel in groups:
+        below = [r for r in sel if r["speed"] < slow]
+        parts.append(f"{int(sum(r['blur_like'] for r in sel))} of {len(sel)} {name} "
+                     f"({int(sum(r['blur_like'] for r in below))} of {len(below)} below {slow:.2f} px)")
+    print("Blur-like valid estimates (not valid with reject_blur): " + ", ".join(parts))
 
 
 def replot():

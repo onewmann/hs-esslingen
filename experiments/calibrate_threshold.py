@@ -39,8 +39,12 @@ quality alone passes ``tanh(c/sqrt(m - 5))`` exactly when ``k >= c``. Parts:
 Writes threshold_calibration.csv, threshold_held_out.csv, threshold_real.csv,
 threshold_power.csv, threshold_uneven.csv, threshold_blur.csv, threshold_raw.csv
 (one row per image), threshold_roc.csv (accepted counts per rule and threshold)
-and threshold.png. Rows of camera crops (vid1 in part 2, part 3) also hold
-``saturated``, the share of pixels at 255.
+and threshold.png. Every row holds the blur check of the estimate
+(quality_blur, blur_length, blur_like; the summary counts the valid
+estimates that are blur-like in its part 8). Rows of camera crops (vid1 in
+part 2, part 3) also hold ``saturated``, the share of pixels at 255; for a
+crop that reaches 255 this is the ``saturated`` of estimate_velocity for the
+crop as uint8.
 A full run takes about 20 min on 4 cores. --quick runs a small sample and
 writes to experiments/results_quick; --replot redraws the figure and prints
 the numbers from the CSV files in the output folder. ``--recordings`` is the
@@ -402,7 +406,8 @@ def evaluate(case, img, where):
                quality=est.quality, quality_perp=est.quality_perp, geba=est.geba, in_range=int(est.in_range),
                isotropic=int(est.isotropic), threshold=est.threshold, valid=int(est.valid), m_eff=m,
                k=null_k(est.quality, m), score_half=score_at(est, est.speed / 2),
-               score_double=score_at(est, 2 * est.speed))
+               score_double=score_at(est, 2 * est.speed), quality_blur=est.quality_blur,
+               blur_length=est.blur_length, blur_like=int(est.blur_like))
     # the threshold and the validity must be those estimate_velocity applied
     if not math.isclose(est.threshold, quality_threshold(m, NULL_K), rel_tol=1e-12) \
             or passes(row, NULL_K) != est.valid:
@@ -915,6 +920,37 @@ def summary(res):
         print("   by size, largest k: " + ", ".join(
             f"{n} px {max(r['k'] for r in raw if int(r['n']) == n):.3f}" for n in SIZES
             if any(int(r["n"]) == n for r in raw)))
+
+    every = [r for part in ("cal", "held", "real", "power", "uneven", "blur", "raw") for r in res[part]]
+    if every and all("blur_like" in r for r in every):      # not in the CSV files of runs before the blur check
+        blur_check(res)
+
+
+def _blur_count(rows):
+    """'b of v': blur-like estimates among the v valid ones of the rows."""
+    val = [r for r in rows if r["valid"]]
+    return f"{int(sum(r['blur_like'] for r in val))} of {len(val)}"
+
+
+def blur_check(res):
+    """Print how many valid estimates of each part are blur-like (``reject_blur`` would make them not valid)."""
+    print("\n8. Blur check: blur-like estimates among the valid ones (a single exposure fits at least as well and "
+          "the speed is below npad / max(j))")
+    print(f"   images without motion (parts 1 and 2): {_blur_count(res['null'])}; camera texture without noise "
+          f"(part 7): {_blur_count(res['raw'])}")
+    print("   single camera frames (part 3): " + "; ".join(
+        f"{video} {_blur_count([r for r in res['real'] if r['kind'] == video])}" for video in VIDEOS))
+    print("   single exposures (part 6): " + "; ".join(
+        f"d = {d:g} px {_blur_count([r for r in res['blur'] if r['blur_px'] == d])}"
+        for d in sorted({r["blur_px"] for r in res["blur"]})))
+    for name, rows in (("moving, equal steps (part 4)", res["power"]),
+                       ("moving, uneven steps (part 5)", res["uneven"])):
+        parts = []
+        for outcome, sel in (("correct", [r for r in rows if r["correct"]]),
+                             ("wrong", [r for r in rows if not r["correct"]])):
+            slow = [r for r in sel if r["speed"] < common.blur_limit(int(r["n"]))]
+            parts.append(f"{outcome} {_blur_count(sel)} ({_blur_count(slow)} with a true speed below npad / max(j))")
+        print(f"   {name}: " + "; ".join(parts))
 
 
 def replot():

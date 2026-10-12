@@ -21,8 +21,9 @@ pulsed image:
   the same motion, each with noise at the same noise/signal ratio as the
   pulsed image, with the peak refined by upsampling. It needs two frames,
   so it is an upper reference, not a competitor. The phasecorr rows also
-  hold the result of fftvel.phase_correlation on the same two frames, whose
-  parabolic peak fit is off by about 0.1 px for shifts between pixels.
+  hold the result of fftvel.phase_correlation on the same two frames. It
+  now refines its peak by upsampling as well; its earlier parabolic peak
+  fit was off by about 0.1 px for shifts between pixels.
 
 A result is correct when the direction is within 2 deg and the speed within
 5 % of the true values. Only fftvel has a validity flag; the baselines
@@ -44,7 +45,7 @@ Columns of baselines.csv: the case (texture, speed, angle, L, noise, seed),
 method, est_angle, est_speed, angle_err, speed_err, correct; on fftvel rows
 also valid and quality; on phasecorr rows also vector_err (px, signed shift
 against the true v), and vector_err_parabolic and correct_parabolic for
-fftvel.phase_correlation.
+fftvel.phase_correlation (named after its earlier parabolic peak fit).
 """
 
 from __future__ import annotations
@@ -297,11 +298,12 @@ def phase_correlation_shift(a, b):
     Phase correlation, the standard way to register two images by the shift
     theorem of the Fourier transform, computed as fftvel.phase_correlation
     does (mean-free, Hann-windowed images, normalised cross-power spectrum),
-    but with the peak refined by upsampling (:func:`_upsampled_peak`)
-    instead of a parabola. The peak of the phase correlation is about one
-    pixel wide, and a parabola through three samples of it is off by up to
-    about 0.17 px for shifts between pixels, more than 5 % of a speed below
-    3 px. For consecutive exposures the shift is v itself, with its sign.
+    with the peak refined by this study's own upsampling
+    (:func:`_upsampled_peak`). It was written when fftvel.phase_correlation
+    still fitted a parabola through three samples of the peak, which is
+    about one pixel wide; that fit was off by up to about 0.17 px for shifts
+    between pixels, more than 5 % of a speed below 3 px. For consecutive
+    exposures the shift is v itself, with its sign.
     """
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
@@ -423,7 +425,7 @@ def summary(rows):
         par = np.array([r["vector_err_parabolic"] for r in clean])
         print(f"Phase correlation without noise, median / largest error of the shift in px: "
               f"{np.median(err):.4f} / {err.max():.4f} with the upsampled peak, "
-              f"{np.median(par):.4f} / {par.max():.4f} with the parabolic peak of fftvel.phase_correlation")
+              f"{np.median(par):.4f} / {par.max():.4f} with fftvel.phase_correlation")
     if pc:
         print(f"Phase correlation correct, all images: {100 * np.mean([r['correct'] for r in pc]):.1f} % "
               f"with the upsampled peak, {100 * np.mean([r['correct_parabolic'] for r in pc]):.1f} % "
