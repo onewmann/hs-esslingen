@@ -1,6 +1,6 @@
 # Status and how to resume
 
-Saved on 11 October 2026, updated on 12 October 2026. This folder (`docs/dev/`) is a working note for
+Saved on 11 October 2026, updated on 13 October 2026. This folder (`docs/dev/`) is a working note for
 the rework and should be removed before the repository is published as
 2D-FFT-Code. The plan this work follows is in
 [restructure_plan.md](restructure_plan.md).
@@ -123,30 +123,51 @@ store bursts with timestamps and append lines to `meta.csv`. Example in
 ("Testing without a flash"). Results from this mode count as emulated
 multi-flash.
 
+Naming and structure review (13 October): `data/real` is now
+`data/measurements` (`synthetic_flash/`, `synthetic_average/`),
+`docs/hardware.md` is `docs/acquisition.md`, `experiments/testsequences.py`,
+`docs/figures/violations.png`, new module `fftvel.io`, `fftvel/phasecorr.py`
+(was `reference.py`), console command `fftvel`, MATLAB `Contents.m`,
+live_basler options `'ExposureUs'` and `'UpdateInterval'`, README reordered
+(hero first, one "Who did what", Quick start, Usage), data under CC BY 4.0.
+The repository name stays 2D-FFT-Code. 344 Python tests and 10 Octave test
+files pass.
+
 ## Next steps
 
-1. Optional before publishing: a last read of README and docs by the owner,
-   `docs/related-work.md` once the sources have been read, and the owner's
-   own wording of the derivations in `docs/method.md`.
-2. Add the real multi-flash recordings (`data/real/README.md`), run
-   `experiments/real_measurements.py`, and update the status table, the
-   results table and `hero.png` with real data.
-3. Publishing: create the empty repository `onewmann/2D-FFT-Code`, add it to
-   the Claude session with push access (or push it yourself), rebuild the
-   clean history (commands above), delete `docs/dev/`, push `main` plus the
-   tag. Then set About ("Direction and speed of a moving textured surface
-   from one multi-flash camera image"), topics (machine-vision,
-   signal-processing, fft, radon-transform, matlab, octave, python),
-   `docs/figures/hero.png` as social preview, release v0.1.0. Check that the
-   MATLAB CI job is green. Then add a root README to hs-esslingen pointing to
-   the new repository and archive hs-esslingen read-only.
+1. Write 2 or 3 sentences on your own part in the rework into the README
+   section "Who did what" (an HTML comment marks the place; delete the
+   comment either way before publishing).
+2. Record the test without a flash (`data/measurements/README.md`, section
+   "Testing without a flash") and later multi-flash images; evaluate them
+   with `experiments/real_measurements.py`; update Status and Results.
+3. Publishing:
+   - Create the empty repository `onewmann/2D-FFT-Code` on GitHub.
+   - Run `bash docs/dev/publish/publish.sh` (Git Bash on Windows, needs
+     `pip install git-filter-repo`). It clones the working branch, removes
+     `docs/dev/` and the 2025 GitLab template README from every commit,
+     replaces the remaining mentions of the university, sets every author
+     to Oliver Neumann, removes the AI trailers and checks the result.
+     Tested on 13 October from both the local and the GitHub branch: same
+     final tree, 29 commits, nothing left to clean.
+   - Then `bash docs/dev/publish/publish.sh --push`, or add the new
+     repository to a Claude session and let it push.
+   - Set About ("Surface velocity from a single multi-flash image. 2-D FFT
+     and Radon transform, Python and MATLAB/Octave"), topics
+     (velocity-measurement, machine-vision, fft, radon-transform, python,
+     matlab, octave), `docs/figures/hero.png` as social preview, set
+     `date-released` in CITATION.cff to the release day, tag v0.1.0 and make
+     a release. Check that the MATLAB CI job is green, then update the
+     MATLAB row of the README Status table.
+   - Afterwards add a root README to hs-esslingen pointing to the new
+     repository and archive hs-esslingen read-only.
 
 ## Decisions
 
 | | Decision |
 |---|---|
 | D1 data | May be published: data produced by the owner's code (test sequences) and the videos vid1 to vid4 |
-| D2 history | Push the clean history unchanged into 2D-FFT-Code (recommended; not yet confirmed) |
+| D2 history | Cleaned at publishing (no university name, owner as author, no AI trailers); `docs/dev/publish/publish.sh` does it |
 | D3 old branch | Keep the branch in hs-esslingen and archive the repository (recommended; not yet confirmed) |
 | D4 attribution | No Claude author and no AI trailers; the README section "How this was built" is the disclosure |
 | D5 real experiment | The owner records real multi-flash images in the coming days (`data/real/README.md` describes the format) |

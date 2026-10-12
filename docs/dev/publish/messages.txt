@@ -1,0 +1,2 @@
+regex:(?m)^Co-Authored-By: Claude[^\n]*\n?==>
+regex:(?m)^Claude-Session:[^\n]*\n?==>

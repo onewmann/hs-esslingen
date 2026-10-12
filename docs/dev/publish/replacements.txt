@@ -1,0 +1,6 @@
+github.com/onewmann/hs-esslingen/tree/main/2D-FFT==>github.com/onewmann/2D-FFT-Code/tree/student-project-2025/2D-FFT
+[onewmann/hs-esslingen]==>[student-project-2025]
+onewmann/hs-esslingen==>onewmann/2D-FFT-Code
+ at Hochschule Esslingen==>
+Hochschule Esslingen==>the university
+hs-esslingen==>2D-FFT-Code
