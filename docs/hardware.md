@@ -239,7 +239,7 @@ square, which takes about 4 s per estimate in Python (repeated call,
 [results.md](results.md#run-time)), so they give a reading every few seconds.
 
 Test status: neither script has run on camera hardware. The Python script is
-covered by 13 tests with fake pypylon and OpenCV modules
+covered by 16 tests with fake pypylon and OpenCV modules
 (`tests/python/test_live_camera.py`), and its pylon path was checked with the
 pylon camera emulator. `live_basler.m` has no automated test, because GNU
 Octave has no Image Acquisition Toolbox, and it has not run in MATLAB.
@@ -264,3 +264,28 @@ moving images valid with speed errors of 0.055 and 0.057 % and the static
 image not valid, so any larger error on real images comes from the
 acquisition or the reference. Real multi-flash recordings are being prepared
 and are not in the repository yet.
+
+## Testing without a flash
+
+Before a flash controller is wired up, the method can be tried on the real
+camera under continuous light. K consecutive short exposures at a fixed frame
+rate, averaged into one image, give the image of K flashes, each exposure in
+the place of a flash, if the steps between the frames are equal; keep each
+exposure at most about a quarter of the frame interval. Both live scripts save
+such bursts (`--mode average --save DIR` in Python,
+`'Mode', 'average', 'SaveDir', DIR` in MATLAB), and
+`experiments/real_measurements.py` evaluates them with mode `average` in
+`meta.csv`: it averages the frames, takes the frame period from `meta.csv` or
+from the files (frame rate or timestamps), and checks the steps between the
+frames by phase correlation and the frame intervals by their timestamps.
+Results of this mode are emulated multi-flash: they test the estimator on a
+real camera, lens and texture, not the flash timing.
+[`data/real/README.md`](../data/real/README.md#testing-without-a-flash-averaged-frames)
+gives the camera settings, how to choose the frame rate from the speed, the
+columns of `meta.csv` and what the step check means;
+`data/real/example_average` is a synthetic example.
+
+```bash
+python python/examples/live_camera.py --mode average --source pylon --frame-rate 80 --exposure-us 2000 --save data/real/2026-10-20_average
+python experiments/real_measurements.py data/real/example_average/meta.csv --out results.csv
+```

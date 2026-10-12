@@ -1,5 +1,6 @@
 """python/examples/live_camera.py with fake OpenCV and pypylon modules (no camera needed)."""
 
+import csv
 import importlib.util
 import sys
 import types
@@ -128,7 +129,9 @@ def test_options_are_checked(lc):
                  ["--mode", "flash", "--source", "rec.avi", "--exposure-us", "100"],
                  ["--mode", "flash", "--duty", "1"],
                  ["--mode", "flash", "--exposures", "1"],
-                 ["--mode", "flash", "--flash-period", "0"]):
+                 ["--mode", "flash", "--flash-period", "0"],
+                 ["--mode", "average", "--source", "rec.avi", "--save", "out"],          # a file is no camera
+                 ["--mode", "average", "--note", "axis 20 mm/s"]):                      # --note needs --save
         with pytest.raises(SystemExit):
             lc.main(argv)
 
@@ -372,3 +375,113 @@ def test_video_file_through_opencv(lc, tmp_path, capsys):
         for t, angle, speed, pxs, q, state in rows:
             assert state == "valid" and abs(speed / np.hypot(3, 2) - 1) < 0.01
             assert abs(pxs / (500 * np.hypot(3, 2)) - 1) < 0.01
+
+
+# --- recordings (--save) -------------------------------------------------------
+
+@pytest.fixture
+def rm(monkeypatch):
+    """experiments/real_measurements.py, to evaluate what --save writes."""
+    monkeypatch.setattr(sys, "path", [str(REPO / "experiments"), *sys.path])
+    for name in ("real_measurements", "common"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    import real_measurements
+    yield real_measurements
+    for name in ("real_measurements", "common"):
+        sys.modules.pop(name, None)
+
+
+def _stop_after(n, ts):
+    """Timestamps ``ts(k)`` for the first ``n`` grabs, then Ctrl+C (KeyboardInterrupt), which ends main."""
+    def f(k):
+        if k >= n:
+            raise KeyboardInterrupt
+        return ts(k)
+    return f
+
+
+def _meta(path):
+    with open(path, newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def test_save_average_bursts_and_evaluate(lc, rm, monkeypatch, tmp_path, capsys):
+    v = (2.0, 1.0)
+    _, fr = simulate_pulsed_image(96, v, 4, rng=6, return_frames=True)
+    frames = [_uint8(fr[:, :, k]) for k in range(9)]
+    out = tmp_path / "rec"
+    for run in (1, 2):                  # a second run in the same folder numbers on and appends to meta.csv
+        cam = _Camera(frames, ts=_stop_after(18, lambda k: 5_000_000_000 + 10_000_000 * k),   # ns, 100 fps
+                      ExposureTime=_Node(50.0))
+        _fake_pylon(monkeypatch, cam)
+        assert lc.main(["--mode", "average", "--source", "pylon", "--roi", "96", "--save", str(out),
+                        "--note", f'run {run}, axis "slow"']) == 0
+    text = capsys.readouterr().out
+    assert "[burst_0001.npz]" in text and "[burst_0004.npz]" in text and "saved 2 files to" in text
+    assert sorted(p.name for p in out.iterdir()) == ["burst_0001.npz", "burst_0002.npz", "burst_0003.npz",
+                                                     "burst_0004.npz", "meta.csv"]
+    with np.load(out / "burst_0002.npz") as z:
+        assert z["frames"].dtype == np.uint8 and z["frames"].shape == (96, 96, 9)
+        assert np.array_equal(z["frames"], np.stack(frames, axis=2))
+        assert np.allclose(z["t"], 0.09 + 0.01 * np.arange(9)) and str(z["clock"]) == "camera"
+        assert float(z["exposure_s"]) == pytest.approx(5e-5) and float(z["frame_rate"]) == 100
+    rows = _meta(out / "meta.csv")
+    assert [r["file"] for r in rows] == [f"burst_{k:04d}.npz" for k in (1, 2, 3, 4)]
+    assert rows[0]["mode"] == "average" and rows[0]["frames"] == "9" and rows[0]["exposures"] == ""
+    assert rows[0]["exposure_s"] == "5e-05" and rows[0]["frame_period_s"] == ""      # camera clock: from t
+    assert rows[3]["note"] == 'run 2, axis "slow"'
+    # the files and meta.csv as written are evaluated by real_measurements.py
+    assert rm.main([str(out / "meta.csv")]) == 0
+    res = {r["file"]: r for r in _meta(out / "results.csv")}
+    r = res["burst_0003.npz"]
+    assert r["valid"] == "1" and r["uneven_steps"] == "0" and r["period_source"] == "timestamps"
+    assert float(r["speed_px"]) == pytest.approx(np.hypot(*v), rel=0.01)
+    assert float(r["measured_period_s"]) == pytest.approx(0.01) and float(r["duty"]) == pytest.approx(0.005)
+    assert float(r["step_dx_px"]) == pytest.approx(v[0], abs=0.02)
+
+
+def test_save_flash_frames_with_host_clock(lc, rm, monkeypatch, tmp_path, capsys):
+    flashes = [_uint8(simulate_pulsed_image(96, (3.0, -2.0), 4, rng=k)) for k in range(3)]
+    cam = _Camera(flashes, ts=_stop_after(2, lambda k: 0), ExposureTime=_Node(9000.0))   # no timestamps
+    _fake_pylon(monkeypatch, cam)
+    monkeypatch.setattr(lc, "time", _Clock(0.2))
+    out = tmp_path / "flash"
+    assert lc.main(["--mode", "flash", "--source", "pylon", "--roi", "96", "--flash-period", "0.001",
+                    "--duty", "0.02", "--save", str(out)]) == 0
+    assert "[frame_0002.npz]" in capsys.readouterr().out
+    with np.load(out / "frame_0001.npz") as z:
+        assert z["frames"].shape == (96, 96, 1) and np.array_equal(z["frames"][:, :, 0], flashes[0])
+        assert z["t"].tolist() == [0.0] and str(z["clock"]) == "host"
+    rows = _meta(out / "meta.csv")
+    assert [(r["mode"], r["exposures"], r["frames"], r["flash_period_s"], r["duty"], r["exposure_s"])
+            for r in rows] == [("flash", "9", "", "0.001", "0.02", "0.009")] * 2
+    assert rm.main([str(out / "meta.csv")]) == 0
+    res = _meta(out / "results.csv")
+    assert [r["valid"] for r in res] == ["1", "1"] and res[0]["mode"] == "flash" and res[0]["warnings"] == ""
+    assert float(res[0]["speed_px"]) == pytest.approx(np.hypot(3, 2), rel=0.01)
+
+
+def test_save_meta_lines_follow_an_existing_header(lc, tmp_path, capsys):
+    out = tmp_path / "rec"
+    out.mkdir()
+    text = "file;mode;frames;frame_period_s;static;note\r\nalt.npz;average;9;;1;\xfcber"     # Excel, no newline
+    (out / "meta.csv").write_bytes(text.encode("cp1252"))
+    rec = lc.Recorder(out, "average", 9, note="Stillstand, \xfcber Rolle")
+    frames = [np.zeros((8, 8, 3), dtype=np.uint8) + 10 * k for k in range(9)]      # colour frames
+    assert rec.save(frames, 0.004 * np.arange(9), frame_rate=250.0, clock="host") == "burst_0001.npz"
+    text = (out / "meta.csv").read_bytes().decode("cp1252").splitlines()
+    assert text[2] == "burst_0001.npz;average;9;0,004;;Stillstand, \xfcber Rolle"   # host clock: nominal period
+    with np.load(out / "burst_0001.npz") as z:
+        assert z["frames"].shape == (8, 8, 9) and z["frames"].dtype == np.uint8 and z["frames"][0, 0, 3] == 30
+    rec = lc.Recorder(out, "average", 9, flash_period=None, duty=None)
+    rec.save(frames, 0.004 * np.arange(9), exposure=0.001, clock="camera")         # no exposure_s column
+    printed = capsys.readouterr().out
+    assert "its header has no column exposure_s" in printed and "burst_0002.npz,average,,9," in printed
+    assert len((out / "meta.csv").read_bytes().splitlines()) == 3
+    blank = tmp_path / "blank"                      # a meta.csv with blank lines only gets the header
+    blank.mkdir()
+    (blank / "meta.csv").write_bytes(b"\r\n  ")
+    lc.Recorder(blank, "flash", 9, flash_period=0.001).save([frames[0]], [0.0], exposure=0.009, clock="camera")
+    text = (blank / "meta.csv").read_text().splitlines()
+    assert text[:2] == ["", "  "] and text[2].startswith("file,mode,exposures,")
+    assert text[3].startswith("frame_0001.npz,flash,9,,0.001,,,0.009,") and len(text) == 4

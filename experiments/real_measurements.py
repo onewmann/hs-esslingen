@@ -20,10 +20,16 @@ in results.csv with the reason; the other rows are still analysed. The exit
 status is 0 when every row was analysed, 1 when some were not, and 2 when
 meta.csv or the options cannot be used at all.
 
-A file that holds a stack (a .mat from getdata, a .npy or a multi-page TIFF)
-gives one image per frame, each estimated on its own; ``file.mat#3`` selects
-frame 3 (counted from 1). Frames are never averaged here: every frame must be
-a multi-flash image. data/real/example holds a small synthetic example.
+In flash mode (the default), a file that holds a stack (a .mat from getdata,
+a .npy, a .npz or a multi-page TIFF) gives one image per frame, each
+estimated on its own; ``file.mat#3`` selects frame 3 (counted from 1).
+Every frame must then be a multi-flash image. A row with mode ``average``
+instead averages consecutive frames of a stack, taken under continuous light
+with short exposures, into one pulsed image (testing without a flash; it
+emulates the flashes, it does not test their timing). The steps between
+those frames are checked by phase correlation and, if the file holds
+timestamps, by the frame intervals. data/real/example and
+data/real/example_average hold small synthetic examples.
 """
 
 from __future__ import annotations
@@ -45,43 +51,61 @@ import numpy as np
 
 import common
 from common import AQUA, BLUE, INK2, ORANGE, SURFACE
-from fftvel import angle_difference, estimate_velocity, phase_correlation, to_physical
-from fftvel.__main__ import _frames_axis, _load
+from fftvel import angle_difference, estimate_velocity, phase_correlation, pulsed_from_stack, to_physical
+from fftvel.__main__ import HDF5_SIGNATURE, _frames_axis, _load
 from fftvel.core import DEFAULT_PAD_FACTOR, RFRAC, SAT_WARN, VMIN_FACTOR
+from fftvel.stream import frame_step
 
 COLUMNS = {
-    "file": "image file, relative to meta.csv (.png, .tif, .npy, .mat); file.mat#k selects frame k",
-    "exposures": "number of flashes K in the image (at least 2)",
+    "file": "image file, relative to meta.csv (.png, .tif, .npy, .npz, .mat); file.mat#k selects frame k",
+    "exposures": "number of flashes K in the image (at least 2); mode average: optional, as frames",
     "flash_period_s": "time from one flash to the next in s (empty: speed in px per flash only)",
-    "duty": "flash pulse length / flash period, in [0, 1); 0 or empty if unknown",
+    "duty": "flash pulse length / flash period, in [0, 1); mode average: exposure / frame period; "
+            "0 or empty if unknown",
     "gsd_mm_per_px": "ground sample distance in mm per px (empty: speed in px per flash only)",
     "set_speed_mm_s": "speed set on the axis or turntable in mm/s (empty if unknown)",
     "set_angle_deg": "set direction, counter-clockwise from +x with y up (empty if unknown)",
     "static": "1 for an image that must come out not valid (stopped surface), else 0 (empty: 0)",
     "roi": "side of the analysed central square in px (empty: --roi, default 512; 0: largest square)",
     "note": "free text",
-    "exposure_s": "camera exposure time in s, checked against (K - 1 + duty) flash periods (optional)",
+    "exposure_s": "camera exposure time in s, checked against (K - 1 + duty) flash periods; mode average: "
+                  "exposure of one frame, gives duty = exposure_s / frame period (optional)",
     "ref_frame_a": "single-flash frame for the phase-correlation cross-check (optional)",
     "ref_frame_b": "second single-flash frame, taken ref_dt_s after ref_frame_a (optional)",
     "ref_dt_s": "time from ref_frame_a to ref_frame_b in s (empty: compare directions only)",
+    "mode": "flash (every image holds K flashes; default) or average (consecutive frames of a stack are averaged)",
+    "frames": "mode average: number of consecutive frames averaged (empty: exposures, else all, if odd)",
+    "first_frame": "mode average: first frame averaged, counted from 1 (empty: 1)",
+    "frame_period_s": "mode average: time from one frame to the next in s (empty: flash_period_s, else the "
+                      "frame rate or the timestamps in the file)",
 }
 REQUIRED = ("file", "exposures")
 META = ("exposures", "flash_period_s", "duty", "gsd_mm_per_px", "set_speed_mm_s", "set_angle_deg", "static",
-        "exposure_s", "ref_frame_a", "ref_frame_b", "ref_dt_s", "note")    # meta.csv columns copied to results
-# columns of results.csv in this order: the image, the outcome, the comparison with the set motion, the
-# estimate, the settings from meta.csv, the cross-check, then warnings, errors and the note
+        "exposure_s", "ref_frame_a", "ref_frame_b", "ref_dt_s", "note", "mode", "frames", "frame_period_s")
+# meta.csv columns copied to results. Columns of results.csv in this order: the image, the outcome, the
+# comparison with the set motion, the estimate, the settings from meta.csv, the cross-check, the average
+# mode (its frames, frame period and step check), then warnings, errors and the note
 FIELDS = ("file", "line", "valid", "reason", "speed_mm_s", "set_speed_mm_s", "speed_err", "angle_deg",
           "set_angle_deg", "angle_err_deg", "speed_px", "expected_px", "vx_px", "vy_px", "vx_mm_s", "vy_mm_s",
           "quality", "threshold", "quality_perp", "geba", "in_range", "isotropic", "quality_blur", "blur_length",
           "blur_like", "saturated", "roi", "static", "exposures",
           "flash_period_s", "duty", "gsd_mm_per_px", "exposure_s", "ref_frame_a", "ref_frame_b", "ref_dt_s",
           "ref_dx_px", "ref_dy_px", "ref_peak", "ref_angle_deg", "ref_angle_diff_deg", "ref_speed_px",
-          "ref_speed_diff", "ref_speed_mm_s", "warnings", "error", "note")
+          "ref_speed_diff", "ref_speed_mm_s", "mode", "frames", "first_frame", "frame_period_s",
+          "measured_period_s", "period_source", "step_dx_px", "step_dy_px", "step_speed_px", "step_spread",
+          "step_angle_spread_deg", "uneven_steps", "warnings", "error", "note")
 DEFAULT_ROI = 512
 TOL_SPEED = 0.05        # an estimate counts as correct within 5 % of the set speed ...
 TOL_ANGLE = 2.0         # ... and 2 deg of the set direction, as in the simulated studies
 CONFIDENCE = 0.95       # of the Clopper-Pearson upper bounds
 FRAME = re.compile(r"^(.*)#(\d+)$")
+# average mode
+TOL_STEPS = 0.1         # allowed spread (max - min) of the step lengths and frame intervals, relative to the median
+TOL_STEP_ANGLE = 5.0    # allowed spread of the step directions in deg
+STEP_MIN = 0.25         # steps shorter than this (px) are too short for the step check
+DUTY_WARN = 0.25        # warn above this exposure / frame period
+TIMES = ("t", "timestamps", "time")     # names of the timestamps (s) in a .npz or .mat file (time: getdata)
+EXTRAS = ("clock", "frame_rate", "exposure_s")      # other entries of a .npz or .mat file that are read
 
 
 class MetaError(ValueError):
@@ -121,7 +145,8 @@ def read_meta(path: Path, default_roi: int = DEFAULT_ROI):
     dict with the values of ``COLUMNS`` (None where empty), its line and
     ``problems``, the list of what is wrong with it (empty for a usable
     row). ``problems`` holds those of all rows, each with its line. Raises
-    MetaError if the file is empty or lacks a required column.
+    MetaError if the file is empty or lacks a required column (``exposures``
+    may be left out when there is a ``mode`` column).
     """
     text = _decode(path)
     header = next((ln for ln in text.splitlines() if ln.strip()), "")
@@ -136,7 +161,7 @@ def read_meta(path: Path, default_roi: int = DEFAULT_ROI):
             continue
         if names is None:
             names = [c.strip().lower() for c in cells]
-            missing = [c for c in REQUIRED if c not in names]
+            missing = [c for c in REQUIRED if c not in names and not (c == "exposures" and "mode" in names)]
             if missing:
                 raise MetaError(f"{path.name} has no column {', '.join(missing)} (header: {', '.join(names)}; "
                                 f"separated by '{delim}')")
@@ -182,11 +207,17 @@ def _check_row(raw: dict, folder: Path, comma: bool, default_roi: int):
         return int(x) if integer else x
 
     row = dict(line=None, file=raw["file"], note=raw.get("note", ""))
+    mode = raw.get("mode", "").lower() or "flash"
+    if mode not in ("flash", "average"):
+        bad.append(f"mode '{raw['mode']}' must be flash or average (empty: flash)")
+    row["mode"] = mode
+    average = mode == "average"
     row["exposures"] = number("exposures", lowest=2, integer=True)
-    if raw["exposures"] == "":
+    if raw.get("exposures", "") == "" and not average:
         bad.append("exposures is empty; give the number of flashes in the image")
     row["flash_period_s"] = number("flash_period_s", above=0)
     row["duty"] = number("duty", lowest=0, below=1, default=0.0)
+    row["duty_given"] = raw.get("duty", "") != ""
     row["gsd_mm_per_px"] = number("gsd_mm_per_px", above=0)
     row["set_speed_mm_s"] = number("set_speed_mm_s", lowest=0)
     row["set_angle_deg"] = number("set_angle_deg")
@@ -198,6 +229,16 @@ def _check_row(raw: dict, folder: Path, comma: bool, default_roi: int):
     row["ref_dt_s"] = number("ref_dt_s", above=0)
     if not row["static"] and row["set_speed_mm_s"] == 0:
         bad.append("set_speed_mm_s is 0 but static is 0; mark images of the stopped surface with static 1")
+    row["frames"] = number("frames", lowest=2, integer=True)
+    row["first_frame"] = number("first_frame", lowest=1, integer=True)
+    row["frame_period_s"] = number("frame_period_s", above=0)
+    if average:
+        bad += _check_average(row)
+    else:
+        given = [k for k in ("frames", "first_frame", "frame_period_s") if raw.get(k, "") != ""]
+        if given:
+            bad.append(f"{', '.join(given)} {'is' if len(given) == 1 else 'are'} for mode average only; set "
+                       f"mode to average, or leave {'it' if len(given) == 1 else 'them'} empty")
 
     row["path"], row["frame"] = None, None
     if raw["file"] == "":
@@ -205,16 +246,38 @@ def _check_row(raw: dict, folder: Path, comma: bool, default_roi: int):
     else:
         row["path"], row["frame"] = _split_frame(raw["file"], folder)
         bad += _check_path(row["path"], row["frame"], raw["file"])
+        if average and row["frame"] is not None:
+            bad.append(f"{raw['file']}: file#k selects one frame; in average mode give first_frame and frames")
     refs = [raw.get("ref_frame_a", ""), raw.get("ref_frame_b", "")]
     row["ref_frame_a"], row["ref_frame_b"] = refs
     row["ref"] = None
-    if any(refs) and not all(refs):
+    if average and any(refs):
+        bad.append("ref_frame_a and ref_frame_b are for mode flash; in average mode the consecutive frames "
+                   "themselves give the reference (the step check)")
+    elif any(refs) and not all(refs):
         bad.append("give both ref_frame_a and ref_frame_b, or neither")
     elif all(refs):
         row["ref"] = [_split_frame(r, folder) for r in refs]
         for (p, k), r in zip(row["ref"], refs):
             bad += _check_path(p, k, r)
     return row, bad
+
+
+def _check_average(row):
+    """Problems of the values of a row in average mode that do not fit together."""
+    bad = []
+    K, F = row["exposures"], row["frames"]
+    if K is not None and F is not None and K != F:
+        bad.append(f"exposures {K} and frames {F} differ; in average mode the averaged frames are the "
+                   f"exposures, so give frames only")
+    T, Tf = row["frame_period_s"], row["flash_period_s"]
+    if T is not None and Tf is not None and T != Tf:
+        bad.append(f"frame_period_s {T:g} and flash_period_s {Tf:g} differ; in average mode give the time "
+                   f"from one frame to the next in frame_period_s only")
+    period = T if T is not None else Tf
+    if row["exposure_s"] is not None and period is not None and row["exposure_s"] >= period:
+        bad.append(f"exposure_s {row['exposure_s']:g} is not shorter than the frame period {period:g} s")
+    return bad
 
 
 def _rule(lowest, above, below, integer, choices):
@@ -249,10 +312,130 @@ def central(img, side: int):
 
 
 @lru_cache(maxsize=4)
-def _read(path: str):
-    """Array of an image or array file (fftvel CLI loader); its notes on stderr are dropped."""
+def _read(path: str, stack: bool = False):
+    """Array of an image or array file (fftvel CLI loader, or the frames of a .npz file).
+
+    The notes of the loader on stderr are dropped. ``stack`` tells the
+    loader that a stack is expected (which variable of a .mat file fits).
+    """
+    if path.lower().endswith(".npz"):
+        return _load_npz(path)
     with contextlib.redirect_stderr(io.StringIO()):
-        return _load(path)
+        return _load(path, stack=stack)
+
+
+def _load_npz(path: str):
+    """The image or stack of a .npz file: the entry 'frames', else its only array with at least 2 axes > 1."""
+    try:
+        with np.load(path, allow_pickle=False) as z:
+            arrays = {k: z[k] for k in z.files}
+    except Exception as err:  # noqa: BLE001 - not a zip file, a damaged one, or entries that need pickle
+        raise SystemExit(f"cannot read {path} as a .npz file ({err})") from None
+    if "frames" in arrays:
+        name = "frames"
+    else:
+        large = [k for k, a in arrays.items() if sum(d > 1 for d in a.shape) >= 2]
+        if len(large) != 1:
+            listing = ", ".join(f"{k} ({' x '.join(map(str, a.shape)) or 'scalar'})" for k, a in arrays.items())
+            raise SystemExit(f"{path} holds {listing or 'no array'}; save the image or the stack under "
+                             f"the name frames, e.g. np.savez(file, frames=frames, t=t)")
+        name = large[0]
+    a = arrays[name]
+    if a.dtype.kind not in "biuf":
+        raise SystemExit(f"{path}: '{name}' holds {a.dtype} data, not a real numeric array")
+    return a
+
+
+@lru_cache(maxsize=4)
+def _extras(path: str) -> dict:
+    """What a .npz or .mat file holds besides the frames: timestamps (s), clock, frame rate and exposure.
+
+    Returns a dict with ``t`` (1-D float array, from the entry or variable
+    ``t``, ``timestamps`` or ``time``), ``clock`` ('camera', 'host', ...),
+    ``frame_rate`` (Hz) and ``exposure_s`` (s), each only if the file holds
+    it (as the live scripts save them), and ``problem`` if the timestamps
+    cannot be used. Other files give an empty dict.
+    """
+    low = path.lower()
+    try:
+        if low.endswith(".npz"):
+            with np.load(path, allow_pickle=False) as z:
+                raw = {k: z[k] for k in (*TIMES, *EXTRAS) if k in z.files}
+        elif low.endswith(".mat"):
+            raw = _mat_extras(path)
+        else:
+            return {}
+    except Exception as err:  # noqa: BLE001 - a file the loader read but whose extras cannot be read
+        return dict(problem=f"cannot read the timestamps ({err})")
+    out = {}
+    name = next((k for k in TIMES if k in raw), None)
+    if name is not None:
+        t = np.asarray(raw[name])
+        if t.dtype.kind in "biuf" and t.size > 0 and np.all(np.isfinite(t)):
+            out["t"] = t.astype(float).ravel()
+        else:
+            out["problem"] = f"'{name}' in the file is not a list of finite times in s"
+    clock = raw.get("clock")
+    if clock is not None and np.size(clock) > 0:
+        out["clock"] = clock if isinstance(clock, str) else str(np.asarray(clock).ravel()[0])
+    for key in ("frame_rate", "exposure_s"):     # a positive number; NaN (unknown, live_basler) is left out
+        x = np.asarray(raw.get(key, [])).ravel()
+        if x.size == 1 and x.dtype.kind in "biuf" and np.isfinite(x[0]) and x[0] > 0:
+            out[key] = float(x[0])
+    return out
+
+
+def _mat_extras(path: str) -> dict:
+    """Variables of TIMES and EXTRAS in a MAT-file (v5/v7 through scipy, v7.3 through h5py)."""
+    want = (*TIMES, *EXTRAS)
+    with open(path, "rb") as f:
+        head = f.read(2056)
+    if any(head[o:o + 8] == HDF5_SIGNATURE for o in (0, 512, 1024, 2048)):     # MATLAB v7.3
+        import h5py
+        out = {}
+        with h5py.File(path, "r") as f:
+            for n in want:
+                if n in f and isinstance(f[n], h5py.Dataset):
+                    v = np.asarray(f[n][()])
+                    cls = f[n].attrs.get("MATLAB_class", b"")
+                    if (cls.decode() if isinstance(cls, bytes) else str(cls)) == "char":
+                        v = "".join(map(chr, v.ravel()))
+                    out[n] = v
+        return out
+    from scipy.io import loadmat, whosmat
+    names = {n for n, _, _ in whosmat(path)}
+    present = [n for n in want if n in names]
+    if not present:
+        return {}
+    data = loadmat(path, variable_names=present)
+    return {n: data[n] for n in present}
+
+
+def stack_of(path: Path):
+    """``(stack, axis)``: the frames of a stack file (average mode) and the axis that holds them.
+
+    Axes of length 1 are dropped, so a MATLAB getdata stack (rows x cols x
+    1 x frames) works as it is. The frames lie on the first or last axis
+    (see fftvel.__main__._frames_axis); if that cannot be told, on the last.
+    Raises ValueError with a message if the file cannot be read or holds no
+    stack.
+    """
+    try:
+        a = _read(str(path), True)
+    except SystemExit as err:                   # the CLI loader exits with a message
+        msg = str(err.code).replace("choose one with --var", "save only the stack and its timestamps in "
+                                    "the file, e.g. save('rec1.mat', 'frames', 't')")
+        raise ValueError(msg) from None
+    shape = a.shape
+    a = np.squeeze(a)
+    if a.ndim != 3:
+        raise ValueError(f"average mode needs a stack of frames, the file holds an array of "
+                         f"{' x '.join(map(str, shape))}")
+    try:
+        axis = _frames_axis(a.shape, "auto")
+    except SystemExit:
+        axis = -1
+    return a, axis
 
 
 def frames_of(path: Path, frame=None):
@@ -295,7 +478,28 @@ def build_tasks(rows, clip_outliers: bool = False):
     """
     tasks, failed = [], []
     seen = {}                                   # (file, frame) -> line of its first listing
+    windows = {}                                # file -> (first frame, last frame, line) of each average row
     for row in rows:
+        if row["mode"] == "average":
+            try:
+                task = average_task(row, clip_outliers)
+            except ValueError as err:
+                failed.append(dict(_meta_columns(row, row["file"]), error=str(err)))
+                continue
+            listed = windows.setdefault(str(row["path"].resolve()), [])
+            first, last = task["first"], task["first"] + task["K"] - 1
+            same = [ln for a, b, ln in listed if (a, b) == (first, last)]
+            shared = [(max(a, first), min(b, last), ln) for a, b, ln in listed if a <= last and first <= b]
+            if same:
+                task["warnings"].append(f"the same frames as in line {same[0]}, so they count twice in "
+                                        f"the summary")
+            elif shared:
+                a, b, ln = shared[0]
+                task["warnings"].append(f"frames {a} to {b} are also averaged in line {ln}, so the two "
+                                        f"windows are not independent")
+            listed.append((first, last, row["line"]))
+            tasks.append(task)
+            continue
         try:
             images = frames_of(row["path"], row["frame"])
             ref = None
@@ -325,11 +529,59 @@ def build_tasks(rows, clip_outliers: bool = False):
     return tasks, failed
 
 
+def average_task(row, clip_outliers: bool = False):
+    """Task of one row in average mode: the mean of its frames, and the frames for the step check.
+
+    The frames ``first_frame`` to ``first_frame + frames - 1`` of the stack
+    are cropped to the analysed square and averaged with
+    fftvel.pulsed_from_stack; the task keeps the cropped frames (in their
+    own data type), and their timestamps, clock, frame rate and exposure,
+    if the file holds them. Raises
+    ValueError with a message if the file holds no stack or too few frames.
+    """
+    stack, axis = stack_of(row["path"])
+    nf = stack.shape[axis]
+    K = row["frames"] if row["frames"] is not None else row["exposures"]
+    if K is None:
+        if nf % 2 == 0:
+            raise ValueError(f"the stack has {nf} frames, an even number; give frames, the number of "
+                             f"frames to average")
+        K = nf
+    first = row["first_frame"] or 1
+    if first - 1 + K > nf:
+        raise ValueError(f"averaging {K} frames from frame {first} needs frames {first} to {first + K - 1}, "
+                         f"the stack has {nf}")
+    sub = np.moveaxis(np.take(stack, np.arange(first - 1, first - 1 + K), axis=axis), axis, -1)
+    h, w = sub.shape[:2]
+    side = min(h, w) if row["roi"] == 0 else min(row["roi"], h, w)
+    r0, c0 = (h - side) // 2, (w - side) // 2
+    frames = sub[r0:r0 + side, c0:c0 + side, :].copy()
+    image, _ = pulsed_from_stack(frames, exposures=K)
+    name = row["file"] if (first == 1 and K == nf) else f"{row['file']}#{first}-{first + K - 1}"
+    task = dict(row=row, name=name, image=image, frames=frames, K=K, first=first, clip=clip_outliers,
+                warnings=_image_warnings(row), times=None, clock=None, frame_rate=None)
+    extras = _extras(str(row["path"]))
+    if "problem" in extras:
+        task["warnings"].append(f"{extras['problem']}; the timestamps are not used")
+    t = extras.get("t")
+    if t is not None and t.size != nf:
+        task["warnings"].append(f"the file holds {t.size} timestamps for {nf} frames; they are not used")
+    elif t is not None:
+        task["times"] = t[first - 1:first - 1 + K]
+        task["clock"], task["frame_rate"] = extras.get("clock"), extras.get("frame_rate")
+        if task["clock"] is None and row["path"].suffix.lower() == ".mat":
+            task["clock"] = "host"              # MATLAB getdata gives times taken on the host
+    task["exposure_s"] = extras.get("exposure_s")
+    return task
+
+
 def _image_warnings(row):
     out = []
     K, T, duty = row["exposures"], row["flash_period_s"], row["duty"]
     if str(row["path"]).lower().endswith((".jpg", ".jpeg", ".jfif")):
         out.append("JPEG: its 8 x 8 block grid can give wrong results that are marked valid")
+    if row["mode"] == "average":
+        return out
     if row["exposure_s"] is not None and T is not None and row["exposure_s"] < (K - 1 + duty) * T:
         out.append(f"exposure {row['exposure_s']:g} s is shorter than (K - 1 + duty) * T = "
                    f"{(K - 1 + duty) * T:g} s, so the image holds fewer than {K} flashes")
@@ -366,9 +618,15 @@ def _meta_columns(row, name):
 def analyse(task):
     """Result row of one image. Top-level, so that it also runs in a worker process on Windows."""
     row = task["row"]
+    average = row["mode"] == "average"
     K, T, gsd, duty = row["exposures"], row["flash_period_s"], row["gsd_mm_per_px"], row["duty"]
     res = _meta_columns(row, task["name"])
     warnings = list(task["warnings"])
+    if average:                                 # K frames, period from meta.csv or the timestamps
+        K = task["K"]
+        res.update(exposures=K, frames=K, first_frame=task["first"])
+        T, duty, uneven_times = _average_timing(task, res, warnings)
+    unit = "frame" if average else "flash"
     try:
         e = estimate_velocity(task["image"], L=max(1, (K - 1) // 2), exposures=K, duty=duty,
                               clip_outliers=task["clip"])
@@ -387,7 +645,11 @@ def analyse(task):
                in_range=int(e.in_range), isotropic=int(e.isotropic), quality_blur=e.quality_blur,
                blur_length=e.blur_length, blur_like=int(e.blur_like), saturated=e.saturated,
                valid=int(e.valid), reason="; ".join(reason))
-    if e.valid and e.blur_like:
+    if e.valid and e.blur_like and average:
+        warnings.append(f"one continuous exposure blurred over {e.blur_length:.3g} px fits better than {K} "
+                        f"separate frames. Below about 2.2 px per frame this is common with noise too, so it "
+                        f"only means that the image cannot tell the two apart")
+    elif e.valid and e.blur_like:
         warnings.append(f"one continuous exposure blurred over {e.blur_length:.3g} px (no flashes) fits better "
                         f"than the flashes. Below about 2.2 px per flash this is common for multi-flash images "
                         f"with noise too, so it only means that the image cannot tell the two apart; if light "
@@ -408,7 +670,7 @@ def analyse(task):
             res["expected_px"] = set_speed * T / gsd
             lo, hi = lowest_speed(K, e.n), e.n / 4
             if not lo <= res["expected_px"] <= hi:
-                warnings.append(f"the set speed is {res['expected_px']:.3g} px per flash, outside "
+                warnings.append(f"the set speed is {res['expected_px']:.3g} px per {unit}, outside "
                                 f"{lo:.2g} to {hi:g} px, the range measured for K = {K} on a {e.n} px "
                                 f"square (about 3.35/K to n/4)")
         if set_speed and res["speed_mm_s"] is not None:
@@ -433,8 +695,159 @@ def analyse(task):
                            gsd, row["ref_dt_s"])
             if ref is not None:
                 res["ref_speed_mm_s"] = ref.speed
+    if average:
+        _step_check(task, e, res, warnings, gsd, T, uneven_times)
     res["warnings"] = "; ".join(warnings)
     return res
+
+
+def _average_timing(task, res, warnings):
+    """Frame period and duty of a window in average mode, and whether its timestamps are uneven.
+
+    The period is frame_period_s, else flash_period_s, else the period
+    measured from the timestamps in the file (``period_source`` says which):
+    the median frame interval, which a dropped frame does not change. With
+    timestamps, the intervals of the averaged frames are checked as in the
+    live scripts (fftvel.stream.frame_step): their spread, max - min, must
+    be at most TOL_STEPS times their median. Times taken on the host
+    (``clock`` 'host' in the file, and the times of a .mat file without
+    ``clock``, as MATLAB getdata gives them) carry transfer jitter. For them
+    the measured period is the mean interval, (last - first) / (K - 1), on
+    which the jitter of the frames between has no effect; without
+    frame_period_s and flash_period_s the period is that of the frame rate
+    stored in the file, if there is one (``period_source`` 'frame_rate'),
+    as the live scripts use it. With such a nominal period they are accepted
+    when their mean interval agrees with it and no interval is off by half
+    a period. Unless duty is given, it is exposure_s / T, with exposure_s
+    from meta.csv, else from the file. Returns ``(T, duty, uneven)`` with
+    ``uneven`` None without usable timestamps.
+    """
+    row = task["row"]
+    T, source = row["frame_period_s"], "frame_period_s"
+    if T is None and row["flash_period_s"] is not None:
+        T, source = row["flash_period_s"], "flash_period_s"
+    uneven = None
+    times = task["times"]
+    if times is not None and not np.all(np.diff(times) > 0):
+        warnings.append("the timestamps in the file do not increase from frame to frame; they are not used")
+    elif times is not None:
+        dt = np.diff(times)
+        host = task["clock"] == "host"
+        measured = float(np.mean(dt) if host else np.median(dt))
+        res["measured_period_s"] = measured
+        if T is None and host and task["frame_rate"]:     # host times jitter: the camera's period is better
+            T, source = 1 / task["frame_rate"], "frame_rate"
+        nominal = T if host else None
+        _, regular = frame_step(times, TOL_STEPS, nominal)
+        uneven = not regular
+        if uneven:
+            warnings.append(_interval_warning(dt, host, nominal))
+        if T is None:
+            T, source = measured, "timestamps"
+        elif abs(measured / T - 1) > TOL_STEPS:
+            given = "the frame rate in the file gives" if source == "frame_rate" else f"{source} is"
+            warnings.append(f"the timestamps give a frame period of {1e3 * measured:.4g} ms, but {given} "
+                            f"{1e3 * T:.4g} ms")
+    res["period_source"] = source if T is not None else None
+    duty = row["duty"]
+    exposure = row["exposure_s"] if row["exposure_s"] is not None else task["exposure_s"]
+    res["exposure_s"] = exposure                # the one used: from meta.csv, else from the file
+    if not row["duty_given"] and exposure is not None and T is not None:
+        duty = exposure / T
+        if duty >= 1:
+            warnings.append(f"exposure_s {exposure:g} s is not shorter than the frame period {T:g} s; duty set "
+                            f"to 0.99, check both")
+            duty = 0.99
+    res["duty"] = duty
+    if 0.4 <= duty <= 0.6:
+        warnings.append(f"the exposure is {duty:.2f} of the frame period. Between 0.4 and 0.6 the speed fit "
+                        f"depends strongly on the exact value (at 0.5 every second spectral line vanishes); "
+                        f"use an exposure of at most a quarter of the frame period")
+    elif duty > DUTY_WARN:
+        warnings.append(f"the exposure is {duty:.2f} of the frame period, more than a quarter: each frame is "
+                        f"blurred over {duty:.2f} steps, and the result depends on the duty being right")
+    return T, duty, uneven
+
+
+def _interval_warning(dt, host, nominal):
+    """Warning for uneven frame intervals ``dt`` (s), after the rule of frame_step that found them."""
+    span = f"{1e3 * dt.min():.4g} to {1e3 * dt.max():.4g} ms"
+    if host and nominal is not None and abs(np.mean(dt) / nominal - 1) <= TOL_STEPS:
+        return (f"a frame interval in the host times is off by half the frame period ({1e3 * nominal:.4g} ms) "
+                f"or more (intervals {span}); a frame was dropped")
+    text = (f"uneven frame intervals in the {'host times' if host else 'timestamps'}: {span} (median "
+            f"{1e3 * np.median(dt):.4g} ms; allowed spread {100 * TOL_STEPS:g} % of the median)")
+    if not host:
+        return text + "; a frame was dropped or the frame rate is not fixed"
+    if nominal is None:
+        return (text + ". Host times jitter by the transfer, which alone can give this; give the camera's "
+                       "frame period in frame_period_s to check them against it")
+    return (text + f"; their mean interval, {1e3 * np.mean(dt):.4g} ms, differs from the frame period "
+                   f"{1e3 * nominal:.4g} ms by more than {100 * TOL_STEPS:g} %: a frame was dropped, or the "
+                   f"frame period is not the one given")
+
+
+def step_check(frames):
+    """Phase correlation of every pair of consecutive frames: ``(dx, dy, peak)``, arrays of one value per pair.
+
+    ``frames`` is a rows x cols x K stack. ``(dx, dy)`` moves the content of
+    frame k onto frame k + 1 (fftvel.phase_correlation: x along columns, y
+    along rows, pointing down).
+    """
+    pairs = [phase_correlation(frames[:, :, k], frames[:, :, k + 1]) for k in range(frames.shape[2] - 1)]
+    dx, dy, peak = (np.array(v) for v in zip(*pairs))
+    return dx, dy, peak
+
+
+def _step_check(task, e, res, warnings, gsd, T, uneven_times):
+    """Step check of a window in average mode: the mean step against the estimate, and uneven steps.
+
+    The mean step fills the reference columns as the reference frames do
+    in flash mode. Its direction is a signed direction (y up), while the
+    estimate gives one modulo 180 deg; fftvel.angle_difference compares
+    them. The steps are uneven when their lengths spread (max - min) by
+    more than TOL_STEPS times the median or their directions (taken around
+    the full circle, so a reversed step counts) by more than TOL_STEP_ANGLE.
+    Steps shorter than STEP_MIN px (median) are not checked and not
+    compared with the estimate, since their direction is not defined.
+    """
+    dx, dy, peak = step_check(task["frames"])
+    mdx, mdy = float(dx.mean()), float(dy.mean())
+    length = np.hypot(dx, dy)
+    med = float(np.median(length))
+    mean_len = float(np.hypot(mdx, mdy))
+    ref_angle = float(np.rad2deg(np.arctan2(-mdy, mdx)) % 180)
+    res.update(step_dx_px=mdx, step_dy_px=mdy, step_speed_px=mean_len, ref_dx_px=mdx, ref_dy_px=mdy,
+               ref_peak=float(peak.min()), ref_angle_deg=ref_angle, ref_speed_px=mean_len)
+    if med >= STEP_MIN:
+        res.update(ref_angle_diff_deg=angle_difference(e.angle_deg, ref_angle),
+                   ref_speed_diff=e.speed / mean_len - 1 if mean_len > 0 else None)
+    if gsd is not None and T is not None:
+        res["ref_speed_mm_s"] = mean_len * gsd / T
+    n = task["frames"].shape[0]
+    if length.max() > n / 4:
+        warnings.append(f"consecutive frames are up to {length.max():.0f} px apart, more than a quarter of the "
+                        f"{n} px square; phase correlation may fail")
+    uneven_steps = None
+    if med >= STEP_MIN:
+        spread = float(np.ptp(length)) / med
+        dirs = np.rad2deg(np.arctan2(-dy, dx))
+        dev = (dirs - np.rad2deg(np.arctan2(-mdy, mdx)) + 180) % 360 - 180
+        angle_spread = float(np.ptp(dev))
+        res.update(step_spread=spread, step_angle_spread_deg=angle_spread)
+        uneven_steps = spread > TOL_STEPS or angle_spread > TOL_STEP_ANGLE
+        if uneven_steps:
+            warnings.append(f"uneven steps between consecutive frames (phase correlation): {length.min():.2f} "
+                            f"to {length.max():.2f} px, a spread of {100 * spread:.0f} % of the median, and "
+                            f"directions spread over {angle_spread:.1f} deg (allowed {100 * TOL_STEPS:g} % and "
+                            f"{TOL_STEP_ANGLE:g} deg); the averaged image does not fit the model of equal steps")
+        if task["row"]["static"]:
+            warnings.append(f"the frames move by {mean_len:.3g} px per frame on average, but static is 1")
+    elif not task["row"]["static"]:
+        warnings.append(f"the steps between consecutive frames are {med:.3g} px (median), too short for the "
+                        f"step check (from {STEP_MIN:g} px)")
+    flags = [f for f in (uneven_steps, uneven_times) if f is not None]
+    res["uneven_steps"] = int(any(flags)) if flags else None
 
 
 def run(tasks, jobs: int = 1, log=print):
@@ -458,9 +871,15 @@ def line(r) -> str:
     """One line of progress for a result row."""
     if r.get("error"):
         return f"{r['file']}: error: {r['error']}"
-    speed = (f"{r['speed_mm_s']:.4g} mm/s ({r['speed_px']:.3f} px/flash)" if r.get("speed_mm_s") is not None
-             else f"{r['speed_px']:.3f} px/flash")
+    px = f"{r['speed_px']:.3f} px/{'frame' if r.get('mode') == 'average' else 'flash'}"
+    if r.get("speed_mm_s") is not None and r.get("period_source") == "timestamps":
+        px += f", frame period {1e3 * r['measured_period_s']:.4g} ms from the timestamps"
+    elif r.get("speed_mm_s") is not None and r.get("period_source") == "frame_rate":
+        px += ", frame period from the frame rate in the file"
+    speed = f"{r['speed_mm_s']:.4g} mm/s ({px})" if r.get("speed_mm_s") is not None else px
     state = "valid" if r["valid"] else f"not valid: {r['reason']}"
+    if r.get("uneven_steps"):
+        state += "; uneven steps"
     tag = " [static]" if r["static"] else ""
     return f"{r['file']}{tag}: {speed} at {r['angle_deg']:.1f} deg, quality {r['quality']:.2f}, {state}"
 
@@ -514,8 +933,11 @@ def summary(results, commented=(), tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, wor
     else:
         log("Moving images: none")
     few = False
+    modes = {r.get("mode") for r in moving}
+    period = "frame period" if modes == {"average"} else ("flash or frame period" if "average" in modes
+                                                           else "flash period")
     for key, name, unit, scale, need in (
-            ("speed_err", "Speed error |est/set - 1|", " %", 100, "a set speed, gsd and flash period"),
+            ("speed_err", "Speed error |est/set - 1|", " %", 100, f"a set speed, gsd and {period}"),
             ("angle_err_deg", "Angle error |est - set|", " deg", 1, "a set angle")):
         x = np.array([abs(r[key]) for r in valid if r.get(key) is not None]) * scale
         if x.size:
@@ -537,7 +959,7 @@ def summary(results, commented=(), tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, wor
     else:
         log("Static images: none. Record some of the stopped surface with the same settings; "
             "they must come out not valid")
-    refs = [r for r in valid if r.get("ref_angle_diff_deg") is not None]
+    refs = [r for r in valid if r.get("ref_angle_diff_deg") is not None and r.get("mode") != "average"]
     if refs:
         d = np.array([abs(r["ref_angle_diff_deg"]) for r in refs])
         s = np.array([r["ref_speed_diff"] for r in refs if r.get("ref_speed_diff") is not None])
@@ -548,6 +970,7 @@ def summary(results, commented=(), tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, wor
             out["ref_speed_median"] = 100 * float(np.median(s))
             text += f", speed est/ref - 1 median {out['ref_speed_median']:+.2g} %"
         log(text)
+    _summary_average(ok, valid, out, worst, log)
     if few:
         log("  * fewer than 20 values: the 95th percentile lies between the largest ones")
     bad = sorted(checked, key=lambda r: -_badness(r, tol_speed, tol_angle))[:worst]
@@ -555,7 +978,8 @@ def summary(results, commented=(), tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, wor
         log(f"Worst images (static ones marked valid, then valid ones by error relative to "
             f"{100 * tol_speed:g} % / {tol_angle:g} deg):")
         for r in static_valid:
-            log(f"  {r['file']}  static but valid: {r['speed_px']:.3f} px/flash at {r['angle_deg']:.1f} deg, "
+            unit = "frame" if r.get("mode") == "average" else "flash"
+            log(f"  {r['file']}  static but valid: {r['speed_px']:.3f} px/{unit} at {r['angle_deg']:.1f} deg, "
                 f"quality {r['quality']:.2f}")
         for r in bad:
             parts = []
@@ -581,6 +1005,47 @@ def summary(results, commented=(), tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, wor
         log(f"Warnings for {len(warned)} image{'s' if len(warned) > 1 else ''} (column warnings of the "
             f"results), e.g. {warned[0]['file']}: {warned[0]['warnings']}")
     return out
+
+
+def _summary_average(ok, valid, out, worst, log):
+    """Lines of the summary about windows in average mode (none if there are none)."""
+    avg = [r for r in ok if r.get("mode") == "average"]
+    if not avg:
+        return
+    uneven = [r for r in avg if r.get("uneven_steps")]
+    unchecked = [r for r in avg if r.get("uneven_steps") is None]
+    timed = [r for r in avg if r.get("period_source") == "timestamps"]
+    rated = [r for r in avg if r.get("period_source") == "frame_rate"]
+    out.update(average=len(avg), uneven=len(uneven), unchecked=len(unchecked))
+    text = (f"Average mode (emulated multi-flash): {len(avg)} window{'s' if len(avg) > 1 else ''}, "
+            f"{len(uneven)} with uneven steps (column uneven_steps)")
+    if unchecked:
+        text += f", {len(unchecked)} not checked (steps below {STEP_MIN:g} px and no timestamps)"
+    log(text)
+    for r in uneven[:worst]:
+        log(f"  {r['file']}  uneven steps, {'valid' if r['valid'] else 'not valid'}; see its warnings")
+    if uneven:
+        log("  Their frames do not have equal steps, which the estimate assumes. A dropped frame is a reason "
+            "to exclude a window that does not depend on the estimate (comment it out with #)")
+    if timed:
+        log(f"  Frame period from the timestamps (frame_period_s empty) for {len(timed)} window"
+            f"{'s' if len(timed) > 1 else ''}")
+    if rated:
+        log(f"  Frame period from the frame rate in the file (host times, frame_period_s empty) for "
+            f"{len(rated)} window{'s' if len(rated) > 1 else ''}")
+    steps = [r for r in valid if r.get("mode") == "average" and r.get("ref_angle_diff_deg") is not None
+             and not r.get("uneven_steps")]          # the mean of uneven steps is not the step of the model
+    if steps:
+        d = np.array([abs(r["ref_angle_diff_deg"]) for r in steps])
+        sp = np.array([r["ref_speed_diff"] for r in steps if r.get("ref_speed_diff") is not None])
+        out["step_angle_median"] = float(np.median(d))
+        text = (f"Mean step between consecutive frames, phase correlation ({len(steps)} valid "
+                f"window{'s' if len(steps) > 1 else ''} with even steps): angle difference median "
+                f"{np.median(d):.2g} deg")
+        if sp.size:
+            out["step_speed_median"] = 100 * float(np.median(sp))
+            text += f", speed est/step - 1 median {out['step_speed_median']:+.2g} %"
+        log(text)
 
 
 # Figure
@@ -621,8 +1086,11 @@ def plot(results, path: Path, tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, label=""
         ax2.set_ylim(-lim, lim)
         hidden |= {r["file"] for r, e, y in zip(pts, err, est_v) if abs(e) > lim or y > top}
     else:
+        modes = {r.get("mode") for r in moving}
+        period = "frame period" if modes == {"average"} else ("flash or frame period" if "average" in modes
+                                                               else "flash period")
         for ax in (ax1, ax2):
-            ax.text(0.5, 0.5, "no set speed with gsd and flash period", transform=ax.transAxes,
+            ax.text(0.5, 0.5, f"no set speed with gsd and {period}", transform=ax.transAxes,
                     ha="center", color=INK2)
     common.style(ax1, "set speed (mm/s)", "estimated speed (mm/s)")
     common.style(ax2, "set speed (mm/s)", "speed error (%)")

@@ -112,6 +112,17 @@ Follow-ups done on 12 October:
   float comparisons in the baseline tests tolerate other CPUs and the
   minimum numpy; several docstrings and doc statements corrected.
 
+Testing without a flash (added on 12 October): `experiments/real_measurements.py`
+has a mode `average` (meta.csv columns `mode`, `frames`, `first_frame`,
+`frame_period_s`): K short exposures at a fixed frame rate are averaged into
+one pulsed image, the frame intervals (from timestamps) and the steps
+between frames (phase correlation) are checked, and uneven windows are
+flagged. `live_camera.py --save DIR` and `live_basler(..., 'SaveDir', DIR)`
+store bursts with timestamps and append lines to `meta.csv`. Example in
+`data/real/example_average/`, instructions in `data/real/README.md`
+("Testing without a flash"). Results from this mode count as emulated
+multi-flash.
+
 ## Next steps
 
 1. Optional before publishing: a last read of README and docs by the owner,

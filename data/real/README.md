@@ -9,6 +9,7 @@ results to mm/s and compares them with the set motion:
 data/real/
   README.md
   example/                 synthetic example, written by example/make_example.py
+  example_average/         synthetic example of average mode, written by example_average/make_example.py
   2026-10-14_axis/         one folder per session (any name)
     meta.csv
     img_0001.png
@@ -43,7 +44,9 @@ analysed square, 512), `--clip-outliers` (against glints), `--tol-speed` and
 `--jobs N` (worker processes; a 512 px square takes several seconds).
 
 Try it on `example/` first. Without `--out` the results land in
-`example/results.csv`.
+`example/results.csv`. Without a flash, see
+[Testing without a flash](#testing-without-a-flash-averaged-frames) and
+`example_average/`.
 
 If a row of `meta.csv` has a problem (see below), the script prints it with
 its line, skips that row and analyses the others; the skipped rows appear in
@@ -58,14 +61,17 @@ file, and the script then stops before computing anything.
 ## meta.csv
 
 One row per image, with a header row. Only `file` and `exposures` are
-required; leave a cell empty when the value is not known.
+required (`exposures` may be left out when there is a `mode` column); leave
+a cell empty when the value is not known. The columns for averaged frames
+(`mode`, `frames`, `first_frame`, `frame_period_s`) are described under
+[Testing without a flash](#testing-without-a-flash-averaged-frames).
 
 | Column | Unit | Meaning |
 |---|---|---|
-| `file` | | image file, relative to the folder of `meta.csv` (or an absolute path): `.png`, `.tif`, `.bmp`, `.npy` or `.mat` (see [Files](#files)) |
+| `file` | | image file, relative to the folder of `meta.csv` (or an absolute path): `.png`, `.tif`, `.bmp`, `.npy`, `.npz` or `.mat` (see [Files](#files)) |
 | `exposures` | | number of flashes K in the image, at least 2 (also even) |
 | `flash_period_s` | s | time from the start of one flash to the start of the next. Empty: speeds in px per flash only |
-| `duty` | | flash pulse length divided by the flash period, in [0, 1). 0 or empty if unknown |
+| `duty` | | flash pulse length divided by the flash period, in [0, 1). 0 or empty if unknown. In `results.csv`: the duty used, in average mode also when it comes from `exposure_s` (and `exposure_s` the exposure used, also when it comes from the file) |
 | `gsd_mm_per_px` | mm/px | ground sample distance: length on the surface covered by one pixel (see [gsd](#ground-sample-distance)). Empty: speeds in px per flash only |
 | `set_speed_mm_s` | mm/s | speed set on the axis or turntable. Empty if unknown |
 | `set_angle_deg` | deg | set direction of motion in the image (see [Angle convention](#angle-convention)). Empty if unknown |
@@ -75,6 +81,7 @@ required; leave a cell empty when the value is not known.
 | `exposure_s` | s | optional: camera exposure time; the script warns if it is shorter than (K - 1 + duty) flash periods |
 | `ref_frame_a`, `ref_frame_b` | | optional: two single-flash frames for the [phase-correlation cross-check](#phase-correlation-cross-check) |
 | `ref_dt_s` | s | optional: time from `ref_frame_a` to `ref_frame_b`; empty: only the directions are compared |
+| `mode` | | optional: `flash` (empty: flash) or `average` for [averaged frames](#testing-without-a-flash-averaged-frames) |
 
 ```
 file,exposures,flash_period_s,duty,gsd_mm_per_px,set_speed_mm_s,set_angle_deg,static,roi,exposure_s,note
@@ -85,7 +92,10 @@ static_0001.png,9,0.0005,0.04,0.0512,,,1,,0.0045,axis stopped
 
 * Comma-separated, as above. Semicolon-separated files, as German Excel
   saves them, work as well, and then decimal commas (`0,0512`) are read too.
-  UTF-8 and the Windows encoding of Excel are both read.
+  UTF-8 and the Windows encoding of Excel are both read. German Excel opens
+  a comma-separated file in columns through Data > From Text/CSV (a double
+  click puts each row into one cell); saved as CSV again, it has semicolons
+  and decimal commas, and the live scripts append to it in that form.
 * Empty rows are skipped. A row whose `file` starts with `#` is skipped and
   counted as commented out in the summary; give the reason in `note`.
 * Columns with other names are allowed; the script lists them as not used,
@@ -98,22 +108,25 @@ static_0001.png,9,0.0005,0.04,0.0512,,,1,,0.0045,axis stopped
   note shifts the following values into the wrong columns. Rows with
   problems are skipped; the others are analysed.
 * The same image listed twice (for example `rec1.mat` and `rec1.mat#3`)
-  gets a warning, because it then counts twice in the summary.
+  gets a warning, because it then counts twice in the summary. In average
+  mode, so do two rows whose windows share frames of the same stack.
 
 ### Files
 
-* Lossless formats only: PNG or TIFF with 8 or 16 bit, BMP, `.npy`, or `.mat`
-  with one numeric array (MATLAB v7.3 files need h5py). Colour images are
-  converted to grey. JPEG compression adds an 8 x 8 px block grid that can
-  give wrong results marked valid; the script warns about JPEG files.
-* A file that holds several frames gives one result per frame, each
-  estimated on its own and named `file#1`, `file#2`, ...: a MATLAB `getdata`
-  recording (rows x columns x 1 x frames, saved with
-  `save('rec1.mat', 'recording')`), a 3-D `.npy` or a multi-page TIFF.
-  Every frame must then be a multi-flash image. `rec1.mat#3` in the `file`
-  column selects frame 3 (counted from 1, as in MATLAB). Frames are never
-  averaged here; to average single exposures into a pulsed image use
-  `python -m fftvel estimate FILE --stack` instead.
+* Lossless formats only: PNG or TIFF with 8 or 16 bit, BMP, `.npy`, `.npz`
+  (the image or stack under the name `frames`, or its only array), or `.mat`
+  with one numeric array (MATLAB v7.3 files need h5py; a `.mat` may also
+  hold timestamps, see below). Colour images are converted to grey. JPEG
+  compression adds an 8 x 8 px block grid that can give wrong results marked
+  valid; the script warns about JPEG files.
+* In flash mode, a file that holds several frames gives one result per
+  frame, each estimated on its own and named `file#1`, `file#2`, ...: a
+  MATLAB `getdata` recording (rows x columns x 1 x frames, saved with
+  `save('rec1.mat', 'recording')`), a 3-D `.npy` or `.npz` or a multi-page
+  TIFF. Every frame must then be a multi-flash image. `rec1.mat#3` in the
+  `file` column selects frame 3 (counted from 1, as in MATLAB). Rows with
+  mode `average` instead average consecutive frames of a stack into one
+  pulsed image ([Testing without a flash](#testing-without-a-flash-averaged-frames)).
 * The analysed square is the central `roi` x `roi` px of the image. A
   camera ROI that is already square and centred on the surface does the
   same and saves transfer time.
@@ -263,6 +276,188 @@ only on the timing. Keep |d| well below half of the analysed square; the
 script warns above a quarter. The frames can be in a stack: `ref.mat#1` and
 `ref.mat#2`.
 
+## Testing without a flash (averaged frames)
+
+Without a flash controller the method can be tried on the real camera, lens
+and surface under continuous light. The camera takes K consecutive short
+exposures at a fixed frame rate, and the mean of these K frames is the
+pulsed image. If the exposures are short and the steps between the frames
+are equal, it is the image that K flashes, one per frame, would give: the
+frame period takes the place of the flash period, and the exposure divided
+by the frame period the place of the duty. Rows of `meta.csv` with mode
+`average` average the frames; both live scripts record them.
+
+Label the results of this mode as emulated multi-flash. They test the
+estimator on a real camera, lens, texture and noise, with the real gsd and
+set motion. They do not test the flash timing, the number of flashes in one
+exposure, or other light during one long exposure (see
+[Acquisition](#acquisition)); report them separately from multi-flash
+measurements.
+
+### Camera settings
+
+* A fixed frame rate: AcquisitionFrameRateEnable on and AcquisitionFrameRate
+  set (`--frame-rate` in `live_camera.py`, `'FrameRate'` in `live_basler`).
+  Both scripts print the frame rate the camera reaches (ResultingFrameRate);
+  if it is lower than the one set, the exposure, the ROI or the bandwidth
+  limits it.
+* ExposureAuto and GainAuto off, so that all frames have the same exposure
+  and gain. `--exposure-us` and `'Exposure'` set the exposure and switch
+  ExposureAuto off; set the gain and GainAuto off in the pylon Viewer and
+  save them in the user set the camera starts with.
+* An exposure of at most a quarter of the frame interval (duty at most
+  0.25). During one exposure the surface moves duty times the step, which
+  blurs every frame along the motion. `real_measurements.py` warns above
+  0.25, and in particular between 0.4 and 0.6, where the speed fit depends
+  strongly on the exact exposure (the live scripts warn between 0.4 and 0.6
+  and above 0.9).
+* Continuous light without flicker, for example LEDs on a DC supply. Lamps
+  on the 50 Hz mains flicker at 100 Hz, so short exposures at a fixed frame
+  rate get different brightness, and the frames no longer count equally in
+  the mean.
+* A camera ROI, so that the camera reaches the frame rate: the maximum frame
+  rate grows when fewer rows are read out and less data is sent per frame.
+  Set Width and Height (for example 512 x 512, the analysed square) and
+  centre it with OffsetX and OffsetY in the pylon Viewer. `live_basler` sets
+  a centred square of `'ROI'` px itself.
+* Enough buffers and no dropped frames. `live_camera.py` grabs every burst
+  of K frames into K + 2 buffers (at least 10), reports grabs that failed
+  and skips bursts that lost frames; on GigE enable jumbo frames. In the
+  recordings, the timestamps and the step check below show a dropped frame.
+
+### Choosing the frame rate
+
+The motion per frame in px is
+
+    v_px = v * dt / gsd
+
+with v the speed in mm/s, dt = 1 / frame rate the frame interval in s and
+gsd in mm/px. As for flashes, the estimator measures from about 3.35/K px
+per frame (0.37 px for K = 9) up to about N/4 px for an N px square (128 px
+for 512 px); aim for about 4 to 10 px per frame, so dt = v_px * gsd / v.
+
+Worked example: gsd = 0.05 mm/px, the axis at 20 mm/s, 5 px per frame:
+dt = 5 * 0.05 / 20 s = 12.5 ms, a frame rate of 80 Hz. The exposure must be
+at most dt / 4 = 3.1 ms; 2 ms gives duty 0.16 and a blur of 0.16 * 5 =
+0.8 px per frame. With K = 9 a window spans 8 frame intervals, 100 ms, and
+the surface moves 40 px, a small part of the 512 px square. For 100 mm/s
+the same 5 px per frame need dt = 2.5 ms, 400 Hz, and an exposure of at most
+0.6 ms; that frame rate usually needs a small camera ROI.
+
+### Recording
+
+```
+python python/examples/live_camera.py --mode average --source pylon --frame-rate 80 --exposure-us 2000 --L 4 --save data/real/2026-10-20_average --note "axis 20 mm/s"
+```
+
+```matlab
+live_basler('Mode', 'average', 'FrameRate', 80, 'Exposure', 2000, 'L', 4, 'SaveDir', 'data/real/2026-10-20_average', 'Note', 'axis 20 mm/s')
+```
+
+Every burst of K frames that the script estimates is saved, as
+`burst_0001.npz` (Python) or `burst_0001.mat` (MATLAB), numbered on from the
+files already in the folder. A `.npz` holds `frames` (rows x columns x K, in
+the data type of the camera), `t` (the timestamps in s), `clock`
+(`camera` or `host`), and `exposure_s` and `frame_rate` when known; a `.mat`
+holds `frames` as `getdata` returns them (rows x columns x 1 x K), `t`,
+`exposure_s`, `frame_rate` and `clock` (`host`). A line for each file is
+appended to `meta.csv` in the folder, with the mode, `frames`, `exposure_s`
+and the note filled in. A `meta.csv` saved from Excel keeps its header and
+separator; with semicolons the numbers are written with decimal commas, as
+German Excel expects them. Fill in `gsd_mm_per_px`, `set_speed_mm_s`,
+`set_angle_deg` and `static` before running the script. Record windows of
+the stopped surface with the same settings as well and give them `static`
+1 (a separate run with `--note "axis stopped"` makes them easy to find);
+they must come out not valid.
+
+Python takes the timestamps from the camera clock when the camera sends
+them. MATLAB `getdata` gives times taken on the host when a frame arrives,
+which jitter by the transfer; for these the line in `meta.csv` gets the
+camera's frame period in `frame_period_s`. One estimate on a 512 px square
+takes a few seconds, so the scripts save one burst every few seconds.
+
+### meta.csv in average mode
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `mode` | | `average` |
+| `file` | | a stack: `.npz`, `.mat` (from `getdata`, rows x columns x 1 x frames, or rows x columns x frames), `.npy` or a multi-page TIFF. The frames lie on the last axis (or on the first, if that is clearly the short one). `file#k` is not allowed here |
+| `frames` | | number of consecutive frames averaged, at least 2 (also even). Empty: `exposures`, else all frames of the stack, if their number is odd. The averaged image is estimated with this number as K |
+| `first_frame` | | first frame averaged, counted from 1 (empty: 1). A longer stack can be listed in several rows, for example with `first_frame` 1, 10, 19 and `frames` 9 |
+| `exposures` | | optional; if given, it must equal `frames` |
+| `frame_period_s` | s | time from one frame to the next. Empty: `flash_period_s` if given, else for host times the period of the `frame_rate` stored in the file, else the period measured from the timestamps in the file (see below). Empty without timestamps: speeds in px per frame only |
+| `exposure_s` | s | exposure of one frame; gives duty = `exposure_s` / frame period unless `duty` is given. Empty: the `exposure_s` stored in the file, if any |
+| `duty` | | exposure / frame period, in [0, 1); empty: from `exposure_s`, else 0 |
+
+The other columns (`gsd_mm_per_px`, `set_speed_mm_s`, `set_angle_deg`,
+`static`, `roi`, `note`) mean the same as in flash mode; `ref_frame_a` and
+`ref_frame_b` are not used, because the frames themselves give the
+reference (step check below). `flash_period_s` is accepted in place of
+`frame_period_s`; if both are given they must be equal.
+
+```
+file,mode,frames,first_frame,frame_period_s,exposure_s,gsd_mm_per_px,set_speed_mm_s,set_angle_deg,static,note
+burst_0001.npz,average,9,,,0.002,0.05,20,0,0,axis at 20 mm/s
+long.npy,average,9,10,0.0125,0.002,0.05,20,0,0,frames 10 to 18 of a longer stack
+burst_0031.npz,average,9,,,0.002,0.05,,,1,axis stopped
+```
+
+Timestamps: a `.npz` entry or `.mat` variable named `t`, `timestamps` or
+`time` (the name in `[data, time] = getdata(vid)`), in s, one per frame of
+the stack (`.npy` and TIFF files hold none). The intervals of the averaged
+frames are checked as in the live scripts: their spread, max - min, must be
+at most 10 % of their median. The measured period (`measured_period_s`) is
+the median interval, which a dropped frame does not change.
+
+Times taken on the host jitter by the transfer: those with `clock` `host` in
+the file, and the times in a `.mat` file without `clock`, since `getdata`
+gives host times. For them the measured period is the mean interval of the
+window, and they are accepted when that mean agrees with the nominal period
+within 10 % and no interval is off by half a period, as in `live_basler`.
+The nominal period is `frame_period_s` (or `flash_period_s`), else the
+period of the `frame_rate` stored in the file, which then also gives the
+speeds in mm/s, as in the live scripts. Without a nominal period the spread
+rule above applies to host times too, and their jitter alone can then flag
+a window; give the camera's frame period in `frame_period_s`.
+
+The script warns if the measured period differs from the period used by
+more than 10 %. `period_source` in `results.csv` says which period the
+speeds in mm/s use: `frame_period_s`, `flash_period_s`, `frame_rate` (host
+times) or `timestamps`.
+
+### Step check
+
+Phase correlation (`fftvel.phase_correlation`) of every pair of consecutive
+averaged frames, on the analysed square, gives the step (dx, dy) in px from
+one frame to the next. Their mean is a second measurement of the motion per
+frame from the same frames, independent of the estimator:
+`step_dx_px`, `step_dy_px` and `step_speed_px` (its length) in px per frame.
+It fills the reference columns as the reference frames do in flash mode:
+`ref_speed_mm_s` is the mean step in mm/s, `ref_speed_diff` and
+`ref_angle_diff_deg` compare the estimate with it, and the summary prints
+their medians over the valid windows with even steps. Phase correlation
+gives a signed direction (dy points down, so the direction is atan2(-dy,
+dx)), while the estimate gives one modulo 180 deg; the difference is taken
+with `fftvel.angle_difference`.
+
+The steps are uneven (`uneven_steps` 1) when their lengths spread (max -
+min) by more than 10 % of their median (`step_spread`) or their directions
+by more than 5 deg (`step_angle_spread_deg`). Causes are a dropped frame
+(one step twice as long), a speed that changes within the window, or
+vibration. `uneven_steps` is also 1 when the timestamps show uneven frame
+intervals; the `warnings` column says which check found it, and the summary
+counts the windows with uneven steps. Steps shorter than 0.25 px are too
+short to check; for them the steps are reported but not compared with the
+estimate, and a static window whose frames move by more than that gets a
+warning.
+
+The estimate assumes equal steps. A window with uneven steps can still come
+out valid: in `example_average/`, the stack with one missing frame gives the
+set speed (7 of its 8 steps are equal), while its mean step is 12.5 % too
+long. Decide before looking at the estimates whether windows with uneven
+steps are excluded, and give the reason (for example, a dropped frame) in
+`note`.
+
 ## results.csv
 
 One row per image (per frame for stacks), in the order of `meta.csv`, with
@@ -291,7 +486,13 @@ comma); a double click puts each row into one cell.
 | `ref_dx_px`, `ref_dy_px`, `ref_peak`, `ref_angle_deg` | phase correlation of the reference frames |
 | `ref_speed_px`, `ref_speed_mm_s` | reference speed in px per flash and mm/s |
 | `ref_speed_diff`, `ref_angle_diff_deg` | `speed_px / ref_speed_px - 1` and estimated minus reference direction |
-| `warnings` | exposure too short, set speed outside the measurable range, saturation, JPEG, large reference displacement |
+| `mode` | `flash` or `average` |
+| `frames`, `first_frame` | average mode: frames averaged (also in `exposures`) and the first of them |
+| `frame_period_s` | average mode: as in `meta.csv` |
+| `measured_period_s`, `period_source` | average mode: frame period measured from the timestamps in the file, and which period the speeds in mm/s use (`frame_period_s`, `flash_period_s`, `frame_rate` or `timestamps`) |
+| `step_dx_px`, `step_dy_px`, `step_speed_px` | average mode: mean step between consecutive frames by phase correlation, in px per frame, and its length; the `ref_` columns compare the estimate with it |
+| `step_spread`, `step_angle_spread_deg`, `uneven_steps` | average mode: spread of the step lengths (relative to their median) and of their directions, and 1 if the steps or the frame intervals are uneven (see [Step check](#step-check)) |
+| `warnings` | exposure too short, set speed outside the measurable range, saturation, JPEG, large reference displacement; in average mode also uneven steps or frame intervals, a duty above 0.25, a measured period that differs from the one used, windows that share frames |
 | `error` | why the row was skipped (`row skipped: ...`, a problem in `meta.csv`) or the file could not be read or estimated |
 
 ## Reporting the result
@@ -323,3 +524,18 @@ single-flash reference frames, 256 x 256 px, 16-bit PNG.
 from `data/surface_texture.png` (a real Basler texture) with exactly known
 motion, so the errors it shows (below 0.1 % and 0.2 deg) come from the
 estimator alone, without the errors of a real axis, gsd or flash timing.
+
+`example_average/` holds a synthetic example of average mode: three stacks
+of 9 frames of 192 x 192 px, 8-bit, as `.npz` files in the format that
+`live_camera.py --save` writes. The frames are the same texture shifted by
+6 px per frame at 30 deg (5 ms frame period, 0.5 ms exposure, noise of 2
+counts per frame): `moving_regular.npz` with regular timestamps and steps,
+`moving_dropped.npz` with one frame missing (one step and one frame interval
+twice as long, flagged by the step check), and `static.npz` of the stopped
+surface. `example_average/make_example.py` writes them. The script marks
+both moving windows valid with speed errors below 0.1 %, flags the one with
+the missing frame, and marks the static one not valid:
+
+```bash
+python experiments/real_measurements.py data/real/example_average/meta.csv --out results.csv
+```

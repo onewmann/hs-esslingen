@@ -1,0 +1,4 @@
+file,mode,frames,first_frame,frame_period_s,exposure_s,duty,gsd_mm_per_px,set_speed_mm_s,set_angle_deg,static,roi,note
+moving_regular.npz,average,9,,0.005,0.0005,,0.05,60,30,0,,"synthetic, 6 px per frame, regular timestamps"
+moving_dropped.npz,average,9,,,0.0005,,0.05,60,30,0,,"synthetic, 6 px per frame, one frame missing (one step twice as long)"
+static.npz,average,9,,,0.0005,,0.05,,,1,,"synthetic, stopped surface"

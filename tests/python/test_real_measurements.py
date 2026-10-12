@@ -1,4 +1,4 @@
-"""experiments/real_measurements.py: meta.csv checks, stacks, the summary and a run on data/real/example."""
+"""experiments/real_measurements.py: meta.csv checks, stacks, the summary, average mode and runs on the examples."""
 
 import csv
 import math
@@ -9,7 +9,7 @@ import sys
 import numpy as np
 import pytest
 
-from fftvel import simulate_pulsed_image
+from fftvel import make_texture, simulate_pulsed_image
 
 
 @pytest.fixture
@@ -216,3 +216,297 @@ def test_warnings_and_summary(rm, tmp_path):
     assert s["off_bound"] == pytest.approx(rm.upper_bound(1, 2))
     assert any(ln.startswith("Static images: none.") for ln in lines)
     assert any(ln.startswith("Valid but off by more than 5 % or 2 deg: 1 of 2") for ln in lines)
+
+
+# Average mode
+
+# values of the run on data/real/example before average mode was added (flash mode must give the same)
+OLD_EXAMPLE = {
+    "flash_a.png": dict(valid=1, speed_px=4.002197201325098, angle_deg=30.017069240380067,
+                        quality=0.9455707004007519, speed_err=0.0005493003312744271,
+                        ref_speed_diff=0.0004216654838808953),
+    "flash_b.png": dict(valid=1, speed_px=5.596782005853841, angle_deg=120.10808733669346,
+                        quality=0.9099130304993869, speed_err=-0.0005746418118142138),
+}
+AVERAGE_COLUMNS = ("frames", "first_frame", "frame_period_s", "measured_period_s", "period_source", "step_dx_px",
+                   "step_dy_px", "step_speed_px", "step_spread", "step_angle_spread_deg", "uneven_steps")
+
+
+def shifted_frames(positions, n=96, seed=0):
+    """Frames of a periodic random texture at the given (x, y) positions in px (exact Fourier shifts)."""
+    m = n + 32
+    tex = np.fft.fft2(make_texture(m, rng=seed))
+    f = np.fft.fftfreq(m)
+    fx, fy = np.meshgrid(f, f)
+    frames = [np.real(np.fft.ifft2(tex * np.exp(-2j * np.pi * (fx * x + fy * y))))[16:16 + n, 16:16 + n]
+              for x, y in positions]
+    return np.stack(frames, axis=2)
+
+
+def counts(frames, rng=0, noise=1.0):
+    """Texture frames as 8-bit counts with noise."""
+    g = np.random.default_rng(rng)
+    return np.clip(np.round(100 + 25 * frames + noise * g.standard_normal(frames.shape)), 0, 255).astype(np.uint8)
+
+
+def test_example_average_folder(repo):
+    folder = repo / "data" / "real" / "example_average"
+    assert sum(p.stat().st_size for p in folder.iterdir()) < 1_000_000
+    with open(folder / "meta.csv", newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert [r["mode"] for r in rows] == ["average"] * 3 and sum(r["static"] == "1" for r in rows) == 1
+    for r in rows:
+        with np.load(folder / r["file"]) as z:
+            assert z["frames"].shape == (192, 192, 9) and z["frames"].dtype == np.uint8, r["file"]
+            assert z["t"].shape == (9,) and float(z["frame_rate"]) == 200 and float(z["exposure_s"]) == 0.0005
+            assert str(z["clock"]) == "camera"
+    assert not (folder / "results.csv").exists()
+
+
+def test_run_on_example_average(repo, tmp_path):
+    example = shutil.copytree(repo / "data" / "real" / "example_average", tmp_path / "example_average")
+    r = subprocess.run([sys.executable, str(repo / "experiments" / "real_measurements.py"),
+                        str(example / "meta.csv"), "--jobs", "2"], capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stderr
+    out = r.stdout
+    res = read_results(example / "results.csv")
+    assert set(res) == {"moving_regular.npz", "moving_dropped.npz", "static.npz"}
+    reg, drop, static = res["moving_regular.npz"], res["moving_dropped.npz"], res["static.npz"]
+    # regular: valid, close to the true 6 px per frame at 30 deg, and close to the mean step
+    assert reg["valid"] == "1" and reg["error"] == "" and reg["warnings"] == "", reg
+    assert abs(float(reg["speed_err"])) < 0.005 and abs(float(reg["angle_err_deg"])) < 0.3
+    assert reg["mode"] == "average" and reg["exposures"] == reg["frames"] == "9" and reg["first_frame"] == "1"
+    assert float(reg["duty"]) == pytest.approx(0.1)                      # exposure_s / frame_period_s
+    assert float(reg["step_dx_px"]) == pytest.approx(6 * np.cos(np.pi / 6), abs=0.02)
+    assert float(reg["step_dy_px"]) == pytest.approx(-3, abs=0.02)
+    assert float(reg["step_spread"]) < 0.02 and float(reg["step_angle_spread_deg"]) < 0.5
+    assert reg["uneven_steps"] == "0" and reg["period_source"] == "frame_period_s"
+    assert float(reg["measured_period_s"]) == pytest.approx(0.005)
+    assert abs(float(reg["ref_speed_diff"])) < 0.005 and abs(float(reg["ref_angle_diff_deg"])) < 0.3
+    assert float(reg["ref_speed_mm_s"]) == pytest.approx(60, rel=0.005)
+    # one frame missing: flagged by the timestamps and by the steps; the period comes from the timestamps
+    assert drop["uneven_steps"] == "1" and float(drop["step_spread"]) == pytest.approx(1, abs=0.02)
+    assert "uneven frame intervals in the timestamps: 5 to 10 ms" in drop["warnings"]
+    assert "uneven steps between consecutive frames (phase correlation)" in drop["warnings"]
+    assert drop["period_source"] == "timestamps" and float(drop["measured_period_s"]) == pytest.approx(0.005)
+    assert float(drop["speed_mm_s"]) == pytest.approx(float(drop["speed_px"]) * 0.05 / 0.005)
+    # stopped surface: not valid; steps too short to check, but the timestamps are regular
+    assert static["valid"] == "0" and static["reason"] and static["uneven_steps"] == "0"
+    assert float(static["step_speed_px"]) < 0.05 and static["step_spread"] == "" and static["ref_speed_diff"] == ""
+    assert "Average mode (emulated multi-flash): 3 windows, 1 with uneven steps (column uneven_steps)" in out
+    assert "  moving_dropped.npz  uneven steps" in out
+    assert "Frame period from the timestamps (frame_period_s empty) for 2 windows" in out
+    assert "Static images marked valid: 0 of 1" in out
+    # the step comparison leaves out the window with uneven steps, whose mean step is 12.5 % too long
+    assert ("Mean step between consecutive frames, phase correlation (1 valid window with even steps): angle "
+            "difference median") in out
+    assert abs(float(drop["ref_speed_diff"]) + 1 / 9) < 0.01
+    assert "moving_dropped.npz: 60 mm/s (6.000 px/frame, frame period 5 ms from the timestamps)" in out
+
+
+def test_old_example_rows_unchanged(rm, repo, tmp_path):
+    folder = repo / "data" / "real" / "example"
+    rows, _, problems, _ = rm.read_meta(folder / "meta.csv")
+    assert problems == []
+    results = [rm.analyse(t) for t in rm.build_tasks(rows)[0]]
+    by_file = {r["file"]: r for r in results}
+    for name, expected in OLD_EXAMPLE.items():
+        for key, value in expected.items():
+            assert by_file[name][key] == pytest.approx(value, rel=1e-7), (name, key)
+    assert by_file["static.png"]["valid"] == 0 and by_file["static.png"]["reason"].startswith("quality 0.29")
+    for r in results:
+        assert r["mode"] == "flash" and all(r[k] is None for k in AVERAGE_COLUMNS), r["file"]
+    # the same meta.csv with the new columns, mode flash and the average-mode columns empty: identical rows
+    with open(folder / "meta.csv", newline="") as f:
+        old = list(csv.reader(f))
+    meta = write_meta(tmp_path / "meta.csv", old[0] + ["mode", "frames", "first_frame", "frame_period_s"],
+                      *[r + ["flash", "", "", ""] for r in old[1:]])
+    for name in ("flash_a.png", "flash_b.png", "static.png", "ref_a.png", "ref_b.png"):
+        shutil.copy(folder / name, tmp_path / name)
+    rows2, _, problems, _ = rm.read_meta(meta)
+    assert problems == []
+    results2 = [rm.analyse(t) for t in rm.build_tasks(rows2)[0]]
+    assert results2 == results
+
+
+def test_average_mat_from_getdata_and_host_times(rm, tmp_path):
+    from scipy.io import savemat
+    v = (2.5, -1.0)
+    _, fr = simulate_pulsed_image(96, v, 1, exposures=11, rng=7, return_frames=True)
+    frames = counts(fr, rng=8)[:, :, None, :]                       # getdata: H x W x 1 x F, uint8
+    jitter = np.array([0, 1.5, -1.2, 0.8, -1.5, 1.0, 0.3, -0.9, 1.4, -0.4, 0.6]) * 1e-3
+    t = (0.01 * np.arange(11) + jitter)[:, None]                    # host times, up to 1.5 ms off
+    for name, clock in (("host.mat", "host"), ("camera.mat", "camera")):
+        savemat(tmp_path / name, dict(frames=frames, t=t, exposure_s=1e-4, frame_rate=100.0, clock=clock))
+    savemat(tmp_path / "manual.mat", dict(data=frames, time=t))     # [data, time] = getdata(...), saved by hand
+    meta = write_meta(tmp_path / "meta.csv",
+                      ["file", "mode", "frames", "first_frame", "frame_period_s", "gsd_mm_per_px", "set_speed_mm_s",
+                       "set_angle_deg"],
+                      ["host.mat", "average", "9", "2", "", "0.1", f"{np.hypot(*v) * 10:g}",
+                       f"{np.degrees(np.arctan2(1, 2.5)):g}"],
+                      ["camera.mat", "average", "9", "2", "", "", "", ""],
+                      ["host.mat", "average", "", "", "", "", "", ""],               # 11 frames, all averaged
+                      ["manual.mat", "average", "9", "2", "0.01", "0.1", "", ""],
+                      ["manual.mat", "average", "9", "", "", "0.1", "", ""])
+    rows, _, problems, _ = rm.read_meta(meta)
+    assert problems == []
+    tasks, failed = rm.build_tasks(rows)
+    assert failed == [] and [t["name"] for t in tasks] == ["host.mat#2-10", "camera.mat#2-10", "host.mat",
+                                                           "manual.mat#2-10", "manual.mat#1-9"]
+    assert tasks[0]["frames"].shape == (96, 96, 9) and tasks[0]["frames"].dtype == np.uint8
+    assert np.array_equal(tasks[0]["frames"], frames[:, :, 0, 1:10]) and tasks[2]["K"] == 11
+    assert np.allclose(tasks[0]["times"], t[1:10, 0]) and tasks[0]["clock"] == "host"
+    assert np.allclose(tasks[3]["times"], t[1:10, 0]) and tasks[3]["clock"] == "host"    # a .mat without clock
+    host, camera, whole, manual, manual_free = (rm.analyse(task) for task in tasks)
+    # host times: accepted against the frame rate in the file, whose period gives the speed, as in live_basler
+    assert host["valid"] == 1 and host["uneven_steps"] == 0 and host["period_source"] == "frame_rate"
+    assert host["speed_px"] == pytest.approx(np.hypot(*v), rel=0.01) and abs(host["angle_err_deg"]) < 0.5
+    assert host["speed_mm_s"] == pytest.approx(host["speed_px"] * 0.1 / 0.01)
+    assert host["measured_period_s"] == pytest.approx((t[9, 0] - t[1, 0]) / 8)       # the mean interval
+    assert abs(host["speed_err"]) < 0.01 and host["warnings"] == ""
+    assert host["exposure_s"] == pytest.approx(1e-4) and host["duty"] == pytest.approx(0.01)   # from the file
+    # the same times in a .mat without clock count as host times; frame_period_s gives the nominal period
+    assert manual["uneven_steps"] == 0 and manual["period_source"] == "frame_period_s"
+    assert manual["speed_mm_s"] == pytest.approx(host["speed_mm_s"])
+    assert "frames 2 to 9 are also averaged in line 5" in manual_free["warnings"]
+    # without a nominal period the spread of the host times (3 ms of 10 ms) is flagged, and the warning says why
+    assert manual_free["uneven_steps"] == 1 and manual_free["period_source"] == "timestamps"
+    assert "uneven frame intervals in the host times" in manual_free["warnings"]
+    assert "give the camera's frame period in frame_period_s" in manual_free["warnings"]
+    assert manual_free["measured_period_s"] == pytest.approx((t[8, 0] - t[0, 0]) / 8)
+    assert host["step_dx_px"] == pytest.approx(v[0], abs=0.03) and host["step_dy_px"] == pytest.approx(v[1], abs=0.03)
+    # the same times taken as exact camera times: their spread (3 ms of 10 ms) is flagged, the steps are even
+    assert camera["uneven_steps"] == 1 and camera["step_spread"] < 0.05
+    assert "uneven frame intervals" in camera["warnings"] and "uneven steps between" not in camera["warnings"]
+    assert whole["exposures"] == 11 and whole["valid"] == 1
+
+
+def test_average_host_times_with_a_dropped_frame(rm, tmp_path):
+    from scipy.io import savemat
+    positions = [k for k in range(15) if k != 6]                    # 14 frames, the 7th lost
+    frames = counts(shifted_frames([(2.0 * k, 1.0 * k) for k in positions]))[:, :, None, :]
+    jitter = 1e-3 * np.array([0, 0.6, -0.5, 0.4, -0.7, 0.2, 0.5, -0.3, 0.6, -0.4, 0.1, 0.7, -0.6, 0.3])
+    savemat(tmp_path / "rec.mat", dict(frames=frames, t=0.01 * np.array(positions, float) + jitter))   # no clock
+    meta = write_meta(tmp_path / "meta.csv", ["file", "mode", "frames", "first_frame", "frame_period_s"],
+                      ["rec.mat", "average", "9", "1", "0.01"],       # 1 to 9: the mean interval 11 % long
+                      ["rec.mat", "average", "13", "2", "0.01"],      # 2 to 14: 8 % long, one interval 20 ms
+                      ["rec.mat", "average", "5", "10", "0.01"])      # 10 to 14: no gap (frames of line 3)
+    rows, _, problems, _ = rm.read_meta(meta)
+    assert problems == []
+    short, long_, after = (rm.analyse(t) for t in rm.build_tasks(rows)[0])
+    assert short["uneven_steps"] == 1 and long_["uneven_steps"] == 1 and after["uneven_steps"] == 0
+    assert "uneven frame intervals in the host times" in short["warnings"]
+    assert "differs from the frame period 10 ms by more than 10 %: a frame was dropped" in short["warnings"]
+    assert long_["warnings"].startswith("frames 2 to 9 are also averaged in line 2")
+    assert "a frame interval in the host times is off by half the frame period (10 ms) or more" in long_["warnings"]
+    assert after["period_source"] == "frame_period_s" and after["valid"] == 1
+    assert after["warnings"] == "frames 10 to 14 are also averaged in line 3, so the two windows are not independent"
+
+
+def test_average_mat73_timestamps(rm, tmp_path):
+    h5py = pytest.importorskip("h5py")
+    _, fr = simulate_pulsed_image(96, (2.0, -1.5), 4, rng=2, return_frames=True)
+    frames = counts(fr)[:, :, None, :]
+    with h5py.File(tmp_path / "rec.mat", "w") as f:            # MATLAB v7.3 stores arrays transposed
+        for name, value, cls in (("frames", frames, "uint8"), ("t", 0.01 * np.arange(9)[:, None], "double"),
+                                 ("clock", np.array([[ord(c)] for c in "host"], dtype=np.uint16), "char"),
+                                 ("frame_rate", np.array([[100.0]]), "double")):
+            f.create_dataset(name, data=value.T).attrs["MATLAB_class"] = np.bytes_(cls)
+    assert rm._extras(str(tmp_path / "rec.mat")) == dict(t=pytest.approx(0.01 * np.arange(9)), clock="host",
+                                                         frame_rate=100.0)
+    meta = write_meta(tmp_path / "meta.csv", ["file", "mode"], ["rec.mat", "average"])
+    rows, _, problems, _ = rm.read_meta(meta)
+    (r,) = [rm.analyse(t) for t in rm.build_tasks(rows)[0]]
+    assert r["valid"] == 1 and r["period_source"] == "frame_rate" and r["measured_period_s"] == pytest.approx(0.01)
+    assert r["speed_px"] == pytest.approx(2.5, rel=0.01) and r["warnings"] == ""
+
+
+def test_average_stack_options_and_warnings(rm, tmp_path):
+    # 10 frames, frames first, 3 px per frame along x; a .npy holds no timestamps
+    stack = counts(shifted_frames([(3.0 * k, 0.0) for k in range(10)]))
+    np.save(tmp_path / "even.npy", np.moveaxis(stack, 2, 0))
+    np.save(tmp_path / "one.npy", stack[:, :, 0])
+    # equal step lengths, but the direction turns by 10 deg after four steps
+    turn = [(3.0 * k, 0.0) for k in range(5)] + [(12 + 3 * np.cos(np.radians(10)) * k,
+                                                  -3 * np.sin(np.radians(10)) * k) for k in range(1, 5)]
+    np.save(tmp_path / "turn.npy", counts(shifted_frames(turn, seed=1)))
+    header = ["file", "mode", "frames", "first_frame", "frame_period_s", "exposure_s", "duty", "gsd_mm_per_px"]
+    meta = write_meta(tmp_path / "meta.csv", header,
+                      ["even.npy", "average", "", "", "", "", "", ""],               # even number of frames
+                      ["even.npy", "average", "9", "3", "", "", "", ""],             # frames 3 to 11 of 10
+                      ["one.npy", "average", "", "", "", "", "", ""],                # not a stack
+                      ["even.npy", "average", "9", "2", "0.01", "0.001", "", "0.05"],
+                      ["even.npy", "average", "9", "", "0.01", "0.005", "", ""],     # duty 0.5
+                      ["even.npy", "average", "9", "", "", "0.003", "", ""],         # no period: duty unknown
+                      ["even.npy", "average", "7", "", "0.01", "0.003", "0.02", ""],  # duty given
+                      ["turn.npy", "average", "", "", "", "", "", ""])
+    rows, _, problems, _ = rm.read_meta(meta)
+    assert problems == []
+    tasks, failed = rm.build_tasks(rows)
+    errors = [r["error"] for r in failed]
+    assert "the stack has 10 frames, an even number; give frames" in errors[0]
+    assert "needs frames 3 to 11, the stack has 10" in errors[1]
+    assert "average mode needs a stack of frames, the file holds an array of 96 x 96" in errors[2]
+    res = [rm.analyse(t) for t in tasks]
+    a, half, unknown, given, turned = res
+    assert a["file"] == "even.npy#2-10" and a["valid"] == 1 and a["period_source"] == "frame_period_s"
+    assert a["duty"] == pytest.approx(0.1) and a["speed_px"] == pytest.approx(3, rel=0.01)
+    assert a["speed_mm_s"] == pytest.approx(a["speed_px"] * 0.05 / 0.01)
+    assert a["ref_speed_mm_s"] == pytest.approx(15, rel=0.01)
+    assert a["measured_period_s"] is None and a["uneven_steps"] == 0 and a["warnings"] == ""
+    assert half["duty"] == pytest.approx(0.5) and "Between 0.4 and 0.6" in half["warnings"]
+    assert unknown["duty"] == 0 and unknown["period_source"] is None and unknown["speed_mm_s"] is None
+    assert given["duty"] == pytest.approx(0.02) and given["exposures"] == 7
+    assert given["warnings"] == "frames 2 to 7 are also averaged in line 5, so the two windows are not independent"
+    assert unknown["warnings"].startswith("the same frames as in line 6, so they count twice in the summary")
+    assert turned["uneven_steps"] == 1 and turned["step_spread"] < 0.05
+    assert 9.5 < turned["step_angle_spread_deg"] < 10.5 and "directions spread over 10." in turned["warnings"]
+    lines = []
+    s = rm.summary(res, log=lines.append)
+    assert s["average"] == 5 and s["uneven"] == 1
+    lines = []
+    rm.summary([res[0], dict(res[2], duty=0.3)], log=lines.append)
+    assert "Speed error |est/set - 1|: no valid moving image with a set speed, gsd and frame period" in lines
+
+
+def test_average_duty_warning_from_exposure(rm, tmp_path):
+    np.save(tmp_path / "s.npy", counts(shifted_frames([(2.0 * k, 1.0 * k) for k in range(9)])))
+    meta = write_meta(tmp_path / "meta.csv", ["file", "mode", "frame_period_s", "exposure_s"],
+                      ["s.npy", "average", "0.01", "0.003"])
+    rows, _, problems, _ = rm.read_meta(meta)
+    assert problems == []
+    (r,) = [rm.analyse(t) for t in rm.build_tasks(rows)[0]]
+    assert r["duty"] == pytest.approx(0.3) and "0.30 of the frame period, more than a quarter" in r["warnings"]
+
+
+def test_average_row_problems(rm, tmp_path):
+    np.save(tmp_path / "s.npy", np.zeros((3, 32, 32), dtype=np.uint8))
+    header = ["file", "mode", "exposures", "frames", "flash_period_s", "frame_period_s", "exposure_s",
+              "ref_frame_a", "ref_frame_b"]
+    meta = write_meta(tmp_path / "meta.csv", header,
+                      ["s.npy", "avg", "9", "", "", "", "", "", ""],
+                      ["s.npy", "", "9", "3", "", "0.01", "", "", ""],
+                      ["s.npy#2", "average", "", "", "", "", "", "", ""],
+                      ["s.npy", "average", "", "", "", "", "", "s.npy", "s.npy"],
+                      ["s.npy", "average", "9", "7", "", "", "", "", ""],
+                      ["s.npy", "average", "", "", "0.02", "0.01", "", "", ""],
+                      ["s.npy", "average", "", "", "", "0.01", "0.01", "", ""],
+                      ["s.npy", "average", "", "1", "", "", "", "", ""],
+                      ["s.npy", "AVERAGE", "", "", "", "", "", "", ""])
+    rows, _, problems, _ = rm.read_meta(meta)
+    for text in ("line 2: mode 'avg' must be flash or average",
+                 "line 3: frames, frame_period_s are for mode average only",
+                 "line 4: s.npy#2: file#k selects one frame; in average mode give first_frame and frames",
+                 "line 5: ref_frame_a and ref_frame_b are for mode flash",
+                 "line 6: exposures 9 and frames 7 differ",
+                 "line 7: frame_period_s 0.01 and flash_period_s 0.02 differ",
+                 "line 8: exposure_s 0.01 is not shorter than the frame period 0.01 s",
+                 "line 9: frames '1' must be an integer >= 2"):
+        assert any(p.startswith(text) for p in problems), text
+    assert len(problems) == 8 and rows[-1]["mode"] == "average" and rows[-1]["problems"] == []
+    # with a mode column, exposures may be left out of the header
+    meta = write_meta(tmp_path / "meta2.csv", ["file", "mode"], ["s.npy", "average"])
+    rows, _, problems, _ = rm.read_meta(meta)
+    assert problems == [] and rows[0]["exposures"] is None
+    meta = write_meta(tmp_path / "meta3.csv", ["file", "mode"], ["s.npy", "flash"])
+    assert rm.read_meta(meta)[2] == ["line 2: exposures is empty; give the number of flashes in the image"]

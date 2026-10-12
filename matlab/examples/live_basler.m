@@ -33,6 +33,10 @@ function live_basler(varargin)
 %                     (512; one estimate then takes several seconds)
 %     'Period'        seconds between estimates (0.5)
 %     'Device'        index into the GenTL device list (1)
+%     'SaveDir'       folder to save every estimated window in, for
+%                     experiments/real_measurements.py ([] = do not save)
+%     'Note'          with 'SaveDir': text for the note column of meta.csv
+%                     ('')
 %
 %   Frame times (average mode): GETDATA returns toolbox times, taken on the
 %   host when a frame arrives, not camera timestamps (those would need
@@ -58,6 +62,25 @@ function live_basler(varargin)
 %   pixels are saturated (EST.saturated), because glints and saturated
 %   areas can give wrong results that are marked valid.
 %
+%   Saving ('SaveDir'): every window taken for an estimate (K frames in
+%   average mode, also those skipped for uneven frame intervals; one frame
+%   in flash mode) is saved as burst_0001.mat or frame_0001.mat, numbered on
+%   from the files already in the folder, with the variables frames (as
+%   GETDATA returns them, H x W x 1 x K, in the class of the camera), t
+%   (the toolbox times of the frames in s), exposure_s (NaN if unknown),
+%   frame_rate (Hz, if the camera reports it) and clock ('host'). A line
+%   for each file is appended to meta.csv in the folder (written with a
+%   header first if it does not exist), with the mode, the number of
+%   flashes or frames, the exposure, the periods known here and 'Note'
+%   filled in; in average mode frame_period_s is the camera's period,
+%   since the toolbox times jitter. Fill in gsd_mm_per_px, set_speed_mm_s,
+%   set_angle_deg and static before running
+%   python experiments/real_measurements.py FOLDER/meta.csv
+%   (data/real/README.md). An existing meta.csv keeps its header and
+%   separator; with semicolons (German Excel) the numbers get decimal
+%   commas. If meta.csv cannot be written (open in Excel), the line is
+%   printed instead.
+%
 %   Note: written against the documented Image Acquisition Toolbox API; it
 %   has not been run in MATLAB or on camera hardware for this repository.
 
@@ -66,7 +89,7 @@ function live_basler(varargin)
     cst = fftvel.internal.constants();
     opts =fftvel.internal.parse_options(varargin, struct('Mode', '', 'L', 4, 'Exposures', [], ...
         'Duty', [], 'FlashPeriod', [], 'Exposure', [], 'FrameRate', [], 'Tol', 0.1, ...
-        'ClipOutliers', false, 'ROI', 512, 'Period', 0.5, 'Device', 1));
+        'ClipOutliers', false, 'ROI', 512, 'Period', 0.5, 'Device', 1, 'SaveDir', [], 'Note', ''));
     if ~(ischar(opts.Mode) || isstring(opts.Mode)) || ~any(strcmpi(char(opts.Mode), {'flash', 'average'}))
         error('live_basler:Mode', ['Choose ''Mode'', ''flash'' (every frame holds several strobe ' ...
             'flashes) or ''Mode'', ''average'' (consecutive frames are averaged).']);
@@ -101,9 +124,37 @@ function live_basler(varargin)
     if flash
         nwin = 1;
         unit = 'px/flash';
+        stem = 'frame';
     else
         nwin = K;
         unit = 'px/frame';
+        stem = 'burst';
+    end
+    if ~(ischar(opts.Note) || (isstring(opts.Note) && isscalar(opts.Note)))
+        error('live_basler:Note', 'Note must be text.');
+    end
+    note = char(opts.Note);
+    save_dir = '';
+    if ~isempty(opts.SaveDir)
+        if ~((ischar(opts.SaveDir) && size(opts.SaveDir, 1) == 1) || ...
+                (isstring(opts.SaveDir) && isscalar(opts.SaveDir)))
+            error('live_basler:SaveDir', 'SaveDir must be the name of a folder, or [].');
+        end
+        save_dir = char(opts.SaveDir);
+        if exist(save_dir, 'file') && ~exist(save_dir, 'dir')
+            error('live_basler:SaveDir', 'SaveDir ''%s'' is a file, not a folder.', save_dir);
+        end
+    elseif ~isempty(note)
+        error('live_basler:Note', 'Note needs SaveDir.');
+    end
+
+    n_saved = 0;                                       % number of the last file in save_dir
+    saved_now = 0;                                     % files saved since the last Start
+    if ~isempty(save_dir)
+        if ~exist(save_dir, 'dir') && ~mkdir(save_dir)
+            error('live_basler:SaveDir', 'Cannot create the folder ''%s''.', save_dir);
+        end
+        n_saved = last_number(save_dir, stem);
     end
 
     % --- camera -----------------------------------------------------------
@@ -178,6 +229,7 @@ function live_basler(varargin)
             set(btn, 'String', 'Stop');
             t_est = []; angle_est = []; speed_est = []; speed_pxs = []; valid_est = false(0);
             t_start = [];
+            saved_now = 0;
             start(vid);
             rate = get_first(src, {'ResultingFrameRate', 'ResultingFrameRateAbs'});
             if isnumeric(rate) && isscalar(rate) && rate > 0
@@ -199,6 +251,11 @@ function live_basler(varargin)
         else
             stop_acquisition();
             plot_results();
+            if saved_now > 0
+                fprintf(['Saved %d files to %s. Fill in gsd_mm_per_px, set_speed_mm_s, set_angle_deg ' ...
+                    'and static in its meta.csv, then run\n  python experiments/real_measurements.py %s\n'], ...
+                    saved_now, save_dir, fullfile(save_dir, 'meta.csv'));
+            end
         end
     end
 
@@ -208,9 +265,14 @@ function live_basler(varargin)
             return
         end
         [frames, ts] = getdata(vid, n);
-        frames = double(frames(:, :, 1, end-nwin+1:end));
-        frames = reshape(frames, size(frames, 1), size(frames, 2), nwin);
+        frames = frames(:, :, :, end-nwin+1:end);       % H x W x 1 x nwin, as getdata returns them
         ts = ts(end-nwin+1:end);
+        saved = '';
+        if ~isempty(save_dir)
+            saved = [' [' save_window(frames, ts) ']'];
+        end
+        frames = double(frames);
+        frames = reshape(frames, size(frames, 1), size(frames, 2), nwin);
         if isempty(t_start)
             t_start = ts(1);
         end
@@ -233,7 +295,7 @@ function live_basler(varargin)
                     nominal = sprintf('%.2f ms', 1e3*cam_period);
                 end
                 title(ax_wr, sprintf(['t = %.1f s: frame intervals %.2f-%.2f ms (camera period ' ...
-                    '%s), skipped'], ts(end) - t_start, 1e3*min(dt), 1e3*max(dt), nominal));
+                    '%s), skipped%s'], ts(end) - t_start, 1e3*min(dt), 1e3*max(dt), nominal, saved));
                 drawnow limitrate;
                 return
             end
@@ -272,14 +334,47 @@ function live_basler(varargin)
         else
             per_s = sprintf(' = %.0f px/s', pxs);
         end
-        title(ax_wr, sprintf('direction %.1f deg, speed %.2f %s%s, quality %.2f%s', ...
-            est.angle_deg, est.speed, unit, per_s, est.quality, state));
+        title(ax_wr, sprintf('direction %.1f deg, speed %.2f %s%s, quality %.2f%s%s', ...
+            est.angle_deg, est.speed, unit, per_s, est.quality, state, saved));
         drawnow limitrate;
         t_est(end + 1) = ts(end) - t_start;
         angle_est(end + 1) = est.angle_deg;
         speed_est(end + 1) = est.speed;
         speed_pxs(end + 1) = pxs;
         valid_est(end + 1) = est.valid;
+    end
+
+    function name = save_window(frames, ts)
+        % Save one window as a .mat file that real_measurements.py reads, and add its line to meta.csv.
+        n_saved = n_saved + 1;
+        saved_now = saved_now + 1;
+        name = sprintf('%s_%04d.mat', stem, n_saved);
+        s = struct('frames', frames, 't', ts, 'exposure_s', exposure_seconds(src), 'clock', 'host');
+        if ~isempty(cam_period)
+            s.frame_rate = 1/cam_period;
+        end
+        save(fullfile(save_dir, name), '-struct', 's', '-v7');
+        row = struct('file', name, 'mode', 'flash', 'exposures', '', 'frames', '', 'flash_period_s', '', ...
+            'frame_period_s', '', 'duty', '', 'exposure_s', '', 'note', note);
+        if flash
+            row.exposures = sprintf('%d', K);
+            if ~isempty(opts.FlashPeriod)
+                row.flash_period_s = sprintf('%.6g', opts.FlashPeriod);
+            end
+        else
+            row.mode = 'average';
+            row.frames = sprintf('%d', K);
+            if ~isempty(cam_period)                    % toolbox times jitter: the camera's period is better
+                row.frame_period_s = sprintf('%.6g', cam_period);
+            end
+        end
+        if ~isempty(opts.Duty)
+            row.duty = sprintf('%.6g', opts.Duty);
+        end
+        if s.exposure_s > 0
+            row.exposure_s = sprintf('%.6g', s.exposure_s);
+        end
+        append_meta(save_dir, row);
     end
 
     function duty = duty_or_zero()
@@ -415,6 +510,111 @@ function name = set_first(src, names, value)
         catch
         end
     end
+end
+
+function k = last_number(folder, stem)
+%LAST_NUMBER  Highest number k of the files STEM_k.mat in FOLDER (0 if there are none).
+    k = 0;
+    files = dir(fullfile(folder, [stem '_*.mat']));
+    for j = 1:numel(files)
+        tok = regexp(files(j).name, ['^' stem '_(\d+)\.mat$'], 'tokens', 'once');
+        if ~isempty(tok)
+            k = max(k, str2double(tok{1}));
+        end
+    end
+end
+
+function append_meta(folder, row)
+%APPEND_META  Append ROW (a struct of text) as a line to FOLDER/meta.csv, in the order of its header.
+%   A new meta.csv gets the header of the columns below. An existing one
+%   keeps its header and separator (comma, semicolon or tab); with
+%   semicolons or tabs the numbers get decimal commas, as German Excel
+%   writes them. If its header lacks a column that ROW fills, or the file
+%   cannot be written, the line is printed instead.
+    columns = {'file', 'mode', 'exposures', 'frames', 'flash_period_s', 'frame_period_s', 'duty', ...
+        'exposure_s', 'gsd_mm_per_px', 'set_speed_mm_s', 'set_angle_deg', 'static', 'roi', 'note'};
+    file = fullfile(folder, 'meta.csv');
+    header = columns;
+    delim = ',';
+    info = dir(file);
+    fresh = isempty(info) || info.bytes == 0;
+    ends_with_newline = true;
+    if ~fresh
+        fid = fopen(file, 'r');
+        if fid < 0
+            print_line(row, columns, sprintf('cannot read %s', file));
+            return
+        end
+        bytes = fread(fid, Inf, 'uint8=>char').';    % any encoding (Excel: Windows-1252), byte by byte
+        fclose(fid);
+        ends_with_newline = bytes(end) == char(10);
+        breaks = [0, find(bytes == char(10) | bytes == char(13)), numel(bytes) + 1];
+        first = '';                                    % first line that is not blank
+        for j = 1:numel(breaks) - 1
+            first = bytes(breaks(j) + 1:breaks(j + 1) - 1);
+            if any(~isspace(first))
+                break
+            end
+            first = '';
+        end
+        fresh = isempty(first);                        % only blank lines: write the header
+    end
+    if ~fresh
+        if numel(first) >= 3 && isequal(double(first(1:3)), [239 187 191])
+            first = first(4:end);                      % UTF-8 byte order mark
+        end
+        delims = {',', ';', char(9)};
+        [~, k] = max(cellfun(@(d) sum(first == d), delims));
+        delim = delims{k};
+        header = lower(strtrim(strsplit(first, delim)));
+        names = fieldnames(row);
+        filled = names(~cellfun(@isempty, struct2cell(row)));
+        missing = filled(~ismember(filled, header));
+        if ~isempty(missing)
+            print_line(row, columns, sprintf('the header of %s has no column %s', file, ...
+                strjoin(missing.', ', ')));
+            return
+        end
+        if ~strcmp(delim, ',')                         % semicolons or tabs: decimal commas, as Excel writes them
+            for name = {'exposures', 'frames', 'flash_period_s', 'frame_period_s', 'duty', 'exposure_s'}
+                row.(name{1}) = strrep(row.(name{1}), '.', ',');
+            end
+        end
+    end
+    fid = fopen(file, 'a');
+    if fid < 0
+        print_line(row, columns, sprintf('cannot write %s (open in Excel?)', file));
+        return
+    end
+    if ~ends_with_newline
+        fprintf(fid, '\n');
+    end
+    if fresh
+        fprintf(fid, '%s\n', strjoin(columns, ','));
+    end
+    fprintf(fid, '%s\n', csv_line(row, header, delim));
+    fclose(fid);
+end
+
+function print_line(row, columns, why)
+%PRINT_LINE  Print the meta.csv line of ROW (with the header) when it cannot be appended.
+    warning('live_basler:meta', '%s; add this line to meta.csv yourself:\n%s\n%s', why, ...
+        strjoin(columns, ','), csv_line(row, columns, ','));
+end
+
+function line = csv_line(row, header, delim)
+%CSV_LINE  Values of ROW in the order of HEADER, separated by DELIM; quoted where needed.
+    cells = repmat({''}, 1, numel(header));
+    for k = 1:numel(header)
+        if isfield(row, header{k})
+            c = row.(header{k});
+            if any(c == delim) || any(c == '"') || any(c == char(10))
+                c = ['"' strrep(c, '"', '""') '"'];
+            end
+            cells{k} = c;
+        end
+    end
+    line = strjoin(cells, delim);
 end
 
 function check_positive(x, name)

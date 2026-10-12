@@ -4,6 +4,7 @@
     python python/examples/live_camera.py --mode average --source pylon --exposure-us 500
     python python/examples/live_camera.py --mode average --source 0           # any webcam through OpenCV
     python python/examples/live_camera.py --mode flash --source recording.avi
+    python python/examples/live_camera.py --mode average --source pylon --frame-rate 80 --exposure-us 2000 --save rec
 
 Basler cameras need pypylon (pip install pypylon), webcams and video files
 OpenCV (pip install -e "./python[examples]", or keep an opencv-python that is
@@ -35,24 +36,45 @@ host clock. Video files only carry nominal times (frame number / frame rate
 stored in the file): they cannot reveal dropped frames, and px/s is only
 right if that frame rate is. Image sequences (img_%04d.png) need --fps.
 
+--save DIR writes every burst (average mode) or every estimated frame (flash
+mode) of a live camera to DIR as burst_0001.npz or frame_0001.npz, numbered
+on from the files already there: frames (rows x cols x frames, in the data
+type of the camera; colour frames as grey), t (the timestamps used, in s),
+clock ('camera' or 'host'), and exposure_s and frame_rate when known. A line
+for each file is appended to DIR/meta.csv (written with a header first if
+it does not exist), with the mode, the number of flashes or frames, the
+exposure and the periods known here filled in, and --note in the note
+column; gsd_mm_per_px, set_speed_mm_s, set_angle_deg and static are left
+for you to fill in before experiments/real_measurements.py evaluates the
+files (data/real/README.md). An existing meta.csv keeps its header and
+separator; with semicolons (German Excel) the numbers get decimal commas.
+If meta.csv cannot be written (open in Excel), the line is printed instead.
+
 --show opens a live plot. Ctrl+C stops.
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
+import io
+import re
 import time
+from pathlib import Path
 from typing import Iterator, List, Optional, Tuple
 
 import numpy as np
 
 from fftvel.core import MIN_LINE_SPACING
-from fftvel.stream import estimate_frame, estimate_stream, estimate_window, frame_step
+from fftvel.stream import estimate_frame, estimate_stream, estimate_window, frame_step, to_grey
 
 Frames = List[Tuple[np.ndarray, float]]
 MAX_FAILED = 20       # consecutive failed grabs, or bursts with a failed grab, before giving up
 READ_RETRIES = 10     # webcam: attempts to read a frame before giving up
 MONO = ("Mono8", "Mono10", "Mono12", "Mono16")    # unpacked formats that pypylon delivers as arrays
+# columns of the meta.csv that --save writes (format: data/real/README.md)
+META_COLUMNS = ("file", "mode", "exposures", "frames", "flash_period_s", "frame_period_s", "duty", "exposure_s",
+                "gsd_mm_per_px", "set_speed_mm_s", "set_angle_deg", "static", "roi", "note")
 
 
 def _cv2():
@@ -162,8 +184,8 @@ def _retrieve(pylon, cam, failed: int):
     return None
 
 
-def pylon_bursts(n: int, frame_rate: Optional[float] = None,
-                 exposure_us: Optional[float] = None) -> Iterator[Tuple[Frames, float, Optional[float]]]:
+def pylon_bursts(n: int, frame_rate: Optional[float] = None, exposure_us: Optional[float] = None,
+                 info: Optional[dict] = None) -> Iterator[Tuple[Frames, float, Optional[float]]]:
     """Bursts of ``n`` consecutive frames from the first Basler camera (average mode).
 
     Yields ``(burst, exposure, period)``: the ``(frame, t)`` pairs with ``t``
@@ -171,9 +193,13 @@ def pylon_bursts(n: int, frame_rate: Optional[float] = None,
     ``period``. If the camera delivers usable timestamps (checked on the
     first burst), ``t`` is camera time and ``period`` is None. Otherwise
     ``t`` is the host clock at retrieval and ``period`` is the nominal frame
-    period, to check the window against (None if unknown).
+    period, to check the window against (None if unknown). A dict passed as
+    ``info`` receives ``frame_rate`` (Hz, as the camera reports it, None if
+    unknown) and ``clock`` ('camera' or 'host').
     """
     pylon, cam, read, nominal = _open_pylon(frame_rate, exposure_us)
+    info = {} if info is None else info
+    info["frame_rate"] = 1 / nominal if nominal else None
     try:
         tick = _tick_seconds(cam)
         cam.MaxNumBuffer.SetValue(max(10, n + 2))
@@ -205,6 +231,7 @@ def pylon_bursts(n: int, frame_rate: Optional[float] = None,
             bad = 0
             if host_clock is None:
                 host_clock = not np.all(np.diff(cam_t) > 0)
+                info["clock"] = "host" if host_clock else "camera"
                 if host_clock:
                     print("note: the camera delivers no usable timestamps (all equal or not increasing); "
                           "using the host clock" + (" and the nominal frame period" if nominal else ""))
@@ -217,15 +244,17 @@ def pylon_bursts(n: int, frame_rate: Optional[float] = None,
         cam.Close()
 
 
-def pylon_frames(frame_rate: Optional[float] = None,
-                 exposure_us: Optional[float] = None) -> Iterator[Tuple[np.ndarray, float, float]]:
+def pylon_frames(frame_rate: Optional[float] = None, exposure_us: Optional[float] = None,
+                 info: Optional[dict] = None) -> Iterator[Tuple[np.ndarray, float, float]]:
     """The newest frame from the first Basler camera, each time one is requested (flash mode).
 
     Yields ``(frame, t, exposure)`` with ``t`` in s since the first frame
     (camera clock, or host clock if the camera sends no timestamps) and the
-    exposure time in s (nan if unknown).
+    exposure time in s (nan if unknown). ``info`` as for :func:`pylon_bursts`.
     """
-    pylon, cam, read, _ = _open_pylon(frame_rate, exposure_us)
+    pylon, cam, read, nominal = _open_pylon(frame_rate, exposure_us)
+    info = {} if info is None else info
+    info["frame_rate"] = 1 / nominal if nominal else None
     try:
         tick = _tick_seconds(cam)
         cam.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
@@ -245,6 +274,7 @@ def pylon_frames(frame_rate: Optional[float] = None,
                 res.Release()
             if t0 is None:
                 host_clock = not t > 0
+                info["clock"] = "host" if host_clock else "camera"
                 if host_clock:
                     print("note: the camera delivers no usable timestamps; using the host clock")
             if host_clock:
@@ -343,6 +373,105 @@ def file_frames(path: str, fps: Optional[float] = None) -> Iterator[Tuple[np.nda
         cap.release()
 
 
+def _native_grey(frame: np.ndarray) -> np.ndarray:
+    """A frame as a 2-D array in its own data type; colour frames become grey (rgb2gray weights), rounded."""
+    a = np.asarray(frame)
+    if a.ndim == 3 and a.shape[2] == 1:
+        return a[..., 0]
+    if a.ndim == 3:
+        g = to_grey(a)
+        if a.dtype.kind in "iu":
+            lim = np.iinfo(a.dtype)
+            g = np.clip(np.round(g), lim.min, lim.max)
+        return g.astype(a.dtype)
+    return a
+
+
+class Recorder:
+    """Writes bursts or frames to a folder as .npz files, each with a line in meta.csv (see --save)."""
+
+    def __init__(self, folder, mode: str, K: int, flash_period: Optional[float] = None,
+                 duty: Optional[float] = None, note: str = ""):
+        self.folder = Path(folder)
+        self.folder.mkdir(parents=True, exist_ok=True)
+        self.mode, self.K, self.flash_period, self.duty, self.note = mode, K, flash_period, duty, note
+        self.stem = "burst" if mode == "average" else "frame"
+        numbers = [re.fullmatch(rf"{self.stem}_(\d+)\.npz", p.name) for p in self.folder.iterdir()]
+        self.count = max([int(m.group(1)) for m in numbers if m] + [0])
+        self.saved = 0
+        self.last = ""
+        self.meta_ok = True
+
+    def save(self, frames, times, exposure: float = float("nan"), frame_rate: Optional[float] = None,
+             clock: Optional[str] = None) -> str:
+        """Write one burst (or one frame) with its timestamps; returns the file name."""
+        self.count += 1
+        name = f"{self.stem}_{self.count:04d}.npz"
+        data = dict(frames=np.stack([_native_grey(f) for f in frames], axis=2),
+                    t=np.asarray(times, dtype=float), clock=clock or "host")
+        if exposure > 0:
+            data["exposure_s"] = float(exposure)
+        if frame_rate:
+            data["frame_rate"] = float(frame_rate)
+        np.savez(self.folder / name, **data)
+        self.saved += 1
+        self.last = name
+        self._meta_line(self._meta_row(name, exposure, frame_rate, clock))
+        return name
+
+    def _meta_row(self, name: str, exposure: float, frame_rate: Optional[float], clock: Optional[str]) -> dict:
+        row = dict(file=name, mode=self.mode, note=self.note)
+        if self.mode == "average":
+            row["frames"] = str(self.K)
+            if clock == "host" and frame_rate:      # host times jitter: the camera's period is the better one
+                row["frame_period_s"] = f"{1 / frame_rate:.6g}"
+        else:
+            row["exposures"] = str(self.K)
+            if self.flash_period:
+                row["flash_period_s"] = f"{self.flash_period:g}"
+        if self.duty is not None:
+            row["duty"] = f"{self.duty:g}"
+        if exposure > 0:
+            row["exposure_s"] = f"{exposure:.6g}"
+        return row
+
+    def _meta_line(self, row: dict) -> None:
+        """Append ``row`` to meta.csv in the order of its header; print it if that is not possible."""
+        path = self.folder / "meta.csv"
+        header, delim, enc = list(META_COLUMNS), ",", "utf-8"
+        try:
+            raw = path.read_bytes() if path.is_file() else b""
+            try:
+                text = raw.decode("utf-8-sig")
+            except UnicodeDecodeError:              # saved by Excel in the Windows encoding
+                text, enc = raw.decode("cp1252", errors="replace"), "cp1252"
+            first = next((ln for ln in text.splitlines() if ln.strip()), "")
+            new = not first                         # no file, an empty one or only blank lines: write the header
+            if not new:
+                delim = max((",", ";", "\t"), key=first.count)
+                header = [c.strip().lower() for c in next(csv.reader([first], delimiter=delim))]
+                missing = [k for k, v in row.items() if v and k not in header]
+                if missing:
+                    raise ValueError(f"its header has no column {', '.join(missing)}")
+                if delim != ",":                    # semicolons or tabs: decimal commas, as Excel writes them there
+                    row = {k: v if k in ("file", "mode", "note") else v.replace(".", ",") for k, v in row.items()}
+            with open(path, "a", newline="", encoding=enc) as f:
+                w = csv.writer(f, delimiter=delim, lineterminator="\n")
+                if raw and not raw.endswith(b"\n"):
+                    f.write("\n")
+                if new:
+                    w.writerow(header)
+                w.writerow([row.get(c, "") for c in header])
+        except (OSError, ValueError) as err:
+            if self.meta_ok:
+                print(f"cannot add to {path} ({getattr(err, 'strerror', None) or err}); add these lines "
+                      f"yourself:\n{','.join(META_COLUMNS)}")
+                self.meta_ok = False
+            buf = io.StringIO()
+            csv.writer(buf, lineterminator="").writerow([row.get(c, "") for c in META_COLUMNS])
+            print(buf.getvalue())
+
+
 def exposure_duty(exposure: float, step: float, warned: set) -> float:
     """Duty for the estimator in average mode: exposure time / frame step, with a warning for risky values."""
     if not (exposure > 0 and step > 0):
@@ -361,9 +490,12 @@ def exposure_duty(exposure: float, step: float, warned: set) -> float:
     return min(duty, 0.99)          # the estimator needs duty < 1
 
 
-def _average_pylon(a, K: int, est: dict):
+def _average_pylon(a, K: int, est: dict, rec: Optional[Recorder] = None):
     warned: set = set()
-    for burst, exposure, period in pylon_bursts(K, a.frame_rate, a.exposure_us):
+    info: dict = {}
+    for burst, exposure, period in pylon_bursts(K, a.frame_rate, a.exposure_us, info):
+        if rec is not None:
+            rec.save([f for f, _ in burst], [t for _, t in burst], exposure, info["frame_rate"], info["clock"])
         duty = a.duty
         if duty is None:
             step, _ = frame_step([t for _, t in burst], a.tol, period)
@@ -371,9 +503,26 @@ def _average_pylon(a, K: int, est: dict):
         yield estimate_window(burst, tol=a.tol, duty=duty, period=period, **est)
 
 
-def _flash_pylon(a, K: int, est: dict):
+def _average_webcam(a, K: int, est: dict, rec: Optional[Recorder] = None):
+    for burst in webcam_bursts(int(a.source), K):
+        if rec is not None:
+            rec.save([f for f, _ in burst], [t for _, t in burst], clock="host")
+        yield estimate_window(burst, tol=a.tol, duty=a.duty or 0.0, **est)
+
+
+def _flash_webcam(a, K: int, est: dict, rec: Optional[Recorder] = None):
+    for frame, t in webcam_frames(int(a.source)):
+        if rec is not None:
+            rec.save([frame], [t], clock="host")
+        yield estimate_frame(frame, t, flash_period=a.flash_period, duty=a.duty or 0.0, **est)
+
+
+def _flash_pylon(a, K: int, est: dict, rec: Optional[Recorder] = None):
     checked = False
-    for frame, t, exposure in pylon_frames(a.frame_rate, a.exposure_us):
+    info: dict = {}
+    for frame, t, exposure in pylon_frames(a.frame_rate, a.exposure_us, info):
+        if rec is not None:
+            rec.save([frame], [t], exposure, info["frame_rate"], info["clock"])
         if not checked and a.flash_period and exposure > 0:
             checked = True
             need = (K - 1 + (a.duty or 0)) * a.flash_period
@@ -422,6 +571,9 @@ def _parse(argv):
     p.add_argument("--frame-rate", type=float, help="Basler: set the frame rate (Hz)")
     p.add_argument("--exposure-us", type=float, help="Basler: set the exposure time (us), auto exposure off")
     p.add_argument("--show", action="store_true", help="live plot of speed over time")
+    p.add_argument("--save", metavar="DIR", help="live cameras: write every burst (average mode) or frame "
+                   "(flash mode) to DIR as .npz, with a line for each in DIR/meta.csv")
+    p.add_argument("--note", default="", help="with --save: text for the note column of meta.csv")
     a = p.parse_args(argv)
     if a.L < 1:
         p.error("--L must be at least 1")
@@ -443,6 +595,12 @@ def _parse(argv):
         p.error("--flash-period is for --mode flash; in average mode the frame times give px/s")
     if a.source != "pylon" and (a.frame_rate or a.exposure_us):
         p.error("--frame-rate and --exposure-us need --source pylon")
+    if a.save is not None and a.source != "pylon" and not a.source.isdigit():
+        p.error("--save is for live cameras (pylon or a webcam index); a video file is already a recording")
+    if a.note and a.save is None:
+        p.error("--note needs --save")
+    if a.save is not None and Path(a.save).exists() and not Path(a.save).is_dir():
+        p.error(f"--save {a.save}: not a folder")
     return a
 
 
@@ -453,14 +611,18 @@ def main(argv=None):
     is_file = a.source != "pylon" and not a.source.isdigit()
     if is_file and "%" in a.source and not a.fps:
         raise SystemExit("an image sequence has no frame times (OpenCV assumes 25 fps); give --fps")
+    rec = None
+    if a.save is not None:
+        rec = Recorder(a.save, a.mode, K, a.flash_period, a.duty, a.note)
+        print(f"saving every {'burst' if a.mode == 'average' else 'estimated frame'} to {rec.folder} "
+              f"({rec.stem}_{rec.count + 1:04d}.npz, ...), with a line for each in meta.csv there")
 
     if a.mode == "flash":
         duty = a.duty or 0.0
         if a.source == "pylon":
-            results = _flash_pylon(a, K, est)
+            results = _flash_pylon(a, K, est, rec)
         elif a.source.isdigit():
-            results = (estimate_frame(f, t, flash_period=a.flash_period, duty=duty, **est)
-                       for f, t in webcam_frames(int(a.source)))
+            results = _flash_webcam(a, K, est, rec)
         else:
             every = a.every or 1
             results = (estimate_frame(f, t, flash_period=a.flash_period, duty=duty, **est)
@@ -468,10 +630,9 @@ def main(argv=None):
         unit = "px/flash"
     else:
         if a.source == "pylon":
-            results = _average_pylon(a, K, est)
+            results = _average_pylon(a, K, est, rec)
         elif a.source.isdigit():
-            results = (estimate_window(b, tol=a.tol, duty=a.duty or 0.0, **est)
-                       for b in webcam_bursts(int(a.source), K))
+            results = _average_webcam(a, K, est, rec)
         else:
             results = estimate_stream(file_frames(a.source, a.fps), every=a.every, tol=a.tol,
                                       duty=a.duty or 0.0, **est)
@@ -501,7 +662,9 @@ def main(argv=None):
             if header:                  # printed after the camera has reported its settings
                 print(header)
                 header = ""
-            print(f"{r.t:9.3f} {r.angle_deg:9.1f} {r.speed:9.2f} {r.speed_per_s:8.1f} {r.quality:7.2f}  {_state(r)}")
+            saved = f"  [{rec.last}]" if rec is not None else ""
+            print(f"{r.t:9.3f} {r.angle_deg:9.1f} {r.speed:9.2f} {r.speed_per_s:8.1f} {r.quality:7.2f}  "
+                  f"{_state(r)}{saved}")
             if a.show:
                 if not plt.fignum_exists(fig.number):
                     break
@@ -520,6 +683,10 @@ def main(argv=None):
             results.close()
     if header:
         print("no estimate" + (f" (average mode needs {K} frames)" if is_file and a.mode == "average" else ""))
+    if rec is not None and rec.saved:
+        print(f"saved {rec.saved} file{'s' if rec.saved > 1 else ''} to {rec.folder}. Fill in gsd_mm_per_px, "
+              f"set_speed_mm_s, set_angle_deg and static in its meta.csv, then run "
+              f"python experiments/real_measurements.py {rec.folder / 'meta.csv'}")
     if a.show:
         plt.ioff()
         plt.show()          # keeps the plot open after a file ends or after Ctrl+C
