@@ -17,7 +17,8 @@ function [speed, quality, fit] = fit_speed(g, jpos, L, npad, n, angle_deg, K, du
 %   the first spectral zero still lies well inside the profile, to NPAD/4,
 %   where the motion lines are four bins apart. The grid extends down to
 %   VMIN/4 as a guard band: slower motion then lands there instead of on a
-%   wrong in-range speed, and FIT.in_range is false. With PadFactor > 2
+%   wrong in-range speed, and FIT.in_range is false; it is also false
+%   when the best speed lies on the last grid point. With PadFactor > 2
 %   the grid reaches speeds at which exposures one step apart no longer
 %   overlap within the window; the model is then flat (DUTY = 0), and its
 %   score is set to 0 instead of a ratio of rounding errors.

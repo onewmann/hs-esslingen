@@ -40,8 +40,8 @@ function c = constants()
         c.MIN_LINE_SPACING = 4;          % vmax = npad/MIN_LINE_SPACING
         c.GUARD_FACTOR = 4;              % the speed grid extends down to vmin/GUARD_FACTOR
         c.TREND_DEGREE = 3;              % degree of the polynomial that absorbs the texture spectrum
-        c.TEMPLATE_FLOOR = 1e-3;         % dirichlet_template returns 0.5*log(P + TEMPLATE_FLOOR)
-        c.FLAT_MODEL = 1e-6;             % fit_speed: score 0 where the detrended model is flat
+        c.TEMPLATE_FLOOR = 1e-3;         % dirichlet_template and box_template return 0.5*log(P + TEMPLATE_FLOOR)
+        c.FLAT_MODEL = 1e-6;             % fit_speed, fit_blur: score 0 where the detrended model is flat
 
         % Validity
         c.NULL_K = 9;                    % null quality tanh(NULL_K/sqrt(m - NULL_OFFSET)) ...

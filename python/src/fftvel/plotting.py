@@ -13,7 +13,10 @@ def plot_estimate(bp, est: Estimate, frame=None, fig=None):
     """Show pulsed image, log spectrum, ripple profile and the speed fit.
 
     ``est`` must come from ``estimate_velocity(..., diagnostics=True)``.
-    Returns the matplotlib figure.
+    ``frame``, if given, is a single exposure shown in an extra panel (as
+    in MATLAB ``fftvel.plot_estimate(bp, est, frame)``). ``fig`` is the
+    matplotlib figure to draw into (default: a new one). Returns the
+    figure.
     """
     import matplotlib.pyplot as plt
 

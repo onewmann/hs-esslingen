@@ -54,12 +54,17 @@ function live_basler(varargin)
 %   strongly on the exact value, or above 0.9. Keep the exposure below
 %   about 0.3 of the frame step.
 %
+%   Saturation: the script warns once when more than 1 % of the analysed
+%   pixels are saturated (EST.saturated), because glints and saturated
+%   areas can give wrong results that are marked valid.
+%
 %   Note: written against the documented Image Acquisition Toolbox API; it
 %   has not been run in MATLAB or on camera hardware for this repository.
 
     here = fileparts(mfilename('fullpath'));
     addpath(fullfile(here, '..'));
-    opts = fftvel.internal.parse_options(varargin, struct('Mode', '', 'L', 4, 'Exposures', [], ...
+    cst = fftvel.internal.constants();
+    opts =fftvel.internal.parse_options(varargin, struct('Mode', '', 'L', 4, 'Exposures', [], ...
         'Duty', [], 'FlashPeriod', [], 'Exposure', [], 'FrameRate', [], 'Tol', 0.1, ...
         'ClipOutliers', false, 'ROI', 512, 'Period', 0.5, 'Device', 1));
     if ~(ischar(opts.Mode) || isstring(opts.Mode)) || ~any(strcmpi(char(opts.Mode), {'flash', 'average'}))
@@ -241,6 +246,13 @@ function live_basler(varargin)
         end
         est = fftvel.estimate_velocity(bp, 'L', L, 'Exposures', opts.Exposures, 'Duty', duty, ...
             'ClipOutliers', clip, 'Diagnostics', true);
+        if est.saturated > cst.SAT_WARN && ~any(strcmp(warned, 'saturated'))
+            warned{end + 1} = 'saturated';
+            warning('live_basler:saturated', ['%.1f %% of the analysed pixels are saturated ' ...
+                '(more than %g %%); saturated areas and glints can give wrong results that are ' ...
+                'marked valid. Lower the exposure or the flash energy.'], 100*est.saturated, ...
+                100*cst.SAT_WARN);
+        end
         if flash
             set(h_bp, 'CData', est.diag.spectrum);
         else

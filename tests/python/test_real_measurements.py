@@ -45,8 +45,13 @@ def test_example_folder(repo):
         rows = list(csv.DictReader(f))
     assert len(rows) == 3 and sum(r["static"] == "1" for r in rows) == 1
     for name in [r["file"] for r in rows] + ["ref_a.png", "ref_b.png"]:
+        with open(folder / name, "rb") as f:
+            head = f.read(26)
+        assert head[12:16] == b"IHDR" and head[24:26] == bytes([16, 0]), name     # 16-bit grey PNG
         with Image.open(folder / name) as im:
-            assert im.mode == "I;16" and im.size == (256, 256), name
+            # Pillow >= 10.3 opens 16-bit grey as I;16, older versions as I (32-bit)
+            assert im.mode in ("I;16", "I") and im.size == (256, 256), name
+            assert np.asarray(im).max() > 255, name
     assert not (folder / "results.csv").exists()
 
 

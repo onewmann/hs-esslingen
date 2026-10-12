@@ -16,7 +16,8 @@ def make_texture(m: int, corr_len: float = DEFAULT_CORR_LEN, rng=None) -> np.nda
 
     White noise is shaped with the matching power spectrum
     ``(1 + (2*pi*corr_len*f)**2)**-1.5``; the result has zero mean and unit
-    standard deviation.
+    standard deviation. ``rng`` is a seed or a ``numpy.random.Generator``
+    (default: a new generator with a random seed).
     """
     rng = np.random.default_rng(rng)
     f = np.fft.fftfreq(m)

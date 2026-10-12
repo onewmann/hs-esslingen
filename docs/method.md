@@ -308,8 +308,8 @@ The table itself is updated by hand ([CONTRIBUTING.md](../CONTRIBUTING.md#consta
 | `MIN_LINE_SPACING` | 4 | Upper end of the measurable range: vmax = npad/MIN\_LINE\_SPACING, where the motion lines are this many bins apart. |
 | `GUARD_FACTOR` | 4 | The speed grid extends down to vmin/GUARD\_FACTOR as a guard band; a best speed there gives in\_range = false. |
 | `TREND_DEGREE` | 3 | Degree of the polynomial in jpos that absorbs the smooth texture spectrum before the correlation (cubic). |
-| `TEMPLATE_FLOOR` | 0.001 | The Dirichlet template is 0.5\*log(P + TEMPLATE\_FLOOR). |
-| `FLAT_MODEL` | 1e-06 | Speeds whose detrended template has a norm below FLAT\_MODEL times the norm of the template score 0 (flat model, no information). |
+| `TEMPLATE_FLOOR` | 0.001 | The Dirichlet and box templates are 0.5\*log(P + TEMPLATE\_FLOOR). |
+| `FLAT_MODEL` | 1e-06 | Speeds (or blur lengths) whose detrended template has a norm below FLAT\_MODEL times the norm of the template score 0 (flat model, no information). |
 | `NULL_K` | 9 | Null quality tanh(NULL\_K/sqrt(m - NULL\_OFFSET)): the largest quality was tanh(8.41/sqrt(m-5)) on the 1008 calibration images without motion and tanh(8.64/sqrt(m-5)) on all 2268 simulated images without motion (experiments/calibrate\_threshold.py); none of them is valid with 9. |
 | `NULL_OFFSET` | 5 | Points taken from the m independent profile points: TREND\_DEGREE + 1 by the polynomial and 1 by the fit; the threshold is infinite for m &lt;= NULL\_OFFSET. |
 | `INDEPENDENT_PAD` | 2 | Independent profile points m = min(points, floor(INDEPENDENT\_PAD\*n\*points/npad)): padding beyond this factor only interpolates and does not lower the threshold. |
@@ -318,7 +318,7 @@ The table itself is updated by hand ([CONTRIBUTING.md](../CONTRIBUTING.md#consta
 | `BLUR_STEP` | 0.5 | Blur check: the continuous blur of box\_template is sampled every BLUR\_STEP px (for a blur of K\*BLUR\_STEP px it equals the Dirichlet template of K exposures BLUR\_STEP apart). |
 | `BLUR_GAP` | 0.0 | Blur check: blur\_like if quality - quality\_blur &lt; BLUR\_GAP (0: one continuous exposure, motion blur without flashes, fits better than the K flashes) and the speed is below npad/max(profile\_j), where the repeated lines of the flashes lie beyond the fitted profile. |
 | `SAT_SHARE` | 0.005 | saturated: the share of pixels at the maximum counts only when it is at least SAT\_SHARE, unless the maximum is the largest value of an integer type (then any share counts). |
-| `SAT_WARN` | 0.01 | Front ends (command line, stream, experiments/real\_measurements.py) warn when saturated exceeds SAT\_WARN. |
+| `SAT_WARN` | 0.01 | Front ends (command line, stream, matlab/examples/live\_basler.m, experiments/real\_measurements.py) warn when saturated exceeds SAT\_WARN. |
 | `SIM_MARGIN` | 32 | Simulator: the texture is at least n + (K-1+duty)\*max\|v\| + SIM\_MARGIN px in both directions. |
 | `DEFAULT_CORR_LEN` | 1.5 | Simulator: default correlation length of the random texture in px. |
 | `GREY_WEIGHTS` | 0.2989, 0.587, 0.114 | R, G, B weights of the conversion of colour images to grey (those of MATLAB rgb2gray). |
@@ -382,12 +382,16 @@ kinds of tests keep the two identical.
   `constants.m` and `tests/constants.json`, and a test in each language checks
   them against the file.
 
-Images without motion at 32 and 64 px are stored in
-`tests/parity/fixed_inputs.mat`, because MATLAB and Octave draw different
-random numbers from the same seed. Changing the algorithm means changing both
-implementations, the constants file if needed, and regenerating the parity
-cases. On 12 October 2026 the Python suite passed with 306 tests and the
-Octave suite with all 9 test files:
+MATLAB and Octave draw different random numbers from the same seed, so a
+MATLAB run checks random inputs that Octave has never seen. Inputs that fail a
+check for some random draws are therefore stored in
+`tests/parity/fixed_inputs.mat`, as the same images the Python tests use:
+images without motion at 32 and 64 px, a static repeating tile, the hot-pixel
+image and the image of 8 exposures at 0.6 px per step of the option tests, and
+the texture of the phase-correlation tests. Changing the algorithm means
+changing both implementations, the constants file if needed, and regenerating
+the parity cases. On 12 October 2026 the Python suite passed with 306 tests
+and the Octave suite with all 9 test files:
 
 ```bash
 python3 -m pytest -q tests/python

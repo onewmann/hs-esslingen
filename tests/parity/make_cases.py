@@ -8,9 +8,15 @@ creates ``cases.mat`` (input images, float32; uint8 for the frame stack) and
 MATLAB/Octave and Python both reproduce ``expected.csv`` from ``cases.mat``.
 
 It also writes ``fixed_inputs.mat``: images without motion (simulated static
-scenes and white noise, 32 and 64 px) and a static repeating texture, saved
-once so that both test suites check the same images whatever their random
-generator (MATLAB and Octave draw different numbers from the same seed).
+scenes and white noise, 32 and 64 px), a static repeating texture, and
+inputs of the MATLAB tests that would otherwise be drawn at random and fail
+for some draws: the 8-bit image of the hot-pixel check and the image of 8
+exposures at 0.6 px per step (``tests/matlab/test_model_options.m``) and the
+texture of ``tests/matlab/test_phase_correlation.m``. These three are the
+images that ``tests/python/test_model_options.py`` and
+``tests/python/test_phase_correlation.py`` draw. All are saved once so that
+both test suites check the same images whatever their random generator
+(MATLAB and Octave draw different numbers from the same seed).
 
 Columns of ``expected.csv`` after ``valid`` give the options of each case
 (0 means the default) and further results:
@@ -29,7 +35,8 @@ from pathlib import Path
 import numpy as np
 from scipy.io import savemat
 
-from fftvel import estimate_velocity, pulsed_from_stack, simulate_pulsed_image
+from fftvel import (angle_difference, estimate_velocity, phase_correlation, pulsed_from_stack,
+                    simulate_pulsed_image)
 from fftvel.core import crop_square
 from fftvel.simulate import make_texture
 
@@ -91,15 +98,62 @@ def with_glints(x, top):
     return np.minimum(x + 20 * x.std() * spots, top)
 
 
+def shifted(tex, dx, dy):
+    """``tex`` moved by ``(dx, dy)`` px (x along columns, y down), periodic band-limited shift."""
+    fy = np.fft.fftfreq(tex.shape[0])
+    fx = np.fft.fftfreq(tex.shape[1])
+    return np.real(np.fft.ifft2(np.fft.fft2(tex) * np.exp(-2j * np.pi * np.add.outer(fy * dy, fx * dx))))
+
+
+def check_drawn_inputs(out):
+    """The images drawn for the MATLAB tests pass their checks with half the tolerance or less."""
+    clean = out["hot96"].astype(float)
+    x = clean.copy()
+    x[30, 30] = 255
+    x[50, 60] = 255
+    off = estimate_velocity(x)
+    on = estimate_velocity(x, clip_outliers=True)
+    print(f"hot96: without clipping {off.speed:.4f} px, clipped {on.speed:.4f} px at {on.angle_deg:.3f} deg")
+    assert off.valid and abs(off.speed / np.hypot(20, 30) - 1) < 0.005
+    assert on.valid and abs(angle_difference(on.angle_deg, np.rad2deg(np.arctan2(0.5, 1.5)))) < 0.25
+    assert abs(on.speed / np.hypot(1.5, 0.5) - 1) < 0.005
+    assert estimate_velocity(clean, clip_outliers=True) == estimate_velocity(clean)
+    e = estimate_velocity(out["exposures8"].astype(float), exposures=8)
+    print(f"exposures8: {e.speed:.4f} px at {e.angle_deg:.3f} deg")
+    assert e.valid and abs(angle_difference(e.angle_deg, 25)) < 0.25 and abs(e.speed / 0.6 - 1) < 0.005
+    tex = out["texture256"].astype(float)
+    a = tex[40:104, 20:116]
+    b = shifted(tex, 5.3, -2.6)[40:104, 20:116]
+    err = [np.subtract(phase_correlation(a, b)[:2], (5.3, -2.6)),
+           np.subtract(phase_correlation(b, a)[:2], (-5.3, 2.6)),
+           np.subtract(phase_correlation(a.T, b.T)[:2], (-2.6, 5.3))]
+    sign = np.abs(err).max()
+    a = tex[::4, ::2]
+    half = max(np.abs(np.subtract(phase_correlation(a, shifted(a, *d))[:2], d)).max()
+               for d in ((63.6, 0.3), (-63.6, -0.3), (0.3, 31.6), (-0.3, -31.6)))
+    row = abs(phase_correlation(tex[:1, 40:168], shifted(tex[:1, :], -5.7, 0)[:, 40:168])[0] + 5.7)
+    print(f"texture256: errors {sign:.4f} (sign), {half:.4f} (near half the size), {row:.4f} px (single row)")
+    assert sign < 0.01 and half < 0.025 and row < 0.015
+
+
 def fixed_inputs():
-    """Images for the no-motion and isotropy tests, checked here for a clear margin."""
+    """Images for the no-motion and isotropy tests, checked here for a clear margin, and images
+    that the MATLAB tests would otherwise draw (the same calls as in the Python tests)."""
     out = {}
     for k in (1, 2, 3):
         out[f"static32_{k}"] = simulate_pulsed_image(32, (0, 0), 4, rng=k)
         out[f"noise32_{k}"] = np.random.default_rng(k).standard_normal((32, 32))
         out[f"noise64_{k}"] = np.random.default_rng(1000 + k).standard_normal((64, 64))
     out["tile16"] = crop_square(tile_texture(512, 16, 0.3, 7), 128)
+    # tests/python/test_model_options.py: hot_pixel_image(0) before the hot pixels are set, and
+    # 8 exposures at 0.6 px per step and 25 deg; tests/python/test_phase_correlation.py: the texture
+    a = np.deg2rad(25)
+    drawn = {"hot96": eight_bit(simulate_pulsed_image(96, (1.5, -0.5), 4, rng=0)),
+             "exposures8": simulate_pulsed_image(256, (0.6 * np.cos(a), -0.6 * np.sin(a)), 4, exposures=8, rng=8),
+             "texture256": make_texture(256, 1.5, np.random.default_rng(11))}
     out = {k: v.astype(np.float32) for k, v in out.items()}
+    drawn = {k: v.astype(np.float32) for k, v in drawn.items()}
+    check_drawn_inputs(drawn)
     for name, img in out.items():
         pads = (2, 6, 8) if name.startswith("noise") else (2,)
         for pad in pads:
@@ -110,7 +164,7 @@ def fixed_inputs():
                 assert e.quality > e.threshold + 0.1 and e.in_range and e.isotropic, name
             else:
                 assert e.quality < e.threshold - 0.05 and not e.valid, (name, pad)
-    return out
+    return out | drawn
 
 
 def main():

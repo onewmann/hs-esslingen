@@ -51,7 +51,9 @@ function est = estimate_velocity(bp, varargin)
 %     geba          max(WR)/mean(WR) of the ripple profile
 %     quality       correlation between the measured profile and the model
 %     quality_perp  quality of the same fit perpendicular to angle_deg
-%     in_range      false if the best speed lies below the measurable range
+%     in_range      false if the best speed lies in the guard band below
+%                   the measurable range or on the last point of the speed
+%                   grid, its top end at about npad/4
 %     isotropic     true if the perpendicular fit is about as good
 %                   (quality - quality_perp < 0.15) and gives about the
 %                   same speed (|log(speed_perp/speed)| < 0.12). Motion
@@ -91,6 +93,15 @@ function est = estimate_velocity(bp, varargin)
 %                   least 0.5 % and the square is not constant, else 0.
 %                   Saturated areas and glints can give wrong results that
 %                   are marked valid
+%     diag          only with 'Diagnostics', true: a struct of intermediate
+%                   results, spectrum (log spectrum, npad x npad), theta
+%                   and wr (angle grid in degrees and ripple profile WR),
+%                   profile_j, profile and model (bins of the half profile
+%                   along angle_deg, the profile and the fitted model),
+%                   speed_grid and speed_score (speed grid and fit quality
+%                   per speed), speed_perp (speed of the perpendicular
+%                   fit), blur_grid and blur_score (blur lengths and
+%                   quality of the blur fit)
 %
 %   Method: the motion multiplies the image spectrum by a Dirichlet kernel,
 %   which shows up as straight lines perpendicular to v, spaced
@@ -100,7 +111,7 @@ function est = estimate_velocity(bp, varargin)
 %   2L+1 exposures to the projection along that direction.
 %
 %   The model, the ripple profile WR and GEBA follow Chapter 3 of J. Horn's
-%   doctoral thesis (Universitaet Karlsruhe, 2007; full reference in
+%   doctoral thesis (Universitaet Karlsruhe (TH), 2006; full reference in
 %   README.md). The speed fit, the validity threshold, the isotropy check
 %   and the blur check were added in this implementation.
 %

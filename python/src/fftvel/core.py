@@ -1,8 +1,8 @@
 """Velocity estimation from a single pulsed-exposure image.
 
 The model, the ripple profile WR and the quality measure GEBA follow Chapter 3
-of J. Horn's doctoral thesis (Universitaet Karlsruhe, 2007; full reference in
-README.md). The speed fit, the validity threshold, the isotropy check and the
+of J. Horn's doctoral thesis (Universitaet Karlsruhe (TH), 2006; full reference
+in README.md). The speed fit, the validity threshold, the isotropy check and the
 blur check were added in this implementation.
 
 This module mirrors the MATLAB/Octave package ``matlab/+fftvel`` line by
@@ -71,8 +71,8 @@ VMIN_FACTOR = 1.5            # vmin = VMIN_FACTOR*npad/(K*max(jpos)): first zero
 MIN_LINE_SPACING = 4         # vmax = npad/MIN_LINE_SPACING: motion lines at least this many bins apart
 GUARD_FACTOR = 4             # the speed grid extends down to vmin/GUARD_FACTOR (guard band)
 TREND_DEGREE = 3             # degree of the polynomial in jpos that absorbs the texture spectrum
-TEMPLATE_FLOOR = 1e-3        # dirichlet_template returns 0.5*log(P + TEMPLATE_FLOOR)
-FLAT_MODEL = 1e-6            # fit_speed: score 0 where the detrended model is below this fraction of the model
+TEMPLATE_FLOOR = 1e-3        # dirichlet_template and box_template return 0.5*log(P + TEMPLATE_FLOOR)
+FLAT_MODEL = 1e-6            # fit_speed, fit_blur: score 0 where the detrended model is below this share of it
 
 # Validity
 NULL_K = 9                   # null_quality(m) = tanh(NULL_K/sqrt(m - NULL_OFFSET)) ...
@@ -107,7 +107,9 @@ class Estimate:
     geba : ``max(WR) / mean(WR)`` of the ripple profile.
     quality : correlation between the measured profile and the model.
     quality_perp : quality of the same fit perpendicular to the direction.
-    in_range : False if the best speed lies below the measurable range.
+    in_range : False if the best speed lies in the guard band below the
+        measurable range (below ``vmin``, see :func:`fit_speed`) or on the
+        last point of the speed grid, its top end at about ``npad/4``.
     isotropic : True if the perpendicular fit is about as good
         (``quality - quality_perp < 0.15``) and gives about the same speed
         (``|log(speed_perp/speed)| < 0.12``). Motion makes the spectrum
@@ -143,6 +145,15 @@ class Estimate:
         that value; otherwise the share at the maximum if it is at least
         0.5 % and the square is not constant, else 0. Saturated areas and
         glints can give wrong results that are marked valid.
+    diag : None, or with ``diagnostics=True`` a dict of intermediate
+        results: ``spectrum`` (log spectrum, ``npad``-by-``npad``),
+        ``theta`` and ``wr`` (angle grid in degrees and ripple profile WR),
+        ``profile_j``, ``profile`` and ``model`` (bins of the half profile
+        along ``angle_deg``, the profile and the fitted model),
+        ``speed_grid`` and ``speed_score`` (speed grid and fit quality per
+        speed), ``speed_perp`` (speed of the perpendicular fit), and
+        ``blur_grid`` and ``blur_score`` (blur lengths and quality of the
+        blur fit).
     """
 
     angle_deg: float
@@ -255,8 +266,10 @@ def crop_square(img: np.ndarray, n: Optional[int] = None) -> np.ndarray:
     img = np.asarray(img)
     if img.ndim != 2:
         raise ValueError(f"expected a 2-D grey-scale image, got shape {img.shape}. Convert a colour "
-                         f"image to grey; for a frame stack use pulsed_from_stack(frames), which "
-                         f"averages exactly 2L+1 frames")
+                         f"image to grey. For a frame stack use bp, K = pulsed_from_stack(frames, L=L) "
+                         f"(or exposures=K instead of L), which averages the first 2L+1 (or K) frames, "
+                         f"or all of them if neither is given and their number is odd; then pass "
+                         f"exposures=K to estimate_velocity")
     h, w = img.shape
     if n is None:
         n = min(h, w)
@@ -563,10 +576,11 @@ def fit_speed(g: np.ndarray, jpos: np.ndarray, L: int, npad: int, n: int, angle_
     texture spectrum. The measurable range runs from
     ``vmin = 1.5*npad/(K*max(jpos))`` to ``npad/4``; the grid extends down
     to ``vmin/4`` as a guard band, and ``fit['in_range']`` is False when the
-    best speed lands there. With ``pad_factor > 2`` the grid reaches speeds
-    at which exposures one step apart no longer overlap within the window;
-    the model is then flat (``duty = 0``), and its score is set to 0
-    instead of a ratio of rounding errors.
+    best speed lands there or on the last grid point (the top end). With
+    ``pad_factor > 2`` the grid reaches speeds at which exposures one step
+    apart no longer overlap within the window; the model is then flat
+    (``duty = 0``), and its score is set to 0 instead of a ratio of
+    rounding errors.
     Returns ``(speed, quality, fit)`` with
     ``fit = {'v', 'score', 'vmin', 'in_range', 'model'}``.
     """

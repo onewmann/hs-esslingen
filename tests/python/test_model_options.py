@@ -37,6 +37,8 @@ def assert_correct(e, speed, angle, tol=0.01):
 @pytest.mark.parametrize("K", [8, 10])
 @pytest.mark.parametrize("speed, angle", [(0.6, 25), (5.0, 110)])
 def test_even_number_of_exposures(K, speed, angle):
+    # the image of K = 8 at 0.6 px per step is stored for the MATLAB tests (exposures8 in
+    # tests/parity/fixed_inputs.mat, written by tests/parity/make_cases.py)
     bp = simulate_pulsed_image(256, velocity(speed, angle), 4, exposures=K, rng=K)
     e = estimate_velocity(bp, exposures=K)
     assert e.exposures == K and e.L == 4
@@ -75,7 +77,10 @@ def test_roi():
 
 
 def hot_pixel_image(seed):
-    """8-bit texture (mean 100, std 15 DN) moving by (1.5, -0.5) with two static hot pixels."""
+    """8-bit texture (mean 100, std 15 DN) moving by (1.5, -0.5) with two static hot pixels.
+
+    The clean image of seed 0 is stored for the MATLAB tests (hot96 in tests/parity/fixed_inputs.mat,
+    written by tests/parity/make_cases.py)."""
     bp = simulate_pulsed_image(96, (1.5, -0.5), 4, rng=seed)
     x = np.clip(np.round(100 + 15 * bp / bp.std()), 0, 255)
     clean = x.copy()

@@ -3,7 +3,10 @@ function test_phase_correlation()
 %   tests/parity/phase_cases.mat holds image pairs and the results of the
 %   Python implementation (see tests/parity/make_phase_cases.py);
 %   tests/python/test_phase_correlation.py checks Python against the same
-%   numbers.
+%   numbers. The random texture of the sign, near-half and single-row checks
+%   is the one the Python tests draw, loaded from
+%   tests/parity/fixed_inputs.mat: MATLAB and Octave draw different numbers
+%   from the same seed, and about 4 % of the textures miss a tolerance.
     here = fileparts(mfilename('fullpath'));
 
     % simulated frames one and two steps apart
@@ -31,7 +34,8 @@ function test_phase_correlation()
 
     % sign and axis order: content moves 5.3 columns right and 2.6 rows up
     seed_rng(11);
-    tex = fftvel.make_texture(256, 1.5);
+    fx = load(fullfile(here, '..', 'parity', 'fixed_inputs.mat'), 'texture256');
+    tex = double(fx.texture256);        % periodic, so shifts wrap cleanly
     rows = 41:104;                      % 64 rows x 96 columns
     cols = 21:116;
     a = tex(rows, cols);

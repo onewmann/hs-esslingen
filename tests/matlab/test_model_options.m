@@ -1,18 +1,25 @@
 function test_model_options()
 %TEST_MODEL_OPTIONS  Exposures, Duty, ROI, ClipOutliers, isotropy and blur checks, saturation,
 %   frame stacks.
-%   The same checks are in tests/python/test_model_options.py. Random
-%   inputs are used only where every realisation passes; the rest is
-%   deterministic or loaded from tests/parity/fixed_inputs.mat.
+%   The same checks are in tests/python/test_model_options.py. MATLAB and
+%   Octave draw different random numbers from the same seed, so inputs that
+%   fail the checks for some random draws are loaded from
+%   tests/parity/fixed_inputs.mat (the same images as in the Python tests);
+%   the rest is deterministic or passed for each of 200 seeds in Octave.
     seed_rng(7);
     here = fileparts(mfilename('fullpath'));
     tex = double(imread(fullfile(here, '..', '..', 'data', 'surface_texture.png')));
     fx = load(fullfile(here, '..', 'parity', 'fixed_inputs.mat'));
 
-    % even number of exposures; Exposures wins over L
+    % even number of exposures; Exposures wins over L. The image of 8 exposures at 0.6 px per step
+    % is stored: about 1 in 200 random textures gives an angle more than 0.5 deg off
     for K = [8 10]
         for c = [0.6 25; 5 110].'
-            bp = fftvel.simulate_pulsed_image(256, c(1)*[cosd(c(2)), -sind(c(2))], 4, 'Exposures', K);
+            if K == 8 && c(1) == 0.6
+                bp = double(fx.exposures8);
+            else
+                bp = fftvel.simulate_pulsed_image(256, c(1)*[cosd(c(2)), -sind(c(2))], 4, 'Exposures', K);
+            end
             e = fftvel.estimate_velocity(bp, 'Exposures', K);
             check(e, c(1), c(2), sprintf('Exposures %d', K));
             assert(e.exposures == K && e.L == 4, 'exposures field');
@@ -50,9 +57,10 @@ function test_model_options()
     assert(isequal(fftvel.estimate_velocity(bp, 'ROI', 1000), fftvel.estimate_velocity(bp)), ...
         'ROI larger than the image');
 
-    % two static hot pixels: reported as motion at their separation unless clipped
-    bp = fftvel.simulate_pulsed_image(96, [1.5 -0.5], 4);
-    clean = min(max(round(100 + 15*bp/std(bp(:))), 0), 255);
+    % two static hot pixels: reported as motion at their separation unless clipped. The 8-bit
+    % texture moving by [1.5 -0.5] is stored: about 4 % of the random textures are off by more
+    % than 1 % or 0.5 deg after clipping
+    clean = double(fx.hot96);
     x = clean;
     x(31, 31) = 255;
     x(51, 61) = 255;

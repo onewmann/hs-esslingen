@@ -85,7 +85,8 @@ NEW_KINDS = ("corr_len", "power_law", "vid1")      # held-out textures the calib
 CORR_LENS = (0.5, 4.0, 8.0)                        # px, random texture of make_texture (calibration: 1.5)
 BETAS = (1.0, 2.0, 3.0)                            # power spectrum ~ |f|**-beta
 NOISE_LEVELS = (0.0, 0.25, 0.5, 1.0)
-CONSTANTS = (8.0, 8.6, 9.0, 10.0)                  # the 8.6 of the docstring, the constant 9 and two others
+CONSTANTS = (8.0, 8.6, 9.0, 10.0)                  # the constant 9, 8.6 (about the largest k, 8.64, of all
+                                                   # simulated images without motion) and two others
 REAL_GRID = {256: (4, 7), 512: (2, 3)}             # roi -> rows x columns of non-overlapping crops
 UNEVEN_KINDS = ("alternating", "dropped")
 UNEVEN_SIZES = (64, 128, 256)

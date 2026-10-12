@@ -22,7 +22,7 @@ Forward model (one image, ``n`` = 256 px, ``L`` = 4, true K = 9):
   central ``n`` x ``n`` px, far enough from the crop border that no wrapped
   content reaches it. A cubic spline shift (scipy.ndimage.shift, order 3)
   was the first choice, but in the ideal case it moves the estimate by up
-  to 1.3 % and 0.5 deg at speeds below 2 px per step (above: 0.25 % and
+  to 1.36 % and 0.56 deg at speeds below 2 px per step (above: 0.21 % and
   0.17 deg), because the spline blurs each flash differently with the
   sub-pixel part of its shift. A camera samples the shifted scene without such a blur, so the
   Fourier shift is the closer model; the check below reports both.

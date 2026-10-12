@@ -74,37 +74,37 @@
     "SPEED_STEP": {
       "value": 0.005,
       "meaning": "Step of the logarithmic speed grid: v(k+1)/v(k) = exp(SPEED_STEP).",
-      "used_in": "fit_speed"
+      "used_in": "fit_speed, fit_blur"
     },
     "VMIN_FACTOR": {
       "value": 1.5,
       "meaning": "Lower end of the measurable range: vmin = VMIN_FACTOR*npad/(K*max(jpos)), where the first spectral zero still lies well inside the profile.",
-      "used_in": "fit_speed"
+      "used_in": "fit_speed, fit_blur"
     },
     "MIN_LINE_SPACING": {
       "value": 4,
       "meaning": "Upper end of the measurable range: vmax = npad/MIN_LINE_SPACING, where the motion lines are this many bins apart.",
-      "used_in": "fit_speed"
+      "used_in": "fit_speed, fit_blur"
     },
     "GUARD_FACTOR": {
       "value": 4,
       "meaning": "The speed grid extends down to vmin/GUARD_FACTOR as a guard band; a best speed there gives in_range = false.",
-      "used_in": "fit_speed"
+      "used_in": "fit_speed, fit_blur"
     },
     "TREND_DEGREE": {
       "value": 3,
       "meaning": "Degree of the polynomial in jpos that absorbs the smooth texture spectrum before the correlation (cubic).",
-      "used_in": "fit_speed"
+      "used_in": "template_scores (fit_speed, fit_blur)"
     },
     "TEMPLATE_FLOOR": {
       "value": 0.001,
-      "meaning": "The Dirichlet template is 0.5*log(P + TEMPLATE_FLOOR).",
-      "used_in": "dirichlet_template"
+      "meaning": "The Dirichlet and box templates are 0.5*log(P + TEMPLATE_FLOOR).",
+      "used_in": "dirichlet_template, box_template"
     },
     "FLAT_MODEL": {
       "value": 1e-06,
-      "meaning": "Speeds whose detrended template has a norm below FLAT_MODEL times the norm of the template score 0 (flat model, no information).",
-      "used_in": "fit_speed"
+      "meaning": "Speeds (or blur lengths) whose detrended template has a norm below FLAT_MODEL times the norm of the template score 0 (flat model, no information).",
+      "used_in": "template_scores (fit_speed, fit_blur)"
     },
     "NULL_K": {
       "value": 9,
@@ -148,8 +148,8 @@
     },
     "SAT_WARN": {
       "value": 0.01,
-      "meaning": "Front ends (command line, stream, experiments/real_measurements.py) warn when saturated exceeds SAT_WARN.",
-      "used_in": "command line, stream, real_measurements"
+      "meaning": "Front ends (command line, stream, matlab/examples/live_basler.m, experiments/real_measurements.py) warn when saturated exceeds SAT_WARN.",
+      "used_in": "command line, stream, live_basler (MATLAB), real_measurements"
     },
     "SIM_MARGIN": {
       "value": 32,

@@ -24,7 +24,9 @@ def shifted(tex, dx, dy):
 
 @pytest.fixture(scope="module")
 def texture():
-    return make_texture(256, 1.5, np.random.default_rng(11))       # periodic, so shifts wrap cleanly
+    # periodic, so shifts wrap cleanly; tests/parity/make_cases.py stores the same texture for the
+    # MATLAB tests (texture256 in fixed_inputs.mat)
+    return make_texture(256, 1.5, np.random.default_rng(11))
 
 
 def test_parity_cases(repo):

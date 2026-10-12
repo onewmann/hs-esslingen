@@ -46,6 +46,7 @@ from typing import Iterator, List, Optional, Tuple
 
 import numpy as np
 
+from fftvel.core import MIN_LINE_SPACING
 from fftvel.stream import estimate_frame, estimate_stream, estimate_window, frame_step
 
 Frames = List[Tuple[np.ndarray, float]]
@@ -391,6 +392,10 @@ def _state(r) -> str:
     if e is not None and e.isotropic:
         return "not valid (isotropic: no motion, or defocus?)"
     if e is not None and not e.in_range:
+        # out of range: the guard band below vmin (at most about 2 px) or the top of the
+        # speed grid (npad/MIN_LINE_SPACING, at least 8 px for the smallest square)
+        if e.speed >= e.npad / (2 * MIN_LINE_SPACING):
+            return "not valid (at the top end of the measurable range: too fast?)"
         return "not valid (below the measurable range)"
     return "not valid (low quality)"
 

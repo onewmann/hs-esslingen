@@ -166,7 +166,10 @@ def estimate_frame(frame: np.ndarray, t: float = float("nan"), L: int = DEFAULT_
     is the time between flashes in seconds; without it ``speed_per_s`` is
     nan. ``duty`` is the flash pulse length divided by the flash period. The
     flash timing cannot be checked from frame timestamps, so ``regular`` is
-    always True.
+    always True. ``L``, ``exposures``, ``duty``, ``min_quality`` and
+    ``clip_outliers`` are passed to :func:`~fftvel.estimate_velocity`
+    (``clip_outliers`` against glints and hot pixels). ``warning`` of the
+    result reports more than 1 % saturated pixels.
     """
     flash_period = _check_seconds(flash_period, "flash_period")
     img = to_grey(frame)
@@ -186,9 +189,13 @@ def estimate_window(frames: Iterable[Tuple[np.ndarray, float]], L: int = DEFAULT
                     period: Optional[float] = None) -> StreamEstimate:
     """Estimate from exactly ``K = 2L+1`` (or ``exposures``) consecutive ``(frame, t)`` pairs.
 
-    Average mode, e.g. one camera burst. ``duty`` is the exposure time
-    divided by the frame step; ``tol`` and ``period`` are passed to
-    :func:`frame_step`.
+    Average mode, e.g. one camera burst. Each frame is converted to grey and
+    cropped to its central ``roi``-by-``roi`` square (default: the largest
+    square). ``duty`` is the exposure time divided by the frame step;
+    ``tol`` and ``period`` are passed to :func:`frame_step`; ``L``,
+    ``exposures``, ``duty``, ``min_quality`` and ``clip_outliers`` are
+    passed to :func:`~fftvel.estimate_velocity`. Windows with unequal frame
+    intervals are reported with ``regular=False`` and ``valid=False``.
     """
     win = FrameWindow(L, roi, tol, exposures=exposures, period=period)
     t = float("nan")
@@ -224,9 +231,12 @@ def estimate_stream(frames: Iterable[Tuple[np.ndarray, float]], L: int = DEFAULT
     largest square). Windows with unequal frame intervals (see
     :func:`frame_step`) are still estimated but reported with
     ``regular=False`` and ``valid=False``. ``duty`` is the exposure time
-    divided by the frame step. For live cameras, grab a burst of ``K``
-    frames per estimate and call :func:`estimate_window`, so that the time
-    spent estimating does not mix old buffered frames into a window.
+    divided by the frame step. ``tol`` and ``period`` are passed to
+    :func:`frame_step`; ``L``, ``exposures``, ``duty``, ``min_quality`` and
+    ``clip_outliers`` are passed to :func:`~fftvel.estimate_velocity`. For
+    live cameras, grab a burst of ``K`` frames per estimate and call
+    :func:`estimate_window`, so that the time spent estimating does not mix
+    old buffered frames into a window.
     """
     win = FrameWindow(L, roi, tol, exposures=exposures, period=period)
     every = every or win.size

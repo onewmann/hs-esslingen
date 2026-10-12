@@ -165,14 +165,15 @@ def test_webcam_driver_times_missing_in_the_first_burst(lc, monkeypatch):
 
 
 def test_state_column(lc):
-    def r(valid=False, regular=True, step=0.01, isotropic=False, in_range=True):
-        e = types.SimpleNamespace(isotropic=isotropic, in_range=in_range)
+    def r(valid=False, regular=True, step=0.01, isotropic=False, in_range=True, speed=0.3):
+        e = types.SimpleNamespace(isotropic=isotropic, in_range=in_range, speed=speed, npad=128)
         return StreamEstimate(0.0, 0.0, 1.0, 100.0, 0.5, valid, regular, step, e)
     assert lc._state(r(valid=True)) == "valid"
     assert lc._state(r(regular=False)) == "uneven frame steps"
     assert lc._state(r(regular=False, step=0.0)) == "no frame times"
     assert lc._state(r(isotropic=True)).startswith("not valid (isotropic")
     assert lc._state(r(in_range=False)) == "not valid (below the measurable range)"
+    assert lc._state(r(in_range=False, speed=32.0)).startswith("not valid (at the top end")
     assert lc._state(r()) == "not valid (low quality)"
 
 

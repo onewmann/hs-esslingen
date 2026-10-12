@@ -78,9 +78,12 @@ implementation on 20 input images and writes three files:
 * `expected.csv`: the Python results (angle, speed, GEBA, the qualities, the
   threshold, the blur length, the flags and the saturated share) and the
   options of each case;
-* `fixed_inputs.mat`: images without motion at 32 and 64 px and a static
-  repeating tile, stored because MATLAB and Octave draw different random
-  numbers from the same seed.
+* `fixed_inputs.mat`: images without motion at 32 and 64 px, a static
+  repeating tile, and the hot-pixel image, the image of 8 exposures at
+  0.6 px per step and the texture that the Python option and
+  phase-correlation tests draw. They are stored because MATLAB and Octave
+  draw different random numbers from the same seed and some draws fail these
+  checks; the MATLAB tests load them instead of drawing them.
 
 `tests/python/test_parity.py` and `tests/matlab/test_parity.m` estimate the
 inputs of `cases.mat` and compare with `expected.csv`: angle, speed, GEBA,

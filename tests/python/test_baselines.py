@@ -34,8 +34,11 @@ def test_cases_are_those_of_the_noise_study(repo, bl):
     rows = noise_rows(repo)
     assert len(cases) == len(rows) == 840
     for case, r in zip(cases, rows):
-        assert case == (r["texture"], float(r["speed"]), float(r["angle"]), int(r["L"]), float(r["noise"]),
-                        int(r["seed"]))
+        # speed and angle to rounding only: np.exp can differ in the last bit between CPUs (NumPy takes
+        # another SIMD path with AVX-512) and between NumPy versions
+        assert (case[0], case[3], case[4], case[5]) == (r["texture"], int(r["L"]), float(r["noise"]),
+                                                        int(r["seed"]))
+        assert case[1:3] == pytest.approx((float(r["speed"]), float(r["angle"])), rel=1e-12, abs=0)
     quick = bl.cases(quick=True)
     assert len(quick) == 96 and sorted({c[4] for c in quick}) == [0, 0.5, 1, 2]
 
@@ -110,10 +113,11 @@ def test_evaluate_in_spawned_workers_and_replot(repo, bl, tmp_path, capsys):
         assert r["correct"] == 1, r                    # easy cases: every method is right
         if r["method"] == "phasecorr":
             assert r["vector_err"] < 0.02 and r["correct_parabolic"] == 1
-        if r["method"] == "fftvel":                    # the estimate of the noise study, to the bit
-            ref = noise[r["seed"]]
-            assert (r["est_angle"], r["est_speed"], r["valid"]) == \
-                (float(ref["est_angle"]), float(ref["est_speed"]), int(ref["valid"]))
+        if r["method"] == "fftvel":                    # the estimate of the noise study, to rounding
+            ref = noise[r["seed"]]                     # (the last bits depend on the CPU and NumPy)
+            assert r["valid"] == int(ref["valid"])
+            assert (r["est_angle"], r["est_speed"]) == \
+                pytest.approx((float(ref["est_angle"]), float(ref["est_speed"])), rel=1e-9, abs=0)
 
     common.set_output(tmp_path)
     common.write_csv("baselines.csv", rows)
