@@ -40,15 +40,16 @@ analyses the frame-to-frame motion of vid2 to vid4 and has no smaller
 variant for --quick; the calibration part takes single frames of all four.
 
 Each part is a module that also runs alone: accuracy.py, noise.py,
-history/before_after.py, pipeline_figure.py, test_sequences.py (part
-testsequences), recordings_2025.py (part recordings), calibrate_threshold.py
-(part calibration), baselines.py, model_violations.py (part violations) and
+history/before_after.py, pipeline_figure.py, testsequences.py,
+recordings_2025.py (part recordings), calibrate_threshold.py (part
+calibration), baselines.py, model_violations.py (part violations) and
 timing.py. ``python experiments/noise.py ARGS`` is ``python
 experiments/run.py --only noise ARGS``; the last four have options of their
 own (timing.py: --matlab, --no-octave, --sizes). common.py holds the paths,
-the plot style, the simulated case and the CSV files. Real multi-flash
-images are analysed by real_measurements.py, which is not a part of run.py
-(see data/real/README.md).
+the plot style, the simulated case and the CSV files. Your own
+measurements (multi-flash images, or frame stacks in average mode) are
+evaluated by real_measurements.py, which is not a part of run.py (see
+data/measurements/README.md).
 
 Needs scipy and matplotlib 3.6 or newer (python -m pip install -e "./python[plot,data]").
 """
@@ -72,14 +73,14 @@ import model_violations  # noqa: E402
 import noise  # noqa: E402
 import pipeline_figure  # noqa: E402
 import recordings_2025  # noqa: E402
-import test_sequences  # noqa: E402
+import testsequences  # noqa: E402
 import timing  # noqa: E402
 from history import before_after  # noqa: E402
 
 PARTS = ["accuracy", "noise", "before_after", "pipeline", "testsequences", "recordings"]   # the default set
 EXTRA = ["calibration", "baselines", "violations", "timing"]           # only with --only or --all
 ALL_PARTS = PARTS + EXTRA
-STUDIES = dict(zip(ALL_PARTS, (accuracy, noise, before_after, pipeline_figure, test_sequences, recordings_2025,
+STUDIES = dict(zip(ALL_PARTS, (accuracy, noise, before_after, pipeline_figure, testsequences, recordings_2025,
                                calibrate_threshold, baselines, model_violations, timing), strict=True))
 SIMULATIONS = ["accuracy", "noise", "before_after", "calibration", "baselines", "violations"]   # share the pool
 SUMMARISED = ["accuracy", "noise", "before_after"]      # summary also for the CSV files of an earlier run
@@ -181,7 +182,7 @@ def main(argv=None, only=None, description=__doc__):
     if "pipeline" in parts:
         pipeline_figure.run()
     if "testsequences" in parts:
-        test_sequences.summary(test_sequences.run())
+        testsequences.summary(testsequences.run())
     if "recordings" in parts:
         recordings_2025.run(folder)
     if "timing" in parts:

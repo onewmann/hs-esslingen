@@ -1,15 +1,25 @@
-"""Command line ``python -m fftvel estimate``: options, file formats and error messages."""
+"""Command line ``fftvel`` (``python -m fftvel``): help, simulate, estimate, file formats and messages.
+
+The files are read by fftvel.io (more checks of it in test_io.py); the
+command line adds the notes on stderr and the options in its messages.
+"""
 
 import builtins
 import json
+import re
+import shutil
+import subprocess
+import sys
 
 import numpy as np
 import pytest
 from scipy.io import savemat
 
+import fftvel
 import fftvel.__main__ as cli
 from fftvel import estimate_velocity, simulate_pulsed_image
 from fftvel.core import crop_square
+from fftvel.io import load
 from fftvel.__main__ import main
 
 FIELDS = ("angle_deg", "speed", "quality", "valid", "exposures", "n")
@@ -43,13 +53,16 @@ def same(r, est):
         assert r[k] == (round(v, 4) if isinstance(v, float) else v), k
 
 
-def hide(monkeypatch, *names):
-    """Make ``import name`` fail inside fftvel.__main__ only, as if the package were not installed."""
+def hide(monkeypatch, *names, module="fftvel.io"):
+    """Make ``import name`` fail inside ``module`` only, as if the package were not installed.
+
+    The readers (SciPy, h5py, Pillow, tifffile, matplotlib.image) are imported
+    in fftvel.io, matplotlib for --plot in fftvel.__main__.
+    """
     real = builtins.__import__
 
     def fake(name, globals=None, locals=None, fromlist=(), level=0):
-        if globals is not None and globals.get("__name__") == "fftvel.__main__" \
-                and name.split(".")[0] in names:
+        if globals is not None and globals.get("__name__") == module and name.split(".")[0] in names:
             raise ImportError(f"No module named '{name}'")
         return real(name, globals, locals, fromlist, level)
 
@@ -60,13 +73,107 @@ def to_uint16(x):
     return np.round((x - x.min()) / np.ptp(x) * 65535).astype(np.uint16)
 
 
+# --- help, version, simulate and the console script ------------------------------------------
+
+def test_help_is_plain_text_and_leads_with_the_flash_count(capsys):
+    for argv in ([], ["simulate"], ["estimate"]):
+        with pytest.raises(SystemExit) as exc:
+            main(argv + ["--help"])
+        assert exc.value.code == 0
+        out = capsys.readouterr().out
+        assert "``" not in out and "(default: None)" not in " ".join(out.split()), argv
+        examples = out[out.index("examples:"):].splitlines()
+        assert "--exposures 9" in examples[1], argv                 # the first example gives the flash count
+
+
+def test_every_option_has_help_and_shows_its_default(capsys):
+    _, s, e = cli._parser()
+    for sub in (s, e):
+        for action in sub._actions:
+            assert action.help, (sub.prog, action.dest)
+    with pytest.raises(SystemExit):
+        main(["simulate", "--help"])
+    out = " ".join(capsys.readouterr().out.split())             # the help is wrapped to the terminal width
+    for text in ("(default: 3.0)", "(default: -2.0)", "(default: 256)", "(default: 0.0)", "(default: 0)",
+                 "(default 4, so K = 9)"):
+        assert text in out, text
+    with pytest.raises(SystemExit):
+        main(["estimate", "--help"])
+    out = " ".join(capsys.readouterr().out.split())
+    assert "(default: 512)" in out and "(default: auto)" in out
+
+
+def test_version(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["--version"])
+    assert exc.value.code == 0 and capsys.readouterr().out.split()[-1] == fftvel.__version__
+
+
+def test_program_name():
+    # the console script names itself in the help, python -m fftvel otherwise
+    assert cli._prog("/usr/local/bin/fftvel") == "fftvel"
+    assert cli._prog("fftvel.exe") == "fftvel"
+    assert cli._prog("/repo/python/src/fftvel/__main__.py") == "python -m fftvel"
+    assert cli._prog("/usr/bin/pytest") == "python -m fftvel"
+    assert cli._prog("") == cli._prog(None) == "python -m fftvel"
+
+
+def test_simulate_writes_only_json_to_stdout(capsys, tmp_path):
+    png = tmp_path / "fig.png"
+    r, err = run(["simulate", "--vx", "4", "--vy", "1", "--plot", png], capsys)    # stdout is all JSON
+    assert abs(r["speed"] - 4.1231) < 0.05 and r["exposures"] == 9 and r["L"] == 4
+    assert "true: angle 165.96 deg, speed 4.123 px per flash" in err
+    assert png.stat().st_size > 10_000
+
+
+def test_simulate_flash_count(capsys):
+    r, _ = run(["simulate", "--exposures", "9", "--vx", "5", "--vy", "-3"], capsys)
+    assert r == run(["simulate", "--L", "4", "--vx", "5", "--vy", "-3"], capsys)[0]
+    assert r == run(["simulate", "--vx", "5", "--vy", "-3"], capsys)[0]          # default 9 flashes
+    same(r, estimate_velocity(simulate_pulsed_image(256, (5, -3), 4, rng=0), exposures=9))
+    r, _ = run(["simulate", "--exposures", "8", "--vx", "2", "--vy", "1", "--n", "128", "--seed", "3"], capsys)
+    assert r["exposures"] == 8 and r["L"] is None
+    same(r, estimate_velocity(simulate_pulsed_image(128, (2, 1), 3, exposures=8, rng=3), L=3, exposures=8))
+
+
+@pytest.mark.parametrize("bad, text", [(["--L", "4", "--exposures", "8"], "only one"), (["--L", "0"], "--L"),
+                                       (["--exposures", "1"], "--exposures"), (["--n", "8"], "--n"),
+                                       (["--noise", "-1"], "--noise")])
+def test_simulate_invalid_options(capsys, bad, text):
+    with pytest.raises(SystemExit) as exc:
+        main(["simulate"] + bad)
+    assert exc.value.code == 2 and text in capsys.readouterr().err
+
+
+def test_console_script(shot, tmp_path):
+    from importlib.metadata import entry_points
+    (ep,) = entry_points(group="console_scripts", name="fftvel")    # after pip install -e ./python
+    assert ep.value == "fftvel.__main__:main" and ep.load() is main
+    exe = shutil.which("fftvel")
+    if exe is None:
+        pytest.skip("the console script fftvel is not on PATH")
+    r = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0 and r.stdout.strip() == f"fftvel {fftvel.__version__}"
+    np.save(tmp_path / "bp.npy", shot[0])
+    r = subprocess.run([exe, "estimate", str(tmp_path / "bp.npy"), "--exposures", "9"], capture_output=True,
+                       text=True, timeout=120)
+    assert r.returncode == 0, r.stderr
+    same(json.loads(r.stdout), estimate_velocity(shot[0], exposures=9))
+    assert "model: 9 exposures (L = 4)" in r.stderr
+    r = subprocess.run([exe, "estimate", str(tmp_path / "bp.npy")], capture_output=True, text=True, timeout=120)
+    assert r.returncode == 1 and "--exposures or --L" in r.stderr
+    r = subprocess.run([sys.executable, "-m", "fftvel", "estimate", "--help"], capture_output=True, text=True,
+                       timeout=120)
+    assert r.returncode == 0 and re.search(r"^usage: python -m fftvel estimate", r.stdout, re.MULTILINE)
+
+
 # --- flash count and options -----------------------------------------------------------------
 
 def test_single_image_needs_the_flash_count(shot, tmp_path, capsys):
     bp, _ = shot
     np.save(tmp_path / "bp.npy", bp)
     msg = fails(["estimate", tmp_path / "bp.npy"], capsys)
-    assert "--L or --exposures" in msg and "K_true/K" in msg
+    assert "--exposures or --L" in msg and "K_true/K" in msg
     r, err = run(["estimate", tmp_path / "bp.npy", "--L", "4"], capsys)
     same(r, estimate_velocity(bp, L=4))
     assert r["L"] == 4 and "9 exposures (L = 4)" in err
@@ -174,15 +281,62 @@ def test_getdata_stack_converts_only_the_frames_used(shot, tmp_path, capsys):
     savemat(tmp_path / "rec.mat", {"recording": u8})
     np.save(tmp_path / "rec.npy", u8)
     for name in ("rec.mat", "rec.npy"):
-        a = cli._load(str(tmp_path / name))
+        a = load(tmp_path / name)
         assert a.dtype == np.uint8 and a.shape == (128, 128, 1, 10)     # no float copy of all frames
         bp, K = cli._pulsed_image(a, True, L=4)
         assert K == 9 and np.array_equal(bp, u8[:, :, 0, :9].astype(float).mean(axis=2))
-    assert isinstance(cli._load(str(tmp_path / "rec.npy")), np.memmap)  # read from disk when used
+    assert isinstance(load(tmp_path / "rec.npy"), np.memmap)            # read from disk when used
     r, err = run(["estimate", tmp_path / "rec.mat", "--stack", "--L", "4"], capsys)
     same(r, estimate_velocity(u8[:, :, 0, :9].astype(float).mean(axis=2), L=4))
     assert "variable 'recording', 128 x 128 x 1 x 10 uint8" in err
     assert "mean of frames 1-9 of 10" in err
+
+
+def test_stack_files_with_any_case_extension(tmp_path, capsys):
+    _, fr = simulate_pulsed_image(256, (3.0, -2.0), 2, rng=3, return_frames=True)   # 5 frames
+    savemat(tmp_path / "stack.mat", {"frames": fr})
+    with open(tmp_path / "STACK.NPY", "wb") as f:     # np.save would append .npy
+        np.save(f, fr)
+    for name in ("stack.mat", "STACK.NPY"):
+        r, _ = run(["estimate", tmp_path / name, "--stack"], capsys)
+        assert r["L"] == 2 and abs(r["speed"] / np.hypot(3, 2) - 1) < 0.01
+    assert "--stack" in fails(["estimate", tmp_path / "stack.mat"], capsys)          # 3-D without --stack
+    np.save(tmp_path / "even.npy", fr[:, :, :4])
+    assert "even number" in fails(["estimate", tmp_path / "even.npy", "--stack"], capsys)
+
+
+# --- .npz files -----------------------------------------------------------------------------
+
+def test_npz_as_the_live_script_writes_it(shot, tmp_path, capsys):
+    bp, fr = shot
+    u8 = np.round(np.clip(fr, -3, 3) * 40 + 128).astype(np.uint8)
+    np.savez(tmp_path / "burst_0001.npz", frames=u8, t=np.arange(9) / 200, clock="camera", frame_rate=200.0,
+             exposure_s=5e-4)
+    r, err = run(["estimate", tmp_path / "burst_0001.npz", "--stack"], capsys)
+    same(r, estimate_velocity(u8.astype(float).mean(axis=2), L=4))
+    assert "array 'frames', 128 x 128 x 9 uint8" in err and "mean of frames 1-9 of 9" in err
+    g = np.round((bp - bp.min()) / np.ptp(bp) * 255).astype(np.uint8)
+    np.savez(tmp_path / "frame_0001.npz", frames=g[:, :, None], t=np.zeros(1), clock="host")    # flash mode
+    r, err = run(["estimate", tmp_path / "frame_0001.npz", "--exposures", "9"], capsys)
+    same(r, estimate_velocity(g, exposures=9))
+
+
+def test_npz_array_choice(shot, tmp_path, capsys):
+    bp, fr = shot
+    np.savez(tmp_path / "two.npz", image=bp, stack=fr)
+    r, err = run(["estimate", tmp_path / "two.npz", "--exposures", "9"], capsys)
+    same(r, estimate_velocity(bp, exposures=9))
+    assert "array 'image'" in err
+    r, err = run(["estimate", tmp_path / "two.npz", "--stack"], capsys)
+    assert "array 'stack'" in err and r["exposures"] == 9
+    np.savez(tmp_path / "three.npz", bg=fr[:, :, 0], image=bp, stack=fr)
+    msg = fails(["estimate", tmp_path / "three.npz", "--exposures", "9"], capsys)
+    assert "choose one with --var" in msg and all(f"  {v}" in msg for v in ("bg ", "image ", "stack "))
+    r, _ = run(["estimate", tmp_path / "three.npz", "--var", "image", "--exposures", "9"], capsys)
+    same(r, estimate_velocity(bp, exposures=9))
+    assert "no array 'img'" in fails(["estimate", tmp_path / "three.npz", "--var", "img", "--L", "4"], capsys)
+    (tmp_path / "bad.npz").write_bytes(b"not a zip file")
+    assert "cannot read" in fails(["estimate", tmp_path / "bad.npz", "--L", "4"], capsys)
 
 
 # --- .mat files -----------------------------------------------------------------------------
@@ -215,6 +369,13 @@ def test_mat_variable_choice(shot, tmp_path, capsys):
     assert "no variable 'frame'" in msg and "frames" in msg
 
 
+def test_parity_case_from_mat(repo, capsys):
+    # bp01 of the parity cases is a pulsed image with v = (3, -2) and 9 flashes
+    r, err = run(["estimate", repo / "tests" / "parity" / "cases.mat", "--var", "bp01", "--exposures", "9"],
+                 capsys)
+    assert r["valid"] and "variable 'bp01'" in err
+
+
 def test_mat_struct_cell_and_bad_files(shot, tmp_path, capsys):
     bp, fr = shot
     savemat(tmp_path / "s.mat", {"s": {"frames": fr, "t": 1.0}})
@@ -238,13 +399,15 @@ def test_mat_struct_cell_and_bad_files(shot, tmp_path, capsys):
     assert "cannot read variable 'bp'" in fails(["estimate", tmp_path / "cut.mat", "--L", "4"], capsys)
     assert "no such file" in fails(["estimate", tmp_path / "none.mat", "--L", "4"], capsys)
     np.save(tmp_path / "bp.npy", bp)
-    assert ".mat files only" in fails(["estimate", tmp_path / "bp.npy", "--var", "bp", "--L", "4"], capsys)
+    assert ".mat and .npz files only" in fails(["estimate", tmp_path / "bp.npy", "--var", "bp", "--L", "4"],
+                                               capsys)
 
 
 def test_mat_needs_scipy(shot, tmp_path, monkeypatch, capsys):
     savemat(tmp_path / "one.mat", {"bp": shot[0]})
     hide(monkeypatch, "scipy")
-    assert 'python[data]' in fails(["estimate", tmp_path / "one.mat", "--L", "4"], capsys)
+    msg = fails(["estimate", tmp_path / "one.mat", "--L", "4"], capsys)
+    assert "needs SciPy" in msg and "pip install scipy" in msg and '"data"' in msg
 
 
 def write_v73(path, variables):
@@ -270,7 +433,7 @@ def test_mat_v73(shot, tmp_path, capsys):
     _, fr = shot
     fr = fr[:, :120, :]                                   # 128 x 120 x 9: checks the axis order
     write_v73(tmp_path / "v73.mat", {"frames": fr, "info": {"t": np.arange(9.0)}})
-    a = cli._load(str(tmp_path / "v73.mat"))
+    a = load(tmp_path / "v73.mat")
     assert np.array_equal(a, fr)
     r, err = run(["estimate", tmp_path / "v73.mat", "--stack"], capsys)
     same(r, estimate_velocity(fr.mean(axis=2), L=4))
@@ -293,7 +456,7 @@ def test_mat_v73_without_h5py(tmp_path, monkeypatch, capsys):
                                        + b"\x89HDF\r\n\x1a\n" + bytes(64))
     hide(monkeypatch, "h5py")
     msg = fails(["estimate", tmp_path / "v73.mat", "--stack"], capsys)
-    assert "v7.3" in msg and "h5py" in msg and 'python[data]' in msg and "-v7" in msg
+    assert "v7.3" in msg and "pip install h5py" in msg and '"data"' in msg and "-v7" in msg
 
 
 # --- image files ----------------------------------------------------------------------------
@@ -306,7 +469,7 @@ def test_png_and_tiff_keep_the_bit_depth(shot, tmp_path, capsys):
     f32 = ((bp - bp.min()) / np.ptp(bp)).astype(np.float32)                   # values in [0, 1]
     for name, img in (("bp16.png", u16), ("bp16.tif", u16), ("bpI.tif", i32), ("bpF.tif", f32)):
         Image.fromarray(img).save(tmp_path / name)
-        a = cli._load(str(tmp_path / name))
+        a = load(tmp_path / name)
         assert np.array_equal(a, img), name              # not scaled or clipped to 8 bit
         r, _ = run(["estimate", tmp_path / name, "--L", "4"], capsys)
         same(r, estimate_velocity(img, L=4))
@@ -319,14 +482,15 @@ def test_multipage_tiff_is_a_stack(shot, tmp_path, capsys):
     pages = to_uint16(fr)
     ims = [Image.fromarray(pages[:, :, k]) for k in range(9)]
     ims[0].save(tmp_path / "pages.tif", save_all=True, append_images=ims[1:])
-    a = cli._load(str(tmp_path / "pages.tif"))
+    a = load(tmp_path / "pages.tif")
     assert np.array_equal(a, pages)
     r, err = run(["estimate", tmp_path / "pages.tif", "--stack"], capsys)
     same(r, estimate_velocity(pages.astype(float).mean(axis=2), L=4))
     assert "9 pages stacked as 128 x 128 x 9 uint16" in err
     ims[0].save(tmp_path / "thumb.tif", save_all=True, append_images=[ims[1].resize((32, 32))])
-    assert np.array_equal(cli._load(str(tmp_path / "thumb.tif")), pages[:, :, 0])
-    assert "skipped 1 pages of another size" in capsys.readouterr().err
+    r, err = run(["estimate", tmp_path / "thumb.tif", "--L", "4"], capsys)
+    same(r, estimate_velocity(pages[:, :, 0], L=4))
+    assert "skipped 1 pages of another size" in err
 
 
 def test_rgb_image_becomes_grey(shot, tmp_path, capsys):
@@ -336,7 +500,7 @@ def test_rgb_image_becomes_grey(shot, tmp_path, capsys):
     rgb = np.stack([g, np.roll(g, 1, axis=0), g // 2], axis=2)
     for name, img in (("rgb.png", rgb), ("rgba.png", np.dstack([rgb, np.full_like(g, 255)]))):
         Image.fromarray(img).save(tmp_path / name)
-        a = cli._load(str(tmp_path / name))
+        a = load(tmp_path / name)
         assert np.allclose(a, rgb @ np.array([0.2989, 0.5870, 0.1140]), rtol=0, atol=1e-12)
 
 
@@ -345,7 +509,7 @@ def test_float64_tiff_through_tifffile(shot, tmp_path, capsys):
     pytest.importorskip("PIL")
     bp, _ = shot
     tifffile.imwrite(tmp_path / "bp64.tif", bp)                # Pillow cannot read float64
-    assert np.array_equal(cli._load(str(tmp_path / "bp64.tif")), bp)
+    assert np.array_equal(load(tmp_path / "bp64.tif"), bp)
     r, err = run(["estimate", tmp_path / "bp64.tif", "--L", "4"], capsys)
     same(r, estimate_velocity(bp, L=4))
     assert "tifffile" in err
@@ -397,7 +561,7 @@ def test_image_readers_missing(shot, tmp_path, monkeypatch, capsys):
     u16 = to_uint16(shot[0])
     Image.fromarray(u16).save(tmp_path / "bp16.png")
     hide(monkeypatch, "PIL")                                   # falls back to matplotlib
-    a = cli._load(str(tmp_path / "bp16.png"))
+    a = load(tmp_path / "bp16.png")
     assert np.allclose(a, u16 / 65535, rtol=1e-6, atol=0)
     hide(monkeypatch, "PIL", "matplotlib")
     msg = fails(["estimate", tmp_path / "bp16.png", "--L", "4"], capsys)
@@ -434,7 +598,7 @@ def test_plot_without_display(shot, tmp_path, monkeypatch, capsys):
 
 def test_plot_without_matplotlib(shot, tmp_path, monkeypatch, capsys):
     np.save(tmp_path / "bp.npy", shot[0])
-    hide(monkeypatch, "matplotlib")
+    hide(monkeypatch, "matplotlib", module="fftvel.__main__")
     msg = fails(["estimate", tmp_path / "bp.npy", "--L", "4", "--plot", tmp_path / "fig.png"], capsys)
     assert "--plot needs matplotlib" in msg and 'python[plot]' in msg
     assert capsys.readouterr().out == ""                       # stopped before the estimate

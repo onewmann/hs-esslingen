@@ -1,4 +1,4 @@
-"""Velocity estimation from a single pulsed-exposure image.
+"""Velocity estimation from a single multi-flash (pulsed-exposure) image.
 
 The model, the ripple profile WR and the quality measure GEBA follow Chapter 3
 of J. Horn's doctoral thesis (Universitaet Karlsruhe (TH), 2006; full reference
@@ -44,7 +44,7 @@ __all__ = [
 # listed there.
 
 # Defaults of estimate_velocity
-DEFAULT_L = 4                # half the number of exposures, K = 2L+1 = 9
+DEFAULT_L = 4                # half-count of the thesis, K = 2L+1 = 9 exposures
 DEFAULT_PAD_FACTOR = 2       # zero padding factor of the FFT
 DEFAULT_MIN_QUALITY = 0.6    # lowest fit quality accepted for valid
 
@@ -266,10 +266,9 @@ def crop_square(img: np.ndarray, n: Optional[int] = None) -> np.ndarray:
     img = np.asarray(img)
     if img.ndim != 2:
         raise ValueError(f"expected a 2-D grey-scale image, got shape {img.shape}. Convert a colour "
-                         f"image to grey. For a frame stack use bp, K = pulsed_from_stack(frames, L=L) "
-                         f"(or exposures=K instead of L), which averages the first 2L+1 (or K) frames, "
-                         f"or all of them if neither is given and their number is odd; then pass "
-                         f"exposures=K to estimate_velocity")
+                         f"image to grey. For a frame stack use bp, K = pulsed_from_stack(frames, "
+                         f"exposures=K), which averages the first K frames, or all of them if K is not "
+                         f"given and their number is odd; then pass exposures=K to estimate_velocity")
     h, w = img.shape
     if n is None:
         n = min(h, w)
@@ -288,9 +287,13 @@ def pulsed_from_stack(frames, *, L: Optional[int] = None, exposures: Optional[in
     other axes of length 1, so a MATLAB ``getdata`` stack (rows x cols x 1 x
     frames) works as it is. Returns ``(bp, K)``: the mean of the first ``K``
     frames as a 2-D float image, and ``K``. ``K`` is ``exposures`` if given,
-    else ``2L+1`` if ``L`` is given, else the number of frames, which must
-    then be odd. Pass ``K`` on as ``estimate_velocity(bp, exposures=K)``.
-    All arguments after ``frames`` are keyword-only.
+    else ``2L+1`` if ``L`` (the half-count of Horn's thesis) is given, else
+    the number of frames, which must then be odd. Pass ``K`` on as
+    ``estimate_velocity(bp, exposures=K)``. All arguments after ``frames``
+    are keyword-only.
+
+    Example: ``bp, K = pulsed_from_stack(frames, exposures=9)`` averages the
+    first 9 frames.
     """
     a = np.asarray(frames)
     shape = a.shape
@@ -657,17 +660,19 @@ def estimate_velocity(bp, *, L: int = DEFAULT_L, exposures: Optional[int] = None
     Parameters
     ----------
     bp : 2-D array
-        Sum or mean of ``K = 2L+1`` exposures (see ``exposures``) taken at
-        equal time steps while the texture moves by ``v`` per step: a strobe
-        within one camera frame, or the mean of ``K`` consecutive video frames
-        (see :func:`pulsed_from_stack`). Non-square images are cropped to the
-        central square, never resized.
+        Sum or mean of ``K`` exposures taken at equal time steps while the
+        texture moves by ``v`` per step: ``K`` strobe flashes within one
+        camera frame (a multi-flash image), or the mean of ``K`` consecutive
+        video frames (see :func:`pulsed_from_stack`). Non-square images are
+        cropped to the central square, never resized.
     L : int
-        Half the number of exposures; default 4 (9 exposures).
+        Half-count of Horn's thesis, ``K = 2L+1``, used when ``exposures``
+        is not given; default 4 (9 exposures).
     exposures : int, optional
-        Exact number of exposures (flashes) ``K >= 2``, also even; default
-        ``2L+1``. Overrides ``L`` for the model. For slow motion a wrong
-        count scales the speed by ``K_true/K`` without lowering the quality.
+        Number of exposures ``K >= 2``, even or odd: the flashes in one
+        multi-flash image, or the averaged frames. Overrides ``L``; default
+        ``2L+1``. For slow motion a wrong count scales the speed by
+        ``K_true/K`` without lowering the quality.
     duty : float
         Duration of one exposure (flash pulse, or camera exposure time)
         divided by the time step, in ``[0, 1)``; default 0 (short flashes).
@@ -698,9 +703,17 @@ def estimate_velocity(bp, *, L: int = DEFAULT_L, exposures: Optional[int] = None
         Default False.
 
     All arguments after ``bp`` are keyword-only, e.g.
-    ``estimate_velocity(bp, L=4)``. All options are checked; invalid values
-    raise ValueError. :func:`to_physical` converts the result to length
-    units per second.
+    ``estimate_velocity(bp, exposures=9)``. All options are checked; invalid
+    values raise ValueError. :func:`to_physical` converts the result to
+    length units per second.
+
+    Examples
+    --------
+    >>> from fftvel import simulate_pulsed_image
+    >>> bp = simulate_pulsed_image(256, (5, -3), 4, rng=0)    # L = 4, so K = 2L+1 = 9 flashes
+    >>> est = estimate_velocity(bp, exposures=9)
+    >>> print(f"{est.angle_deg:.1f} deg, {est.speed:.2f} px per flash, valid {est.valid}")
+    31.0 deg, 5.83 px per flash, valid True
     """
     L = _check_option(L, "L", "positive")
     K = 2 * L + 1 if exposures is None else _check_option(exposures, "exposures", "exposures")

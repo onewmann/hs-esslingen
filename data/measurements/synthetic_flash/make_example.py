@@ -1,14 +1,14 @@
-"""Write the synthetic example of data/real: three multi-flash images, two
-single-flash reference frames and meta.csv.
+"""Write the synthetic flash-mode session in data/measurements: three
+multi-flash images, two single-flash reference frames and meta.csv.
 
-    python data/real/example/make_example.py [OUT_DIR]
+    python data/measurements/synthetic_flash/make_example.py [OUT_DIR]
 
 The images are fftvel.simulate_pulsed_image of data/surface_texture.png (a
 real Basler texture) with exactly known motion, 256 x 256 px, stored as
 16-bit PNG like the frames of a 12-bit camera. They let
-experiments/real_measurements.py be tried before real recordings exist; the
-errors it reports for them come from the estimator alone, not from a set
-speed, a gsd or a flash period that is off.
+experiments/real_measurements.py be tried before real multi-flash images
+exist; the errors it reports for them come from the estimator alone, not
+from a set speed, a gsd or a flash period that is off.
 """
 
 from __future__ import annotations

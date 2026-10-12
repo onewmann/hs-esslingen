@@ -10,8 +10,8 @@ import numpy as np
 import pytest
 from scipy.io import loadmat
 
-from fftvel import phase_correlation
-from fftvel.reference import UPSAMPLE, _upsampled_peak
+from fftvel import phase_correlation, simulate_pulsed_image
+from fftvel.phasecorr import UPSAMPLE, _upsampled_peak
 from fftvel.simulate import make_texture
 
 
@@ -27,6 +27,16 @@ def texture():
     # periodic, so shifts wrap cleanly; tests/parity/make_cases.py stores the same texture for the
     # MATLAB tests (texture256 in fixed_inputs.mat)
     return make_texture(256, 1.5, np.random.default_rng(11))
+
+
+def test_shift_between_simulated_frames():
+    # consecutive and every other frame of simulated pulsed images
+    _, fr = simulate_pulsed_image(128, (3, -2), 1, rng=5, return_frames=True)
+    dx, dy, _ = phase_correlation(fr[:, :, 0], fr[:, :, 1])
+    assert abs(dx - 3) < 0.01 and abs(dy + 2) < 0.01
+    _, fr = simulate_pulsed_image(128, (-1.5, 0.75), 1, rng=6, return_frames=True)
+    dx, dy, _ = phase_correlation(fr[:, :, 0], fr[:, :, 2])
+    assert abs(dx + 3) < 0.01 and abs(dy - 1.5) < 0.01
 
 
 def test_parity_cases(repo):

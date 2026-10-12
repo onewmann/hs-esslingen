@@ -1,4 +1,4 @@
-"""Independent reference: frame-to-frame shift by phase correlation."""
+"""Shift between two frames by phase correlation, a check that is independent of the estimator."""
 
 from __future__ import annotations
 

@@ -6,7 +6,8 @@ from typing import Optional, Sequence
 
 import numpy as np
 
-from .core import DEFAULT_CORR_LEN, GREY_WEIGHTS, SIM_MARGIN, _check_option, crop_square
+from .core import DEFAULT_CORR_LEN, SIM_MARGIN, _check_option, crop_square
+from .io import to_grey
 
 __all__ = ["make_texture", "simulate_pulsed_image"]
 
@@ -33,10 +34,12 @@ def simulate_pulsed_image(n: int, v: Sequence[float], L: int, *,
                           noise: float = 0.0, rng=None, return_frames: bool = False):
     """Mean of ``2L+1`` exposures of a texture moving by ``v`` per step under a fixed window.
 
-    ``v = (vx, vy)`` in pixels per step, x along columns, y along rows
-    (pointing down). Shifts are exact band-limited (Fourier) shifts, so ``v``
-    may be fractional; the texture is large enough that no wrapped content
-    reaches the ``n``-by-``n`` window and there are no zero-filled borders.
+    ``L`` is the half-count of Horn's thesis: ``L = 4`` gives ``K = 2L+1 = 9``
+    flashes. ``v = (vx, vy)`` in pixels per step, x along columns, y along
+    rows (pointing down). Shifts are exact band-limited (Fourier) shifts, so
+    ``v`` may be fractional; the texture is large enough that no wrapped
+    content reaches the ``n``-by-``n`` window and there are no zero-filled
+    borders.
 
     ``texture`` replaces the random texture (e.g. a real camera frame); it must
     be at least ``n + (K-1+duty)*max|v| + 32`` pixels in both directions. An
@@ -44,9 +47,9 @@ def simulate_pulsed_image(n: int, v: Sequence[float], L: int, *,
     0.1140. ``noise`` is the standard deviation of white noise added to the
     result, relative to the standard deviation of the noise-free image.
 
-    ``exposures`` sets the number of exposures ``K`` (default ``2L+1``; an
-    even ``K`` puts the exposures at half-integer steps around the centre).
-    ``duty`` is the duration of each exposure divided by the time step,
+    ``exposures`` sets the number of exposures ``K`` and overrides ``L``
+    (default ``2L+1``; an even ``K`` puts the exposures at half-integer steps
+    around the centre). ``duty`` is the duration of each exposure divided by the time step,
     in ``[0, 1)``: the texture also moves during each exposure (box blur of
     ``duty*|v|`` pixels along ``v``). Default 0: instantaneous exposures.
 
@@ -55,6 +58,12 @@ def simulate_pulsed_image(n: int, v: Sequence[float], L: int, *,
     All arguments after ``L`` are keyword-only.
 
     Returns ``bp`` or ``(bp, frames)`` with ``frames`` of shape ``(n, n, K)``.
+
+    Example::
+
+        bp, frames = simulate_pulsed_image(256, (5, -3), 4, return_frames=True)   # L = 4, so K = 9
+        est = estimate_velocity(bp, exposures=9, diagnostics=True)
+        plot_estimate(bp, est, frames[:, :, 4])     # the middle exposure, k = 0
     """
     rng = np.random.default_rng(rng)
     L = _check_option(L, "L", "positive")
@@ -66,12 +75,11 @@ def simulate_pulsed_image(n: int, v: Sequence[float], L: int, *,
         m = int(2 ** np.ceil(np.log2(n + margin)))
         tex = make_texture(m, corr_len, rng)
     else:
-        tex = np.asarray(texture, dtype=float)
-        if tex.ndim == 3 and tex.shape[2] in (3, 4):      # RGB(A) -> grey, MATLAB rgb2gray weights
-            cr, cg, cb = GREY_WEIGHTS
-            tex = cr * tex[:, :, 0] + cg * tex[:, :, 1] + cb * tex[:, :, 2]
-        if tex.ndim != 2:
-            raise ValueError(f"texture must be a 2-D grey-scale or an RGB(A) image, got shape {tex.shape}")
+        try:
+            tex = to_grey(texture)                        # RGB(A) -> grey, MATLAB rgb2gray weights
+        except ValueError:
+            raise ValueError(f"texture must be a 2-D grey-scale or an RGB(A) image, got shape "
+                             f"{np.shape(texture)}") from None
         if min(tex.shape) < n + margin:
             raise ValueError(f"texture too small for n={n} and |v|={max(abs(vx), abs(vy))} "
                              f"with {K} exposures")

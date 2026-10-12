@@ -1,23 +1,86 @@
-"""Command line: ``python -m fftvel simulate`` or ``python -m fftvel estimate FILE``."""
+"""Command line: ``fftvel simulate`` and ``fftvel estimate FILE`` (also ``python -m fftvel``).
+
+Argument parsing and output only: the files are read by :mod:`fftvel.io`,
+whose errors become one-line messages that name the options. The result is
+written to stdout as JSON, notes on what was read and used to stderr.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
+import warnings
 
 import numpy as np
 
-from .core import (DEFAULT_L, GREY_WEIGHTS, MIN_EXPOSURES, MIN_SIZE, SAT_WARN, estimate_velocity,
-                   pulsed_from_stack, to_physical)
+from . import __version__
+from .core import (DEFAULT_L, MIN_EXPOSURES, MIN_SIZE, SAT_WARN, estimate_velocity, pulsed_from_stack,
+                   to_physical)
+from .io import _SeveralArrays, frames_axis, load
 from .simulate import simulate_pulsed_image
 
-NUMERIC = ("double", "single", "int8", "uint8", "int16", "uint16", "int32", "uint32",
-           "int64", "uint64", "logical")          # MATLAB classes read as numeric arrays
-HDF5_SIGNATURE = b"\x89HDF\r\n\x1a\n"             # at byte 0, 512, 1024 or 2048 of an HDF5 file
-PIL_KEEP = ("1", "L", "I", "F", "RGB", "RGBA")     # Pillow modes read as they are (also I;16*)
-GREY = np.array(GREY_WEIGHTS)                     # MATLAB rgb2gray weights
+DESCRIPTION = """\
+Surface velocity from a single multi-flash image (2-D FFT and Radon
+transform). "simulate" estimates a simulated image whose motion is known,
+"estimate" an image file or a frame stack. The result is written to stdout
+as JSON, notes on what was read and used to stderr.
+"""
+EXAMPLES = """\
+examples:
+  %(prog)s estimate image.png --exposures 9
+  %(prog)s estimate image.png --exposures 9 --gsd 0.05 --period 0.001
+  %(prog)s estimate frames.npy --stack --exposures 9
+  %(prog)s simulate --exposures 9 --vx 5 --vy -3 --plot estimate.png
+"""
+SIMULATE = """\
+Simulate a multi-flash image of a random texture that moves by (--vx, --vy)
+px per flash, estimate it and write the result as JSON to stdout. The true
+direction and speed are written to stderr.
+"""
+SIMULATE_EXAMPLES = """\
+examples:
+  %(prog)s --exposures 9 --vx 5 --vy -3
+  %(prog)s --exposures 9 --vx 0.5 --vy 0 --noise 0.2 --plot estimate.png
+"""
+ESTIMATE = """\
+Estimate direction and speed from a multi-flash image, or from a stack of
+frames averaged into one image (--stack). A single image needs the number
+of flashes, --exposures K (or --L L for K = 2L+1): a wrong count scales the
+speed by K_true/K, and the result can still be marked valid.
+
+Files: PNG, TIFF, BMP, JPEG and other images (Pillow; colour becomes grey,
+several pages a stack), .npy, .npz and .mat (v7.3 needs h5py). Use a
+lossless format for measurements: the 8 x 8 px blocks of JPEG can give
+wrong results that are marked valid. What was read and used is reported on
+stderr, the result as JSON on stdout, with the speed in px per flash (px
+per frame for --stack).
+"""
+ESTIMATE_EXAMPLES = """\
+examples:
+  %(prog)s image.png --exposures 9
+  %(prog)s data/measurements/synthetic_flash/flash_b.png --exposures 8 --duty 0.2 --gsd 0.05 --period 0.0005
+  %(prog)s data/recordings/vid2.mat --stack --exposures 9
+  %(prog)s burst_0001.npz --stack
+"""
+
+
+class _Formatter(argparse.RawDescriptionHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
+    """Descriptions as written, and '(default: X)' for options whose default is not None or False."""
+
+    def _get_help_string(self, action):
+        if action.default is None or action.default is False:
+            return action.help
+        return super()._get_help_string(action)
+
+
+class _Notes(logging.Handler):
+    """Writes the records of the logger fftvel.io (what was read) to stderr as notes."""
+
+    def emit(self, record):
+        _note(record.getMessage())
 
 
 def _note(msg: str) -> None:
@@ -29,232 +92,41 @@ def _size(shape) -> str:
     return " x ".join(str(d) for d in shape) if len(shape) else "scalar"
 
 
-def _grey(a: np.ndarray) -> np.ndarray:
-    """RGB(A) to grey with the MATLAB rgb2gray weights; other arrays unchanged."""
-    if a.ndim == 3 and a.shape[2] in (3, 4):
-        return a[..., :3] @ GREY
+def _prog(argv0: str | None) -> str:
+    """Name of the program in the help: the console script 'fftvel', else 'python -m fftvel'."""
+    name = os.path.basename(argv0 or "")
+    stem = name[:-4] if name.lower().endswith(".exe") else name
+    return stem if stem.startswith("fftvel") else "python -m fftvel"
+
+
+def _read(path: str, var: str | None, stack: bool) -> np.ndarray:
+    """:func:`fftvel.io.load` with its notes and warnings on stderr and its errors as messages."""
+    if var is not None and not path.lower().endswith((".mat", ".npz")):
+        raise SystemExit("--var applies to .mat and .npz files only")
+    log = logging.getLogger("fftvel.io")
+    handler, level, propagate = _Notes(), log.level, log.propagate
+    log.addHandler(handler)
+    log.setLevel(logging.INFO)
+    log.propagate = False
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", UserWarning)
+            a = load(path, var=var, stack=stack)
+    except _SeveralArrays as err:
+        raise SystemExit(f"{err.path} holds several numeric arrays; choose one with --var:\n{err.listing}") from None
+    except (OSError, ValueError, ImportError) as err:
+        raise SystemExit(str(err)) from None
+    finally:
+        log.removeHandler(handler)
+        log.setLevel(level)
+        log.propagate = propagate
+    for w in caught:
+        _note(f"warning: {w.message}")
     return a
-
-
-def _load(path: str, var: str | None = None, stack: bool = False) -> np.ndarray:
-    """Read an image or array file in its own data type (.npy, .mat or an image file).
-
-    .npy files are memory-mapped, so only the frames used are read from disk.
-    Colour images become grey, multi-page images a stack (rows, cols, pages).
-    ``stack`` tells which variable of a .mat file fits (see ``_pick_variable``).
-    """
-    low = path.lower()
-    if not os.path.isfile(path):
-        raise SystemExit(f"no such file: {path}")
-    if var is not None and not low.endswith(".mat"):
-        raise SystemExit("--var applies to .mat files only")
-    if low.endswith(".npy"):
-        try:
-            a = np.load(path, mmap_mode="r")
-        except ValueError as err:               # e.g. an array of Python objects
-            raise SystemExit(f"cannot read {path}: {err}") from None
-        _note(f"{path}: {_size(a.shape)} {a.dtype}")
-    elif low.endswith(".mat"):
-        a = _load_mat(path, var, stack)
-    else:
-        a = _load_image(path)
-    if a.dtype.kind not in "biuf":
-        raise SystemExit(f"{path} holds {a.dtype} data, not a real numeric array")
-    return a
-
-
-def _pick_variable(path: str, info, var: str | None, stack: bool = False) -> str:
-    """Name of the variable to read.
-
-    That is ``var``, else the only numeric array, else the only one with 2
-    (or with ``stack`` 3) dimensions longer than 1, else the only one with at
-    least 2. ``info`` lists ``(name, shape, class, numeric)`` for every
-    variable in the file.
-    """
-    numeric = [(n, s, c) for n, s, c, ok in info if ok]
-    width = max([len(n) for n, s, c in numeric] + [1])
-    listing = "\n".join(f"  {n:<{width}}  {_size(s)} {c}" for n, s, c in numeric) or "  (none)"
-    hint = "frames = s.frames (struct) or frames = cat(3, c{:}) (cell); save(file, 'frames', '-v7')"
-    if var is not None:
-        found = [(c, ok) for n, s, c, ok in info if n == var]
-        if not found:
-            raise SystemExit(f"{path} has no variable '{var}'. Numeric arrays in the file:\n{listing}")
-        if not found[0][1]:
-            raise SystemExit(f"variable '{var}' in {path} is of class {found[0][0]}, not a numeric "
-                             f"array. Save the array itself, e.g. {hint}. Numeric arrays in the file:\n"
-                             f"{listing}")
-        return var
-    if len(numeric) == 1:
-        return numeric[0][0]
-    fits = [n for n, s, c in numeric if sum(d > 1 for d in s) == (3 if stack else 2)]
-    if len(fits) == 1:
-        return fits[0]
-    large = [n for n, s, c in numeric if sum(d > 1 for d in s) >= 2]
-    if len(large) == 1:
-        return large[0]
-    if not numeric:
-        others = ", ".join(f"{n} ({c})" for n, s, c, ok in info) or "nothing"
-        raise SystemExit(f"{path} holds no numeric array, only: {others}. Save the array itself, "
-                         f"e.g. {hint}")
-    raise SystemExit(f"{path} holds several numeric arrays; choose one with --var:\n{listing}")
-
-
-def _load_mat(path: str, var: str | None, stack: bool = False) -> np.ndarray:
-    """One numeric variable of a MAT-file (v5/v7 through scipy, v7.3 through h5py)."""
-    with open(path, "rb") as f:
-        head = f.read(2056)
-    if any(head[o:o + 8] == HDF5_SIGNATURE for o in (0, 512, 1024, 2048)):
-        return _load_mat73(path, var, stack)
-    if head.startswith((b"# Created by Octave", b"Octave-1-")):
-        raise SystemExit(f"{path} is in Octave's own format (its save writes text by default), "
-                         f"not a MAT-file; save it with save('-v7', file, 'frames') instead")
-    try:
-        from scipy.io import loadmat, whosmat
-    except ImportError:
-        raise SystemExit('reading .mat files needs scipy: pip install -e "./python[data]"') from None
-    try:
-        info = [(n, s, c, c in NUMERIC) for n, s, c in whosmat(path)]
-    except NotImplementedError:                 # v7.3 that the signature check missed
-        return _load_mat73(path, var, stack)
-    except Exception as err:                    # scipy raises ValueError, TypeError or MatReadError
-        raise SystemExit(f"cannot read {path} as a MAT-file ({err}); save it with "
-                         f"save(file, 'frames', '-v7') in MATLAB or save('-v7', file, 'frames') "
-                         f"in Octave") from None
-    name = _pick_variable(path, info, var, stack)
-    try:
-        a = loadmat(path, variable_names=[name])[name]
-    except Exception as err:                    # e.g. a damaged or truncated file
-        raise SystemExit(f"cannot read variable '{name}' of {path} ({err})") from None
-    _note(f"{path}: variable '{name}', {_size(a.shape)} {a.dtype}")
-    return a
-
-
-def _load_mat73(path: str, var: str | None, stack: bool = False) -> np.ndarray:
-    """One numeric variable of a MATLAB v7.3 (HDF5) file.
-
-    MATLAB stores arrays column-major, so h5py returns them with the axes in
-    reverse order; they are transposed back here.
-    """
-    try:
-        import h5py
-    except ImportError:
-        raise SystemExit(f"{path} is a MATLAB v7.3 (HDF5) file; reading it needs h5py: "
-                         f'pip install -e "./python[data]" (or pip install h5py). Or save it in '
-                         f"MATLAB with save(file, 'frames', '-v7')") from None
-    with h5py.File(path, "r") as f:
-        info = []
-        for name, obj in f.items():
-            if name.startswith("#"):            # #refs#, #subsystem#: data behind cells and objects
-                continue
-            cls = obj.attrs.get("MATLAB_class", b"")
-            cls = cls.decode() if isinstance(cls, bytes) else str(cls)
-            if isinstance(obj, h5py.Group):     # struct, object or sparse matrix
-                info.append((name, (), "sparse" if "MATLAB_sparse" in obj.attrs else cls or "group", False))
-                continue
-            numeric = obj.dtype.kind in "biuf" and "MATLAB_empty" not in obj.attrs
-            if cls and obj.dtype.kind == "V":
-                cls = "complex " + cls          # stored as (real, imag) pairs
-            if cls:
-                info.append((name, obj.shape[::-1], cls, numeric and cls in NUMERIC))
-            else:                               # HDF5 data not written by MATLAB: keep the axes
-                info.append((name, obj.shape, obj.dtype.name if numeric else "non-numeric", numeric))
-        name = _pick_variable(path, info, var, stack)
-        a = np.asarray(f[name][()])
-        if "MATLAB_class" in f[name].attrs:
-            a = a.T
-    _note(f"{path}: variable '{name}' (MATLAB v7.3), {_size(a.shape)} {a.dtype}")
-    return a
-
-
-def _load_image(path: str) -> np.ndarray:
-    """Image file in its own bit depth (8/16 bit, int32, float32), through Pillow."""
-    try:
-        from PIL import Image, ImageSequence
-    except ImportError:
-        return _load_image_mpl(path)
-    try:
-        with Image.open(path) as im:
-            fmt = im.format
-            pages = []
-            for page in ImageSequence.Iterator(im):
-                if page.mode not in PIL_KEEP and not page.mode.startswith("I;16"):
-                    page = page.convert("L" if page.mode in ("LA", "La") else "RGB")
-                pages.append(_grey(np.asarray(page)))
-    except (OSError, ValueError, SyntaxError) as err:     # UnidentifiedImageError is an OSError
-        if path.lower().endswith((".tif", ".tiff")):
-            return _load_tiff(path, err)
-        raise SystemExit(f"cannot read {path} as an image ({err})") from None
-    if fmt in ("JPEG", "MPO"):
-        _warn_jpeg()
-    return _stack_pages(path, pages, fmt)
-
-
-def _load_tiff(path: str, err: Exception) -> np.ndarray:
-    """TIFF that Pillow cannot read (e.g. float64), through tifffile if it is installed."""
-    try:
-        import tifffile
-    except ImportError:
-        raise SystemExit(f"cannot read {path} with Pillow ({err}). Save it as 8 or 16 bit integer or "
-                         f"float32 TIFF, or as .npy, or pip install tifffile") from None
-    try:
-        with tifffile.TiffFile(path) as tf:
-            pages = [_grey(p.asarray()) for p in tf.pages]
-    except (OSError, ValueError) as err2:
-        raise SystemExit(f"cannot read {path} as a TIFF ({err2})") from None
-    return _stack_pages(path, pages, "TIFF (tifffile)")
-
-
-def _load_image_mpl(path: str) -> np.ndarray:
-    """Fallback without Pillow: matplotlib.image.imread (PNG scaled to [0, 1])."""
-    try:
-        import matplotlib.image as mpimg
-    except ImportError:
-        raise SystemExit(f"reading {path} needs Pillow: pip install pillow (it also comes with "
-                         f'pip install -e "./python[plot]"). Without it, save the image as .npy') from None
-    if path.lower().endswith((".jpg", ".jpeg", ".jfif")):
-        _warn_jpeg()
-    return _stack_pages(path, [_grey(np.asarray(mpimg.imread(path)))], "image (matplotlib)")
-
-
-def _stack_pages(path: str, pages, fmt) -> np.ndarray:
-    """One page as it is, several pages of the size of the first one as a stack (rows, cols, pages)."""
-    same = [pg for pg in pages if pg.shape == pages[0].shape]
-    if len(same) < len(pages):                  # e.g. a thumbnail stored as a second page
-        _note(f"{path}: skipped {len(pages) - len(same)} pages of another size than the first")
-    if len(same) == 1:
-        a = same[0]
-        _note(f"{path}: {fmt}, {_size(a.shape)} {a.dtype}")
-        return a
-    a = np.stack(same, axis=2)
-    _note(f"{path}: {fmt}, {len(same)} pages stacked as {_size(a.shape)} {a.dtype}")
-    return a
-
-
-def _warn_jpeg() -> None:
-    _note("warning: JPEG compression adds an 8 x 8 px block grid, which can give wrong results "
-          "that are marked valid; use a lossless format (PNG, TIFF, BMP) for measurements")
-
-
-def _frames_axis(shape, choice: str) -> int:
-    """0 or -1: the axis of a 3-D stack that holds the frames.
-
-    ``auto`` takes the first or last axis if it is at most half as long as
-    each of the other two, and gives up otherwise.
-    """
-    if choice == "first":
-        return 0
-    if choice == "last":
-        return -1
-    if 2 * shape[2] <= min(shape[0], shape[1]):
-        return -1
-    if 2 * shape[0] <= min(shape[1], shape[2]):
-        return 0
-    raise SystemExit(f"cannot tell which axis of the {_size(shape)} stack holds the frames; "
-                     f"pass --frames-axis first or --frames-axis last")
 
 
 def _pulsed_image(a: np.ndarray, stack: bool, L: int | None = None, exposures: int | None = None,
-                  frames_axis: str = "auto"):
+                  axis_choice: str = "auto"):
     """Return ``(bp, K)``: the pulsed image and its number of exposures.
 
     A single image needs ``L`` or ``exposures``. A stack is averaged with
@@ -271,20 +143,23 @@ def _pulsed_image(a: np.ndarray, stack: bool, L: int | None = None, exposures: i
     if not stack:
         if a.ndim != 2:
             raise SystemExit(f"expected a 2-D image, got shape {shape}; use --stack for a frame stack "
-                             f"(a colour image in a .npy or .mat file must be converted to grey first)")
+                             f"(a colour image in a .npy, .npz or .mat file must be converted to grey first)")
         if L is None and exposures is None:
-            raise SystemExit("pass --L or --exposures: the number of exposures (flashes) in the image, "
-                             "2L+1 or K. A wrong count scales the speed by K_true/K and the result "
+            raise SystemExit("pass --exposures or --L: the number of exposures (flashes) in the image, "
+                             "K or 2L+1. A wrong count scales the speed by K_true/K and the result "
                              "can still be marked valid")
         return a, (2 * L + 1 if exposures is None else exposures)
     if a.ndim != 3:
         raise SystemExit(f"--stack expects a 3-D array (rows, cols, frames), got shape {shape}")
-    axis = _frames_axis(a.shape, frames_axis)
+    try:
+        axis = frames_axis(a.shape, axis_choice)
+    except ValueError as err:
+        raise SystemExit(f"{err}; pass --frames-axis first or --frames-axis last") from None
     where = "first" if axis == 0 else "last"
     if L is None and exposures is None and a.shape[axis] % 2 == 0:
-        raise SystemExit(f"the stack has {a.shape[axis]} frames, an even number; pass --L to average "
-                         f"2L+1 of them or --exposures K for K (stack of {_size(shape)}, frames on "
-                         f"the {where} axis)")
+        raise SystemExit(f"the stack has {a.shape[axis]} frames, an even number; pass --exposures K to "
+                         f"average K of them, or --L for 2L+1 (stack of {_size(shape)}, frames on the "
+                         f"{where} axis)")
     try:
         bp, K = pulsed_from_stack(a, L=L, exposures=exposures, axis=axis)
     except ValueError as err:
@@ -330,43 +205,51 @@ def _use_agg() -> None:
     matplotlib.use("Agg")
 
 
-def main(argv=None) -> int:
-    p = argparse.ArgumentParser(prog="python -m fftvel", description=__doc__)
-    sub = p.add_subparsers(dest="cmd", required=True)
+def _parser():
+    """The parser and its subparsers ``simulate`` and ``estimate``."""
+    p = argparse.ArgumentParser(prog=_prog(sys.argv[0] if sys.argv else None), description=DESCRIPTION,
+                                epilog=EXAMPLES, formatter_class=_Formatter)
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    sub = p.add_subparsers(dest="cmd", required=True, metavar="{simulate,estimate}")
 
-    s = sub.add_parser("simulate", help="simulate a pulsed image with known v and estimate it")
-    s.add_argument("--vx", type=float, default=3.0)
-    s.add_argument("--vy", type=float, default=-2.0)
-    s.add_argument("--L", type=int, default=DEFAULT_L)
-    s.add_argument("--n", type=int, default=256)
-    s.add_argument("--noise", type=float, default=0.0)
-    s.add_argument("--seed", type=int, default=0)
-    s.add_argument("--plot", metavar="PNG", help="save the diagnostic figure")
+    s = sub.add_parser("simulate", help="simulate a multi-flash image with known motion and estimate it",
+                       description=SIMULATE, epilog=SIMULATE_EXAMPLES, formatter_class=_Formatter)
+    s.add_argument("--exposures", type=int, metavar="K",
+                   help="number K >= 2 of flashes in the image (even or odd); instead of --L")
+    s.add_argument("--L", type=int,
+                   help=f"half-count of the thesis, K = 2L+1 (default {DEFAULT_L}, so K = {2 * DEFAULT_L + 1})")
+    s.add_argument("--vx", type=float, default=3.0,
+                   help="velocity along x (the columns, to the right) in px per flash")
+    s.add_argument("--vy", type=float, default=-2.0,
+                   help="velocity along y (the rows, pointing down) in px per flash")
+    s.add_argument("--n", type=int, default=256, help="side of the square image in px")
+    s.add_argument("--noise", type=float, default=0.0,
+                   help="standard deviation of white noise added to the image, relative to the standard "
+                        "deviation of the image without noise")
+    s.add_argument("--seed", type=int, default=0, help="seed of the random texture and of the noise")
+    s.add_argument("--plot", metavar="PNG", help="save the diagnostic figure as PNG")
 
-    e = sub.add_parser("estimate", help="estimate v from an image or array file",
-                       description="Estimate v from a pulsed image or a frame stack. Files: .png, .tif, "
-                                   ".bmp, .jpg and other images (Pillow; colour becomes grey, several pages "
-                                   "a stack), .npy, .mat (v7.3 needs h5py). Use a lossless format for "
-                                   "measurements: JPEG blocks can give wrong valid results. What was read "
-                                   "and used is reported on stderr, the result as JSON on stdout.")
-    e.add_argument("file", help="image, .npy or .mat file")
-    e.add_argument("--L", type=int, help="half the number of exposures, 2L+1 in total. A single image "
-                                         "needs --L or --exposures; for --stack the default is all frames")
+    e = sub.add_parser("estimate", help="estimate the motion in an image or frame stack file",
+                       description=ESTIMATE, epilog=ESTIMATE_EXAMPLES, formatter_class=_Formatter)
+    e.add_argument("file", help="image, .npy, .npz or .mat file")
     e.add_argument("--exposures", type=int, metavar="K",
-                   help="exact number of exposures (flashes), K >= 2, also even; instead of --L")
+                   help="number K >= 2 of flashes in the image (even or odd), or of frames to average "
+                        "with --stack. A single image needs --exposures or --L; for --stack the default is "
+                        "all frames")
+    e.add_argument("--L", type=int, help="half-count of the thesis, K = 2L+1; instead of --exposures")
     e.add_argument("--duty", type=float, default=0.0,
-                   help="exposure (or flash) duration divided by the time step, in [0, 1); default 0")
+                   help="flash (or exposure) duration divided by the time step, in [0, 1)")
     e.add_argument("--roi", type=int, default=512,
-                   help="side of the analysed central square in px (default 512; 0: the largest "
-                        "square). The run time grows with its square")
+                   help="side of the analysed central square in px, 0 for the largest square; the run "
+                        "time grows with its square")
     e.add_argument("--clip-outliers", action="store_true",
                    help="set pixels more than 6 robust sigma from the median, and all pixels within "
                         "3 px of them, to the median (static glints, hot pixels)")
     e.add_argument("--stack", action="store_true",
                    help="the file holds frames; average the first K (or 2L+1) of them")
     e.add_argument("--frames-axis", choices=("auto", "first", "last"), default="auto",
-                   help="axis of the stack that holds the frames, after dropping axes of length 1 "
-                        "(default auto: the first or last axis if it is clearly the shortest)")
+                   help="axis of the stack that holds the frames, after dropping axes of length 1; auto "
+                        "takes the first or last axis if it is clearly the shortest")
     e.add_argument("--gsd", type=float, metavar="LENGTH_PER_PX",
                    help="ground sample distance: the length on the surface that one pixel covers, in any "
                         "unit (for example mm per px). With --period the JSON also holds speed_per_s, "
@@ -374,16 +257,30 @@ def main(argv=None) -> int:
     e.add_argument("--period", type=float, metavar="S",
                    help="time step in seconds: between two flashes, or between two frames for --stack. "
                         "Goes with --gsd")
-    e.add_argument("--var", help="variable name inside a .mat file (needed if it holds several arrays "
-                                 "and none is the only image, or with --stack the only stack)")
-    e.add_argument("--plot", metavar="PNG", help="save the diagnostic figure")
+    e.add_argument("--var", help="array to read in a .mat or .npz file (needed if it holds several arrays "
+                                 "and none is the only image, or with --stack the only stack; in a .npz "
+                                 "file the array frames is read if there is one)")
+    e.add_argument("--plot", metavar="PNG", help="save the diagnostic figure as PNG")
+    return p, s, e
 
+
+def main(argv=None) -> int:
+    p, s, e = _parser()
     a = p.parse_args(argv)
-    if a.cmd == "estimate":
-        if a.L is not None and a.L < 1:
-            e.error("--L must be a positive integer")
-        if a.exposures is not None and a.exposures < MIN_EXPOSURES:
-            e.error(f"--exposures must be at least {MIN_EXPOSURES}")
+    sp = s if a.cmd == "simulate" else e
+    if a.L is not None and a.L < 1:
+        sp.error("--L must be a positive integer")
+    if a.exposures is not None and a.exposures < MIN_EXPOSURES:
+        sp.error(f"--exposures must be at least {MIN_EXPOSURES}")
+    if a.cmd == "simulate":
+        if a.L is not None and a.exposures is not None and a.exposures != 2 * a.L + 1:
+            s.error(f"--L {a.L} means {2 * a.L + 1} flashes but --exposures is {a.exposures}; "
+                    f"give only one of them")
+        if a.n < MIN_SIZE:
+            s.error(f"--n must be at least {MIN_SIZE}")
+        if not (np.isfinite(a.noise) and a.noise >= 0):
+            s.error("--noise must be a finite number >= 0")
+    else:
         if not 0 <= a.duty < 1:
             e.error("--duty must be in [0, 1)")
         if a.roi < 0 or 0 < a.roi < MIN_SIZE:
@@ -399,13 +296,17 @@ def main(argv=None) -> int:
     if a.plot:
         _use_agg()
     if a.cmd == "simulate":
-        L = a.L
-        bp = simulate_pulsed_image(a.n, (a.vx, a.vy), L, noise=a.noise, rng=a.seed)
+        if a.L is not None:
+            L = a.L
+        else:
+            L = DEFAULT_L if a.exposures is None else max(1, (a.exposures - 1) // 2)
+        K = 2 * L + 1 if a.exposures is None else a.exposures
+        bp = simulate_pulsed_image(a.n, (a.vx, a.vy), L, exposures=K, noise=a.noise, rng=a.seed)
         true_angle = float(np.rad2deg(np.arctan2(-a.vy, a.vx)) % 180)
-        print(f"true: angle {true_angle:.2f} deg, speed {np.hypot(a.vx, a.vy):.3f} px/step")
-        est = estimate_velocity(bp, L=L, diagnostics=bool(a.plot))
+        _note(f"true: angle {true_angle:.2f} deg, speed {np.hypot(a.vx, a.vy):.3f} px per flash")
+        est = estimate_velocity(bp, L=L, exposures=K, diagnostics=bool(a.plot))
     else:
-        bp, K = _pulsed_image(_load(a.file, a.var, a.stack), a.stack, a.L, a.exposures, a.frames_axis)
+        bp, K = _pulsed_image(_read(a.file, a.var, a.stack), a.stack, a.L, a.exposures, a.frames_axis)
         L = a.L if a.L is not None else max(1, (K - 1) // 2)
         roi = a.roi or None
         h, w = bp.shape

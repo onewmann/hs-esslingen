@@ -17,7 +17,7 @@ from scipy.io import loadmat
 from fftvel import estimate_velocity, phase_correlation
 
 REPO = Path(__file__).resolve().parents[2]
-L = 4
+K = 9                                           # frames per window
 
 p = argparse.ArgumentParser()
 p.add_argument("--save")
@@ -30,13 +30,13 @@ for ax, name in zip(axes, names):
     s = data[name].astype(float) / 255
     nf = s.shape[2]
     shift = np.array([phase_correlation(s[:, :, f], s[:, :, f + 1])[:2] for f in range(nf - 1)])
-    starts = np.arange(nf - 2 * L)
+    starts = np.arange(nf - K + 1)
     est, ref, valid = [], [], []
     for st in starts:
-        last = st + 2 * L
+        last = st + K - 1
         border = int(np.ceil(np.abs(shift[:last].sum(axis=0)).max()))   # zero fill so far
         bp = s[border:, border:, st:last + 1].mean(axis=2)
-        e = estimate_velocity(bp, L=L)
+        e = estimate_velocity(bp, exposures=K)
         est.append(e.speed)
         valid.append(e.valid)
         ref.append(np.hypot(*shift[st:last].mean(axis=0)))

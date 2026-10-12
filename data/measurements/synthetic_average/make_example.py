@@ -1,7 +1,7 @@
-"""Write the synthetic example of average mode in data/real: three stacks of
-short-exposure frames and meta.csv.
+"""Write the synthetic average-mode session in data/measurements: three
+stacks of short-exposure frames and meta.csv.
 
-    python data/real/example_average/make_example.py [OUT_DIR]
+    python data/measurements/synthetic_average/make_example.py [OUT_DIR]
 
 Each stack holds 9 frames of 192 x 192 px of data/surface_texture.png (a
 real Basler texture), shifted by exact band-limited (Fourier) shifts and

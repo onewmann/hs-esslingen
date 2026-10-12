@@ -1,12 +1,11 @@
 """Test sequences with known motion (data/testsequences.mat): every window of
 9 frames, averaged into one pulsed image, against phase correlation.
 
-    python experiments/test_sequences.py [--quick] [--out DIR] [--replot]
+    python experiments/testsequences.py [--quick] [--out DIR] [--replot]
 
 does the same as ``python experiments/run.py --only testsequences ...`` (see
 run.py). Writes testsequences.csv and testsequences.png. ``--quick`` only
-selects the output folder; this study has no smaller variant. This is a
-script, not a test module: no name in it starts with "test".
+selects the output folder; this study has no smaller variant.
 """
 
 from __future__ import annotations

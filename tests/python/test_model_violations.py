@@ -273,7 +273,7 @@ def test_tiny_run_in_spawned_workers_table_and_replot(mv, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "Check: forward model against simulate_pulsed_image" in out and "Model violations" in out
     assert "Wrong but valid results" in out and "(4 images in 7 rows of the table)" in out
-    assert (tmp_path / "figures" / "failures.png").stat().st_size > 10000
+    assert (tmp_path / "figures" / "violations.png").stat().st_size > 10000
 
 
 @pytest.mark.parametrize("args, code, message", [

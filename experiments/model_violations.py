@@ -98,7 +98,7 @@ shifts, flash duration and continuous light on a scene made of sinusoids,
 whose shifted and smeared values are known in closed form.
 
 Writes violations.csv (one row per image and estimator variant; the check
-rows have factor ``check``) and failures.png (one panel per factor: share
+rows have factor ``check``) and violations.png (one panel per factor: share
 correct and valid, and share wrong but valid, against the level). The
 summary prints the check, the table per factor and level, the levels from
 which a factor gives wrong but valid results, and per factor how many valid
@@ -780,7 +780,7 @@ def plot(rows):
                f"texture), 0.5 to 30 px per step, 9 flashes, 256 px; correct = within 2 deg and 5 %")
     for ax in axes[:len(FACTORS)]:
         ax.axhline(0, color=GRID, lw=0.8, zorder=0)
-    common.save(fig, "failures.png")
+    common.save(fig, "violations.png")
 
 
 def replot():

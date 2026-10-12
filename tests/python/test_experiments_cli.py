@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-STUDY_MODULES = ["run", "common", "accuracy", "noise", "pipeline_figure", "recordings_2025", "test_sequences",
+STUDY_MODULES = ["run", "common", "accuracy", "noise", "pipeline_figure", "recordings_2025", "testsequences",
                  "calibrate_threshold", "baselines", "model_violations", "timing",
                  "history", "history.before_after", "history.original_2025"]
 ALL_VIDEOS = "vid1.mat, vid2.mat, vid3.mat, vid4.mat not found"
@@ -68,7 +68,7 @@ def test_replot_uses_only_the_output_folder(repo, tmp_path):
     shutil.copy(repo / "experiments" / "results" / "testsequences.csv", tmp_path)
     figures = sorted((repo / "docs" / "figures").glob("*.png"))
     before = [p.stat().st_mtime_ns for p in figures]
-    for script, args in (("run.py", ["--only", "testsequences"]), ("test_sequences.py", [])):
+    for script, args in (("run.py", ["--only", "testsequences"]), ("testsequences.py", [])):
         r = experiment(repo, "--replot", *args, "--out", tmp_path, script=script)
         assert r.returncode == 0, r.stderr
         assert "windows valid" in r.stdout
@@ -129,7 +129,7 @@ def test_quick_defaults_to_results_quick(tmp_path, monkeypatch, experiments):
 
 
 def test_ci_runs_known_parts(repo, experiments):
-    # the experiments smoke step of .github/workflows/ci.yml names parts of run.py and the real-data example
+    # the experiments smoke step of .github/workflows/ci.yml names parts of run.py and a synthetic measurement session
     run, _ = experiments
     text = (repo / ".github" / "workflows" / "ci.yml").read_text()
     commands = re.findall(r"python experiments/run\.py ([^\n]*)", text)
@@ -145,7 +145,8 @@ def test_ci_runs_known_parts(repo, experiments):
     assert metas and all((repo / m).is_file() for m in metas), metas
 
 
-def test_study_modules_have_no_test_functions(repo):
-    # experiments/test_sequences.py matches pytest's file pattern; nothing in it may look like a test
-    text = (repo / "experiments" / "test_sequences.py").read_text()
-    assert "\ndef test" not in text and "\nclass Test" not in text
+def test_no_script_looks_like_a_test_module(repo):
+    # a bare pytest run from the repository root would import such a script as a test module
+    scripts = sorted((repo / "experiments").rglob("*.py"))
+    assert scripts
+    assert [p.name for p in scripts if p.name.startswith("test_") or p.stem.endswith("_test")] == []

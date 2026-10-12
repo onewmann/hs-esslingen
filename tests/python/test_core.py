@@ -174,10 +174,15 @@ def test_angle_difference():
 
 def test_version(repo):
     # __version__ comes from the installed metadata (reinstall after changing pyproject.toml),
-    # with the same number as fallback when the package is used without installing
+    # with the same number as fallback when the package is used without installing. CITATION.cff and
+    # the MATLAB package overview matlab/+fftvel/Contents.m give the same number
     pyproject = (repo / "python" / "pyproject.toml").read_text()
     expected = re.search(r'^version = "(.+)"$', pyproject, re.MULTILINE).group(1)
     assert fftvel.__version__ == expected
+    citation = (repo / "CITATION.cff").read_text(encoding="utf-8")
+    assert re.search(r'^version: ["\']?([^"\'\s]+)["\']?\s*$', citation, re.MULTILINE).group(1) == expected
+    contents = (repo / "matlab" / "+fftvel" / "Contents.m").read_text(encoding="utf-8")
+    assert re.search(r"^% Version (\S+)", contents, re.MULTILINE).group(1) == expected
     code = ("import importlib.metadata as m\n"
             "def missing(name):\n"
             "    raise m.PackageNotFoundError(name)\n"

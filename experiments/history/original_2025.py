@@ -1,8 +1,9 @@
-"""The estimator of the 2025 student project, ported to Python for comparison.
+"""The 2025 code, the estimator of the 2025 student project, ported to Python
+for comparison with the rework.
 
 Processing chain of ``aktuell/finaltest1.m`` (live Basler GUI, lines 102-139)
-as it was before the rewrite: top-hat background removal, Wiener filter, Hann
-window, zero padding to 2N, ``log(1+|FFT|)``, MATLAB-style Radon transform,
+in the 2025 code: top-hat background removal, Wiener filter, Hann window,
+zero padding to 2N, ``log(1+|FFT|)``, MATLAB-style Radon transform,
 ``beta = argmax WR`` and ``|v| = 2N / mean(spacing of findpeaks maxima)``
 with an absolute ``MinPeakProminence`` of 0.05. The script is no longer in
 the tree; it is ``2D-FFT/aktuell/finaltest1.m`` at git tag
@@ -10,10 +11,10 @@ the tree; it is ``2D-FFT/aktuell/finaltest1.m`` at git tag
 
 ``radon_matlab`` and ``findpeaks_matlab`` reproduce MATLAB's ``radon``
 (4 sub-pixels, linear binning, y up) and ``findpeaks`` semantics; the port was
-checked against the original code run in GNU Octave.
+checked against the 2025 code run in GNU Octave.
 
-Only used by ``before_after.py`` to show what changed. Do not use it for
-measurements.
+Only used by ``before_after.py`` to compare the 2025 code with the rework.
+Do not use it for measurements.
 """
 
 import numpy as np
@@ -92,10 +93,10 @@ def findpeaks_matlab(y, x, minprom=0.05, mindist=3):
 
 
 def original_estimate(bp):
-    """Return ``(beta_deg, v_mag)`` exactly as the original code computed them.
+    """Return ``(beta_deg, v_mag)`` exactly as the 2025 code computed them.
 
     ``bp`` must be square and scaled to [0, 1] like the contrast-stretched
-    frames of the original GUI.
+    frames of the 2025 GUI.
     """
     n = bp.shape[0]
     pad = 2 * n

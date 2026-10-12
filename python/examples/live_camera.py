@@ -1,10 +1,10 @@
 """Velocity from a live camera or a video file.
 
-    python python/examples/live_camera.py --mode flash --source pylon --L 4 --flash-period 0.001
-    python python/examples/live_camera.py --mode average --source pylon --exposure-us 500
-    python python/examples/live_camera.py --mode average --source 0           # any webcam through OpenCV
-    python python/examples/live_camera.py --mode flash --source recording.avi
-    python python/examples/live_camera.py --mode average --source pylon --frame-rate 80 --exposure-us 2000 --save rec
+    python python/examples/live_camera.py --mode flash --source pylon --exposures 9 --flash-period 0.001
+    python python/examples/live_camera.py --mode average --source pylon --exposures 9 --exposure-us 500
+    python python/examples/live_camera.py --mode average --source 0 --exposures 9   # any webcam through OpenCV
+    python python/examples/live_camera.py --mode flash --source recording.avi --exposures 9
+    python python/examples/live_camera.py --mode average --source pylon --exposures 9 --save data/measurements/2026-10-20_average
 
 Basler cameras need pypylon (pip install pypylon), webcams and video files
 OpenCV (pip install -e "./python[examples]", or keep an opencv-python that is
@@ -12,12 +12,13 @@ already installed and use "./python[plot,data]"; see the README).
 
 --mode must be given:
 
-flash    Every frame is one pulsed image: a strobe fires K = 2L+1 times (or
-         --exposures K) during one exposure. Each frame is estimated on its
-         own; live cameras deliver the newest frame for every estimate. The
-         speed is in px per flash step, and in px/s with --flash-period.
-         --duty is the flash pulse length divided by the flash period. The
-         flash timing cannot be checked from the frame times.
+flash    Every frame is one multi-flash (pulsed) image: a strobe fires K
+         times (--exposures K, or --L L for K = 2L+1) during one exposure.
+         Each frame is estimated on its own; live cameras deliver the
+         newest frame for every estimate. The speed is in px per flash
+         step, and in px/s with --flash-period. --duty is the flash pulse
+         length divided by the flash period. The flash timing cannot be
+         checked from the frame times.
 average  Continuous light: K consecutive frames are averaged into a pulsed
          image (do not use this for multi-flash frames). Live cameras
          deliver a fresh burst of K frames per estimate, so frames buffered
@@ -38,17 +39,19 @@ right if that frame rate is. Image sequences (img_%04d.png) need --fps.
 
 --save DIR writes every burst (average mode) or every estimated frame (flash
 mode) of a live camera to DIR as burst_0001.npz or frame_0001.npz, numbered
-on from the files already there: frames (rows x cols x frames, in the data
-type of the camera; colour frames as grey), t (the timestamps used, in s),
-clock ('camera' or 'host'), and exposure_s and frame_rate when known. A line
-for each file is appended to DIR/meta.csv (written with a header first if
-it does not exist), with the mode, the number of flashes or frames, the
+on from the files already there (one folder per session, such as
+data/measurements/2026-10-20_average): frames (rows x cols x frames, in the
+data type of the camera; colour frames as grey), t (the timestamps used, in
+s), clock ('camera' or 'host'), and exposure_s and frame_rate when known. A
+line for each file is appended to DIR/meta.csv (written with a header first
+if it does not exist), with the mode, the number of flashes or frames, the
 exposure and the periods known here filled in, and --note in the note
 column; gsd_mm_per_px, set_speed_mm_s, set_angle_deg and static are left
 for you to fill in before experiments/real_measurements.py evaluates the
-files (data/real/README.md). An existing meta.csv keeps its header and
-separator; with semicolons (German Excel) the numbers get decimal commas.
-If meta.csv cannot be written (open in Excel), the line is printed instead.
+files (data/measurements/README.md). An existing meta.csv keeps its header
+and separator; with semicolons (German Excel) the numbers get decimal
+commas. If meta.csv cannot be written (open in Excel), the line is printed
+instead.
 
 --show opens a live plot. Ctrl+C stops.
 """
@@ -72,7 +75,7 @@ Frames = List[Tuple[np.ndarray, float]]
 MAX_FAILED = 20       # consecutive failed grabs, or bursts with a failed grab, before giving up
 READ_RETRIES = 10     # webcam: attempts to read a frame before giving up
 MONO = ("Mono8", "Mono10", "Mono12", "Mono16")    # unpacked formats that pypylon delivers as arrays
-# columns of the meta.csv that --save writes (format: data/real/README.md)
+# columns of the meta.csv that --save writes (format: data/measurements/README.md)
 META_COLUMNS = ("file", "mode", "exposures", "frames", "flash_period_s", "frame_period_s", "duty", "exposure_s",
                 "gsd_mm_per_px", "set_speed_mm_s", "set_angle_deg", "static", "roi", "note")
 
@@ -554,8 +557,9 @@ def _parse(argv):
     p.add_argument("--mode", required=True, choices=["flash", "average"],
                    help="flash: every frame holds K strobe flashes; average: K frames are averaged")
     p.add_argument("--source", default="pylon", help="'pylon', a webcam index or a video file")
-    p.add_argument("--L", type=int, default=4, help="half number of flashes or frames, K = 2L+1 (4)")
-    p.add_argument("--exposures", type=int, help="exact number K >= 2 of flashes or frames, overrides --L")
+    p.add_argument("--exposures", type=int, metavar="K",
+                   help="number K >= 2 of flashes (flash mode) or frames (average mode); overrides --L")
+    p.add_argument("--L", type=int, default=4, help="half-count of the thesis, K = 2L+1 (default 4, so K = 9)")
     p.add_argument("--duty", type=float, help="flash mode: flash pulse / flash period (0); average mode: "
                    "exposure / frame step (default: read from a Basler camera, else 0)")
     p.add_argument("--flash-period", type=float, help="flash mode: time between flashes in s, for px/s")
@@ -572,7 +576,8 @@ def _parse(argv):
     p.add_argument("--exposure-us", type=float, help="Basler: set the exposure time (us), auto exposure off")
     p.add_argument("--show", action="store_true", help="live plot of speed over time")
     p.add_argument("--save", metavar="DIR", help="live cameras: write every burst (average mode) or frame "
-                   "(flash mode) to DIR as .npz, with a line for each in DIR/meta.csv")
+                   "(flash mode) to DIR as .npz, with a line for each in DIR/meta.csv; one folder per "
+                   "session, such as data/measurements/2026-10-20_average")
     p.add_argument("--note", default="", help="with --save: text for the note column of meta.csv")
     a = p.parse_args(argv)
     if a.L < 1:

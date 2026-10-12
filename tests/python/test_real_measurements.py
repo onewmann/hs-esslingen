@@ -1,4 +1,5 @@
-"""experiments/real_measurements.py: meta.csv checks, stacks, the summary, average mode and runs on the examples."""
+"""experiments/real_measurements.py: meta.csv checks, stacks, the summary, average mode, the files it reads and runs
+on the synthetic sessions in data/measurements."""
 
 import csv
 import math
@@ -37,8 +38,8 @@ def read_results(path):
         return {r["file"]: r for r in csv.DictReader(f)}
 
 
-def test_example_folder(repo):
-    folder = repo / "data" / "real" / "example"
+def test_synthetic_flash_folder(repo):
+    folder = repo / "data" / "measurements" / "synthetic_flash"
     assert sum(p.stat().st_size for p in folder.iterdir()) < 1_000_000
     from PIL import Image
     with open(folder / "meta.csv", newline="") as f:
@@ -55,14 +56,14 @@ def test_example_folder(repo):
     assert not (folder / "results.csv").exists()
 
 
-def test_run_on_example(repo, tmp_path):
-    example = shutil.copytree(repo / "data" / "real" / "example", tmp_path / "example")
+def test_run_on_synthetic_flash(repo, tmp_path):
+    session = shutil.copytree(repo / "data" / "measurements" / "synthetic_flash", tmp_path / "synthetic_flash")
     figure = tmp_path / "fig.png"
     r = subprocess.run([sys.executable, str(repo / "experiments" / "real_measurements.py"),
-                        str(example / "meta.csv"), "--figure", str(figure), "--jobs", "2"],
+                        str(session / "meta.csv"), "--figure", str(figure), "--jobs", "2"],
                        capture_output=True, text=True, timeout=300)
     assert r.returncode == 0, r.stderr
-    res = read_results(example / "results.csv")
+    res = read_results(session / "results.csv")
     assert set(res) == {"flash_a.png", "flash_b.png", "static.png"}
     for name, angle in (("flash_a.png", 30), ("flash_b.png", 120)):
         row = res[name]
@@ -82,6 +83,26 @@ def test_run_on_example(repo, tmp_path):
     assert "Valid but off by more than 5 % or 2 deg: 0 of 2" in out
     assert "Phase correlation of the reference frames (1 valid image)" in out
     assert figure.stat().st_size > 10_000
+
+
+def test_files_are_read_with_fftvel_io(rm, repo, tmp_path):
+    # the evaluation reads files with the public fftvel.io, not with private names of the command line, so
+    # its messages name no command line options
+    source = (repo / "experiments" / "real_measurements.py").read_text(encoding="utf-8")
+    assert "fftvel.__main__" not in source and "SystemExit" not in source
+    bp = simulate_pulsed_image(96, (3.0, -1.0), 4, rng=2)
+    np.savez(tmp_path / "image.npz", image=bp)                                  # one array, not named frames
+    np.savez(tmp_path / "two.npz", a=bp, b=bp)                                  # two images: which one?
+    np.save(tmp_path / "cube.npy", np.repeat(bp[:48, :48, None], 40, axis=2))  # 48 x 48 x 40: frames axis?
+    meta = write_meta(tmp_path / "meta.csv", ["file", "exposures"], ["image.npz", "9"], ["two.npz", "9"],
+                      ["cube.npy", "9"])
+    rows, _, problems, _ = rm.read_meta(meta)
+    assert problems == []
+    tasks, failed = rm.build_tasks(rows)
+    assert [t["name"] for t in tasks] == ["image.npz"] and rm.analyse(tasks[0])["valid"] == 1
+    errors = [r["error"] for r in failed]
+    assert "two.npz holds several numeric arrays" in errors[0] and "--var" not in errors[0]
+    assert "cannot tell which axis of the 48 x 48 x 40 stack" in errors[1] and "--frames-axis" not in errors[1]
 
 
 def test_upper_bound(rm):
@@ -220,8 +241,9 @@ def test_warnings_and_summary(rm, tmp_path):
 
 # Average mode
 
-# values of the run on data/real/example before average mode was added (flash mode must give the same)
-OLD_EXAMPLE = {
+# values of the run on data/measurements/synthetic_flash before average mode was added (flash mode must
+# give the same)
+OLD_FLASH_ROWS = {
     "flash_a.png": dict(valid=1, speed_px=4.002197201325098, angle_deg=30.017069240380067,
                         quality=0.9455707004007519, speed_err=0.0005493003312744271,
                         ref_speed_diff=0.0004216654838808953),
@@ -249,8 +271,8 @@ def counts(frames, rng=0, noise=1.0):
     return np.clip(np.round(100 + 25 * frames + noise * g.standard_normal(frames.shape)), 0, 255).astype(np.uint8)
 
 
-def test_example_average_folder(repo):
-    folder = repo / "data" / "real" / "example_average"
+def test_synthetic_average_folder(repo):
+    folder = repo / "data" / "measurements" / "synthetic_average"
     assert sum(p.stat().st_size for p in folder.iterdir()) < 1_000_000
     with open(folder / "meta.csv", newline="") as f:
         rows = list(csv.DictReader(f))
@@ -263,13 +285,13 @@ def test_example_average_folder(repo):
     assert not (folder / "results.csv").exists()
 
 
-def test_run_on_example_average(repo, tmp_path):
-    example = shutil.copytree(repo / "data" / "real" / "example_average", tmp_path / "example_average")
+def test_run_on_synthetic_average(repo, tmp_path):
+    session = shutil.copytree(repo / "data" / "measurements" / "synthetic_average", tmp_path / "synthetic_average")
     r = subprocess.run([sys.executable, str(repo / "experiments" / "real_measurements.py"),
-                        str(example / "meta.csv"), "--jobs", "2"], capture_output=True, text=True, timeout=300)
+                        str(session / "meta.csv"), "--jobs", "2"], capture_output=True, text=True, timeout=300)
     assert r.returncode == 0, r.stderr
     out = r.stdout
-    res = read_results(example / "results.csv")
+    res = read_results(session / "results.csv")
     assert set(res) == {"moving_regular.npz", "moving_dropped.npz", "static.npz"}
     reg, drop, static = res["moving_regular.npz"], res["moving_dropped.npz"], res["static.npz"]
     # regular: valid, close to the true 6 px per frame at 30 deg, and close to the mean step
@@ -304,13 +326,13 @@ def test_run_on_example_average(repo, tmp_path):
     assert "moving_dropped.npz: 60 mm/s (6.000 px/frame, frame period 5 ms from the timestamps)" in out
 
 
-def test_old_example_rows_unchanged(rm, repo, tmp_path):
-    folder = repo / "data" / "real" / "example"
+def test_old_synthetic_flash_rows_unchanged(rm, repo, tmp_path):
+    folder = repo / "data" / "measurements" / "synthetic_flash"
     rows, _, problems, _ = rm.read_meta(folder / "meta.csv")
     assert problems == []
     results = [rm.analyse(t) for t in rm.build_tasks(rows)[0]]
     by_file = {r["file"]: r for r in results}
-    for name, expected in OLD_EXAMPLE.items():
+    for name, expected in OLD_FLASH_ROWS.items():
         for key, value in expected.items():
             assert by_file[name][key] == pytest.approx(value, rel=1e-7), (name, key)
     assert by_file["static.png"]["valid"] == 0 and by_file["static.png"]["reason"].startswith("quality 0.29")

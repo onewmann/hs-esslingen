@@ -1,16 +1,20 @@
-# Real multi-flash measurements
+# Multi-flash measurements
 
-This folder holds real multi-flash images, one subfolder per measurement
-session, each with a `meta.csv` that describes every image.
-`experiments/real_measurements.py` estimates all of them, converts the
-results to mm/s and compares them with the set motion:
+This folder is for measurement sessions: one subfolder per session, each
+with a `meta.csv` that describes every image. The two sessions
+`synthetic_flash/` and `synthetic_average/` are simulated examples of the
+format, not measurements. `experiments/real_measurements.py` estimates every
+image of a session, converts the results to mm/s and compares them with the
+set motion. What the camera set-up needs, how to measure the ground sample
+distance and which controls to record is in
+[docs/acquisition.md](../../docs/acquisition.md).
 
 ```
-data/real/
+data/measurements/
   README.md
-  example/                 synthetic example, written by example/make_example.py
-  example_average/         synthetic example of average mode, written by example_average/make_example.py
-  2026-10-14_axis/         one folder per session (any name)
+  synthetic_flash/         simulated multi-flash images, written by synthetic_flash/make_example.py
+  synthetic_average/       simulated frame stacks for average mode, written by synthetic_average/make_example.py
+  2026-10-14_flash/        one folder per session, named <date>_<mode> (any name works)
     meta.csv
     img_0001.png
     img_0002.png
@@ -19,12 +23,12 @@ data/real/
 ```
 
 ```bash
-python experiments/real_measurements.py data/real/2026-10-14_axis/meta.csv --figure data/real/2026-10-14_axis/results.png
-python experiments/real_measurements.py data/real/example/meta.csv --out results.csv
+python experiments/real_measurements.py data/measurements/2026-10-14_flash/meta.csv --figure data/measurements/2026-10-14_flash/results.png
+python experiments/real_measurements.py data/measurements/synthetic_flash/meta.csv --out results.csv
 ```
 
 On Windows write the paths with backslashes if you like
-(`python experiments\real_measurements.py data\real\2026-10-14_axis\meta.csv`),
+(`python experiments\real_measurements.py data\measurements\2026-10-14_flash\meta.csv`),
 and put a path that contains spaces in double quotes
 (`python experiments\real_measurements.py "D:\Messungen\14 Oct\meta.csv"`).
 The script needs the package and its extras:
@@ -43,10 +47,10 @@ analysed square, 512), `--clip-outliers` (against glints), `--tol-speed` and
 `--tol-angle` (what counts as off, default 0.05 and 2 deg), `--worst N`,
 `--jobs N` (worker processes; a 512 px square takes several seconds).
 
-Try it on `example/` first. Without `--out` the results land in
-`example/results.csv`. Without a flash, see
+Try it on `synthetic_flash/` first. Without `--out` the results land in
+`synthetic_flash/results.csv`. Without a flash, see
 [Testing without a flash](#testing-without-a-flash-averaged-frames) and
-`example_average/`.
+`synthetic_average/`.
 
 If a row of `meta.csv` has a problem (see below), the script prints it with
 its line, skips that row and analyses the others; the skipped rows appear in
@@ -72,10 +76,10 @@ a cell empty when the value is not known. The columns for averaged frames
 | `exposures` | | number of flashes K in the image, at least 2 (also even) |
 | `flash_period_s` | s | time from the start of one flash to the start of the next. Empty: speeds in px per flash only |
 | `duty` | | flash pulse length divided by the flash period, in [0, 1). 0 or empty if unknown. In `results.csv`: the duty used, in average mode also when it comes from `exposure_s` (and `exposure_s` the exposure used, also when it comes from the file) |
-| `gsd_mm_per_px` | mm/px | ground sample distance: length on the surface covered by one pixel (see [gsd](#ground-sample-distance)). Empty: speeds in px per flash only |
+| `gsd_mm_per_px` | mm/px | ground sample distance: length on the surface covered by one pixel (how to measure it: [docs/acquisition.md](../../docs/acquisition.md#ground-sample-distance-and-physical-units)). Empty: speeds in px per flash only |
 | `set_speed_mm_s` | mm/s | speed set on the axis or turntable. Empty if unknown |
 | `set_angle_deg` | deg | set direction of motion in the image (see [Angle convention](#angle-convention)). Empty if unknown |
-| `static` | | 1 for an image of the stopped surface (or another image that must come out not valid, see [Static images](#static-images)), else 0 (empty: 0) |
+| `static` | | 1 for an image of the stopped surface (or another image that must come out not valid, see [static images](../../docs/acquisition.md#static-images)), else 0 (empty: 0) |
 | `roi` | px | side of the analysed central square; empty: `--roi` (default 512); 0: the largest central square |
 | `note` | | free text |
 | `exposure_s` | s | optional: camera exposure time; the script warns if it is shorter than (K - 1 + duty) flash periods |
@@ -169,100 +173,6 @@ angle = np.degrees(np.arctan2(-dy, dx)) % 180   # set_angle_deg
 
 In MATLAB: `[dx, dy] = fftvel.phase_correlation(a, b); angle = mod(atan2d(-dy, dx), 180)`.
 
-### Ground sample distance
-
-`gsd_mm_per_px` is the length on the moving surface that one pixel covers.
-Its relative error passes one to one into every speed in mm/s, so measure it
-carefully:
-
-1. Put a checkerboard or a ruler in the plane of the moving surface, at the
-   same height, with the camera, lens, focus and working distance of the
-   measurements. Refocusing or moving the camera changes the gsd.
-2. Take an image and find the pixel coordinates of two marks far apart, for
-   example 80 mm on the ruler or 10 squares of the checkerboard, near the
-   image centre where the analysed square lies (lens distortion changes the
-   gsd towards the corners). In MATLAB: `imshow(I); [x, y] = ginput(2);
-   d = hypot(diff(x), diff(y))`.
-3. gsd = known length / pixel distance. Measure along x and along y; if the
-   two differ by more than about 0.5 %, the camera looks at the surface at
-   an angle, and one gsd does not fit both directions.
-4. Reading each mark to within 1 px over 1600 px gives about 0.1 % error;
-   over 160 px it is about 1 %.
-
-The axis can also measure it: take an image of the stopped surface, move the
-axis by a known distance D (say 10 mm), take another, and get the
-displacement d in px by phase correlation as above. Then gsd = D / |d|. Keep
-|d| below a quarter of the analysed square (with a 1216 px square, below
-about 300 px).
-
-### Flash period
-
-The motion per flash in px is
-
-    v_px = v * T / gsd
-
-with v the speed in mm/s, T the flash period in s and gsd in mm/px. The
-estimator measures from about 3.35/K px per flash (0.37 px for K = 9) up to
-about n/4 px for an n px square (128 px for the default 512 px); the
-simulations test up to n/4. Aim for a few px per flash, about 4 to 10, so
-that T = v_px * gsd / v. Below about 2.2 px per flash a single blurred
-exposure looks like the flash pattern (see the blur check in
-[docs/method.md](../../docs/method.md#blur-check-optional)).
-
-Worked example: v = 500 mm/s, gsd = 0.05 mm/px (the 1936 px wide sensor
-covers 97 mm), 5 px per flash: T = 5 * 0.05 / 500 s = 0.5 ms, a flash rate
-of 2 kHz. With K = 9 the exposure has to cover (K - 1 + duty) * T, so at
-least 8.04 * 0.5 ms = 4.0 ms; set 4.5 ms and make sure that exactly 9
-flashes fall into it. A 20 us pulse gives duty = 20 us / 0.5 ms = 0.04 and a
-blur of duty * v_px = 0.2 px per flash, which is negligible. With the same
-T an axis at 100 to 1000 mm/s gives 1 to 10 px per flash. During the 9
-flashes the surface moves (K - 1) * v_px = 40 px, a small part of the 512 px
-square.
-
-### Acquisition
-
-* Exactly K flashes per image. The safest set-up lets the camera start a
-  burst of exactly K pulses (exposure active or frame trigger output to the
-  flash controller), or lets the controller trigger the camera. With a
-  free-running strobe the number of flashes in an exposure changes from
-  frame to frame. A wrong K scales the speed by K_true/K for slow motion,
-  and the result can still be marked valid.
-* Equal flash intervals: uneven ones can give twice the speed, marked valid.
-  Check the number of pulses and the flash period once with a photodiode
-  and an oscilloscope; an error in the period passes one to one into the
-  speed in mm/s.
-* No other light during the exposure. The exposure lasts about (K - 1) * T,
-  and continuous light during it adds a motion-blurred image of the
-  surface. Any blur of b px along one direction, from such light or from
-  vibration, looks like K flashes b/K px apart and can be marked valid.
-  The smoke test on the 2025 recordings ran into this: single exposures of
-  `vid4.mat`, read as if they held 9 flashes, gave 3 of 10 frames valid with
-  0.48 to 0.54 px per flash, all at 90 deg, that is a blur of about 4.3 to
-  4.8 px, vertical on the screen. The cause of that blur is not known; from
-  frame to frame the surface moved 1.6 to 6.0 px in directions of 89 to
-  129 deg (phase correlation of the central 512 px square). Darken
-  the room or use an enclosure or a band-pass filter for the flash colour,
-  check that an image with the flash switched off is black, and record the
-  single-flash controls described under [Static images](#static-images).
-* No saturation: the script warns when more than 1 % of the analysed
-  pixels are saturated (the `saturated` column says how many). Glints of the flash on shiny surfaces
-  can be reported as motion; `--clip-outliers` helps against small ones.
-* Focus: a defocused image can look like slow motion. The static images
-  below check this.
-
-### Static images
-
-Record a number of images of the stopped surface with the same settings (K,
-flash period, exposure, ROI) and give them `static` 1. All of them must come
-out not valid. `static` 1 means "must come out not valid", so it also fits
-a second control: images of the moving surface with a single flash in the
-same exposure time (listed with the `exposures` of the real measurements).
-They hold no flash pattern, and a valid one shows blur from other light or
-vibration. With none of N static images valid, the one-sided 95 %
-Clopper-Pearson upper bound of the rate of static images marked valid is
-1 - 0.05^(1/N): 26 % for N = 10, 9.5 % for N = 30, 4.9 % for N = 60, 3.0 %
-for N = 100. The summary prints this bound for the images given.
-
 ### Phase-correlation cross-check
 
 `ref_frame_a` and `ref_frame_b` name two single-flash frames (one flash per
@@ -285,74 +195,31 @@ pulsed image. If the exposures are short and the steps between the frames
 are equal, it is the image that K flashes, one per frame, would give: the
 frame period takes the place of the flash period, and the exposure divided
 by the frame period the place of the duty. Rows of `meta.csv` with mode
-`average` average the frames; both live scripts record them.
+`average` average the frames; both live scripts record them. The camera
+settings and how to choose the frame rate from the speed are in
+[docs/acquisition.md](../../docs/acquisition.md#testing-without-a-flash).
 
 Label the results of this mode as emulated multi-flash. They test the
 estimator on a real camera, lens, texture and noise, with the real gsd and
 set motion. They do not test the flash timing, the number of flashes in one
-exposure, or other light during one long exposure (see
-[Acquisition](#acquisition)); report them separately from multi-flash
-measurements.
-
-### Camera settings
-
-* A fixed frame rate: AcquisitionFrameRateEnable on and AcquisitionFrameRate
-  set (`--frame-rate` in `live_camera.py`, `'FrameRate'` in `live_basler`).
-  Both scripts print the frame rate the camera reaches (ResultingFrameRate);
-  if it is lower than the one set, the exposure, the ROI or the bandwidth
-  limits it.
-* ExposureAuto and GainAuto off, so that all frames have the same exposure
-  and gain. `--exposure-us` and `'Exposure'` set the exposure and switch
-  ExposureAuto off; set the gain and GainAuto off in the pylon Viewer and
-  save them in the user set the camera starts with.
-* An exposure of at most a quarter of the frame interval (duty at most
-  0.25). During one exposure the surface moves duty times the step, which
-  blurs every frame along the motion. `real_measurements.py` warns above
-  0.25, and in particular between 0.4 and 0.6, where the speed fit depends
-  strongly on the exact exposure (the live scripts warn between 0.4 and 0.6
-  and above 0.9).
-* Continuous light without flicker, for example LEDs on a DC supply. Lamps
-  on the 50 Hz mains flicker at 100 Hz, so short exposures at a fixed frame
-  rate get different brightness, and the frames no longer count equally in
-  the mean.
-* A camera ROI, so that the camera reaches the frame rate: the maximum frame
-  rate grows when fewer rows are read out and less data is sent per frame.
-  Set Width and Height (for example 512 x 512, the analysed square) and
-  centre it with OffsetX and OffsetY in the pylon Viewer. `live_basler` sets
-  a centred square of `'ROI'` px itself.
-* Enough buffers and no dropped frames. `live_camera.py` grabs every burst
-  of K frames into K + 2 buffers (at least 10), reports grabs that failed
-  and skips bursts that lost frames; on GigE enable jumbo frames. In the
-  recordings, the timestamps and the step check below show a dropped frame.
-
-### Choosing the frame rate
-
-The motion per frame in px is
-
-    v_px = v * dt / gsd
-
-with v the speed in mm/s, dt = 1 / frame rate the frame interval in s and
-gsd in mm/px. As for flashes, the estimator measures from about 3.35/K px
-per frame (0.37 px for K = 9) up to about N/4 px for an N px square (128 px
-for 512 px); aim for about 4 to 10 px per frame, so dt = v_px * gsd / v.
-
-Worked example: gsd = 0.05 mm/px, the axis at 20 mm/s, 5 px per frame:
-dt = 5 * 0.05 / 20 s = 12.5 ms, a frame rate of 80 Hz. The exposure must be
-at most dt / 4 = 3.1 ms; 2 ms gives duty 0.16 and a blur of 0.16 * 5 =
-0.8 px per frame. With K = 9 a window spans 8 frame intervals, 100 ms, and
-the surface moves 40 px, a small part of the 512 px square. For 100 mm/s
-the same 5 px per frame need dt = 2.5 ms, 400 Hz, and an exposure of at most
-0.6 ms; that frame rate usually needs a small camera ROI.
+exposure, or other light during one long exposure (see the
+[checklist](../../docs/acquisition.md#checklist)); report them separately from
+multi-flash measurements.
 
 ### Recording
 
-```
-python python/examples/live_camera.py --mode average --source pylon --frame-rate 80 --exposure-us 2000 --L 4 --save data/real/2026-10-20_average --note "axis 20 mm/s"
+```bash
+python python/examples/live_camera.py --mode average --source pylon --exposures 9 --frame-rate 80 --exposure-us 2000 --save data/measurements/2026-10-20_average --note "axis 20 mm/s"
 ```
 
 ```matlab
-live_basler('Mode', 'average', 'FrameRate', 80, 'Exposure', 2000, 'L', 4, 'SaveDir', 'data/real/2026-10-20_average', 'Note', 'axis 20 mm/s')
+addpath('matlab', 'matlab/examples')       % from the repository root
+live_basler('Mode', 'average', 'Exposures', 9, 'FrameRate', 80, 'ExposureUs', 2000, ...
+    'SaveDir', 'data/measurements/2026-10-20_average', 'Note', 'axis 20 mm/s')
 ```
+
+`--exposure-us` and `'ExposureUs'` are the exposure time in µs; the folder is
+one session.
 
 Every burst of K frames that the script estimates is saved, as
 `burst_0001.npz` (Python) or `burst_0001.mat` (MATLAB), numbered on from the
@@ -452,7 +319,7 @@ estimate, and a static window whose frames move by more than that gets a
 warning.
 
 The estimate assumes equal steps. A window with uneven steps can still come
-out valid: in `example_average/`, the stack with one missing frame gives the
+out valid: in `synthetic_average/`, the stack with one missing frame gives the
 set speed (7 of its 8 steps are equal), while its mean step is 12.5 % too
 long. Decide before looking at the estimates whether windows with uneven
 steps are excluded, and give the reason (for example, a dropped frame) in
@@ -516,26 +383,26 @@ comma); a double click puts each row into one cell.
 
 ## Example
 
-`example/` holds a synthetic example to try the script on before real images
-exist: three multi-flash images (9 flashes at 4 px per flash; 8 flashes at
+`synthetic_flash/` holds a synthetic example to try the script on before real
+multi-flash images exist: three multi-flash images (9 flashes at 4 px per flash; 8 flashes at
 5.6 px per flash with duty 0.2 and noise; a stopped surface) and two
 single-flash reference frames, 256 x 256 px, 16-bit PNG.
-`example/make_example.py` writes them with `fftvel.simulate_pulsed_image`
+`synthetic_flash/make_example.py` writes them with `fftvel.simulate_pulsed_image`
 from `data/surface_texture.png` (a real Basler texture) with exactly known
 motion, so the errors it shows (below 0.1 % and 0.2 deg) come from the
 estimator alone, without the errors of a real axis, gsd or flash timing.
 
-`example_average/` holds a synthetic example of average mode: three stacks
+`synthetic_average/` holds a synthetic example of average mode: three stacks
 of 9 frames of 192 x 192 px, 8-bit, as `.npz` files in the format that
 `live_camera.py --save` writes. The frames are the same texture shifted by
 6 px per frame at 30 deg (5 ms frame period, 0.5 ms exposure, noise of 2
 counts per frame): `moving_regular.npz` with regular timestamps and steps,
 `moving_dropped.npz` with one frame missing (one step and one frame interval
 twice as long, flagged by the step check), and `static.npz` of the stopped
-surface. `example_average/make_example.py` writes them. The script marks
+surface. `synthetic_average/make_example.py` writes them. The script marks
 both moving windows valid with speed errors below 0.1 %, flags the one with
 the missing frame, and marks the static one not valid:
 
 ```bash
-python experiments/real_measurements.py data/real/example_average/meta.csv --out results.csv
+python experiments/real_measurements.py data/measurements/synthetic_average/meta.csv --out results.csv
 ```

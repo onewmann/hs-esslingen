@@ -5,13 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fftvel"
 version = "0.1.0"
-description = "Velocity of a moving texture from a single pulsed-exposure image (2-D FFT + Radon)"
+description = "Surface velocity from a single multi-flash image (2-D FFT and Radon transform)"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{name = "Oliver Neumann"}]
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.21"]
+
+[project.scripts]
+fftvel = "fftvel.__main__:main"
 
 [project.optional-dependencies]
 plot = ["matplotlib>=3.6"]

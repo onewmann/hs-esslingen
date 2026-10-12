@@ -1,18 +1,20 @@
-"""Real multi-flash images against the set motion: estimate every image listed
-in a meta.csv, convert to mm/s and summarise the errors.
+"""Your own measurements against the set motion: estimate every multi-flash
+image (or average-mode frame stack) listed in a meta.csv, convert to mm/s
+and summarise the errors.
 
-    python experiments/real_measurements.py data/real/RUN/meta.csv [--figure PNG] [--out FILE]
-    python experiments/real_measurements.py data/real/example/meta.csv --out results.csv
+    python experiments/real_measurements.py data/measurements/SESSION/meta.csv [--figure PNG] [--out FILE]
+    python experiments/real_measurements.py data/measurements/synthetic_flash/meta.csv --out results.csv
 
 meta.csv has one row per image: the file, the number of flashes, the flash
 period, the duty, the gsd, the set speed and direction, whether the surface
 stood still, and optionally two single-flash frames for a phase-correlation
-cross-check (format and advice: data/real/README.md). Writes results.csv
-next to meta.csv (or to --out) with the estimate of every image, and prints
-the share of moving images marked valid, the median and 95th percentile of
-the speed and angle errors of the valid ones, the static images marked valid
-with a Clopper-Pearson upper bound, and the worst images. --figure adds a
-plot of estimated against set speed, the speed errors and the angle errors.
+cross-check (format and advice: data/measurements/README.md). Writes
+results.csv next to meta.csv (or to --out) with the estimate of every image,
+and prints the share of moving images marked valid, the median and 95th
+percentile of the speed and angle errors of the valid ones, the static
+images marked valid with a Clopper-Pearson upper bound, and the worst
+images. --figure adds a plot of estimated against set speed, the speed
+errors and the angle errors.
 
 All rows are checked first. A row with a problem (a file that does not
 exist, a value out of range) is reported with its line, skipped and listed
@@ -28,14 +30,14 @@ instead averages consecutive frames of a stack, taken under continuous light
 with short exposures, into one pulsed image (testing without a flash; it
 emulates the flashes, it does not test their timing). The steps between
 those frames are checked by phase correlation and, if the file holds
-timestamps, by the frame intervals. data/real/example and
-data/real/example_average hold small synthetic examples.
+timestamps, by the frame intervals. data/measurements/synthetic_flash and
+data/measurements/synthetic_average hold small synthetic examples of the
+two modes. Files are read with fftvel.io.
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
 import csv
 import io
 import math
@@ -46,13 +48,14 @@ from functools import lru_cache
 from multiprocessing import Pool
 from pathlib import Path
 from types import SimpleNamespace
+from warnings import catch_warnings, simplefilter
 
 import numpy as np
 
 import common
 from common import AQUA, BLUE, INK2, ORANGE, SURFACE
+import fftvel.io
 from fftvel import angle_difference, estimate_velocity, phase_correlation, pulsed_from_stack, to_physical
-from fftvel.__main__ import HDF5_SIGNATURE, _frames_axis, _load
 from fftvel.core import DEFAULT_PAD_FACTOR, RFRAC, SAT_WARN, VMIN_FACTOR
 from fftvel.stream import frame_step
 
@@ -313,37 +316,19 @@ def central(img, side: int):
 
 @lru_cache(maxsize=4)
 def _read(path: str, stack: bool = False):
-    """Array of an image or array file (fftvel CLI loader, or the frames of a .npz file).
+    """Array of an image or array file, read with fftvel.io.load.
 
-    The notes of the loader on stderr are dropped. ``stack`` tells the
-    loader that a stack is expected (which variable of a .mat file fits).
+    ``stack`` tells the loader that a stack is expected (which array of a
+    .mat or .npz file fits). Its warnings are left out: a JPEG file gets a
+    warning of its own in results.csv (see _image_warnings). Raises
+    ValueError with a message if the file cannot be read.
     """
-    if path.lower().endswith(".npz"):
-        return _load_npz(path)
-    with contextlib.redirect_stderr(io.StringIO()):
-        return _load(path, stack=stack)
-
-
-def _load_npz(path: str):
-    """The image or stack of a .npz file: the entry 'frames', else its only array with at least 2 axes > 1."""
     try:
-        with np.load(path, allow_pickle=False) as z:
-            arrays = {k: z[k] for k in z.files}
-    except Exception as err:  # noqa: BLE001 - not a zip file, a damaged one, or entries that need pickle
-        raise SystemExit(f"cannot read {path} as a .npz file ({err})") from None
-    if "frames" in arrays:
-        name = "frames"
-    else:
-        large = [k for k, a in arrays.items() if sum(d > 1 for d in a.shape) >= 2]
-        if len(large) != 1:
-            listing = ", ".join(f"{k} ({' x '.join(map(str, a.shape)) or 'scalar'})" for k, a in arrays.items())
-            raise SystemExit(f"{path} holds {listing or 'no array'}; save the image or the stack under "
-                             f"the name frames, e.g. np.savez(file, frames=frames, t=t)")
-        name = large[0]
-    a = arrays[name]
-    if a.dtype.kind not in "biuf":
-        raise SystemExit(f"{path}: '{name}' holds {a.dtype} data, not a real numeric array")
-    return a
+        with catch_warnings():
+            simplefilter("ignore", UserWarning)
+            return fftvel.io.load(path, stack=stack)
+    except (OSError, ImportError) as err:       # a file that has gone, or a reader that is not installed
+        raise ValueError(str(err)) from None
 
 
 @lru_cache(maxsize=4)
@@ -390,7 +375,7 @@ def _mat_extras(path: str) -> dict:
     want = (*TIMES, *EXTRAS)
     with open(path, "rb") as f:
         head = f.read(2056)
-    if any(head[o:o + 8] == HDF5_SIGNATURE for o in (0, 512, 1024, 2048)):     # MATLAB v7.3
+    if any(head[o:o + 8] == fftvel.io.HDF5_SIGNATURE for o in (0, 512, 1024, 2048)):     # MATLAB v7.3
         import h5py
         out = {}
         with h5py.File(path, "r") as f:
@@ -416,24 +401,19 @@ def stack_of(path: Path):
 
     Axes of length 1 are dropped, so a MATLAB getdata stack (rows x cols x
     1 x frames) works as it is. The frames lie on the first or last axis
-    (see fftvel.__main__._frames_axis); if that cannot be told, on the last.
+    (see fftvel.io.frames_axis); if that cannot be told, on the last.
     Raises ValueError with a message if the file cannot be read or holds no
     stack.
     """
-    try:
-        a = _read(str(path), True)
-    except SystemExit as err:                   # the CLI loader exits with a message
-        msg = str(err.code).replace("choose one with --var", "save only the stack and its timestamps in "
-                                    "the file, e.g. save('rec1.mat', 'frames', 't')")
-        raise ValueError(msg) from None
+    a = _read(str(path), True)
     shape = a.shape
     a = np.squeeze(a)
     if a.ndim != 3:
         raise ValueError(f"average mode needs a stack of frames, the file holds an array of "
                          f"{' x '.join(map(str, shape))}")
     try:
-        axis = _frames_axis(a.shape, "auto")
-    except SystemExit:
+        axis = fftvel.io.frames_axis(a.shape)
+    except ValueError:
         axis = -1
     return a, axis
 
@@ -444,12 +424,7 @@ def frames_of(path: Path, frame=None):
     ``frame`` (from 1) selects one frame of a stack. Raises ValueError with a
     message if the file cannot be read or holds no grey image.
     """
-    try:
-        a = _read(str(path))
-    except SystemExit as err:                   # the CLI loader exits with a message
-        msg = str(err.code).replace("choose one with --var", "save only the image or the stack in the "
-                                    "file, e.g. save('rec1.mat', 'recording')")
-        raise ValueError(msg) from None
+    a = _read(str(path))
     shape = a.shape
     a = np.squeeze(a)
     if a.ndim == 2:
@@ -458,10 +433,7 @@ def frames_of(path: Path, frame=None):
         return [("", a)]
     if a.ndim != 3:
         raise ValueError(f"expected an image or a stack of images, got shape {shape}")
-    try:
-        axis = _frames_axis(a.shape, "auto")
-    except SystemExit as err:
-        raise ValueError(str(err.code)) from None
+    axis = fftvel.io.frames_axis(a.shape)       # ValueError if it cannot tell
     nf = a.shape[axis]
     if frame is not None:
         if frame > nf:
@@ -1169,7 +1141,7 @@ def _cannot_write(path: Path):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("meta", type=Path, help="meta.csv, one row per image (see data/real/README.md)")
+    p.add_argument("meta", type=Path, help="meta.csv, one row per image (see data/measurements/README.md)")
     p.add_argument("--out", type=Path, metavar="FILE",
                    help="results CSV (default: results.csv next to meta.csv; a folder: results.csv in it)")
     p.add_argument("--figure", type=Path, metavar="PNG", help="also plot estimated against set motion")

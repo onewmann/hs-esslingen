@@ -2,10 +2,10 @@
 
 Two ways to get a pulsed image from a camera:
 
-* Flash mode: a strobe fires ``K = 2L+1`` times (or ``exposures``) during
-  one exposure, so every frame is already a pulsed image.
-  :func:`estimate_frame` estimates one such frame. The speed is in pixels
-  per flash step.
+* Flash mode: a strobe fires ``K`` times (``exposures``, or ``2L+1``)
+  during one exposure, so every frame is already a multi-flash (pulsed)
+  image. :func:`estimate_frame` estimates one such frame. The speed is in
+  pixels per flash step.
 * Average mode: under continuous light, ``K`` consecutive frames are
   averaged (:class:`FrameWindow`, :func:`estimate_window`,
   :func:`estimate_stream`). The model needs equal time steps between them,
@@ -23,21 +23,13 @@ from typing import Iterable, Iterator, Optional, Tuple
 
 import numpy as np
 
-from .core import (DEFAULT_L, DEFAULT_MIN_QUALITY, GREY_WEIGHTS, SAT_WARN, Estimate, _check_option,
-                   crop_square, estimate_velocity)
+from .core import (DEFAULT_L, DEFAULT_MIN_QUALITY, SAT_WARN, Estimate, _check_option, crop_square,
+                   estimate_velocity)
+from .io import to_grey
 
+# to_grey comes from fftvel.io; it is listed here as well because the live script imports it from here
 __all__ = ["FrameWindow", "StreamEstimate", "estimate_frame", "estimate_stream", "estimate_window",
            "frame_step", "to_grey"]
-
-
-def to_grey(frame: np.ndarray) -> np.ndarray:
-    """Grey-scale float image; colour input uses the MATLAB ``rgb2gray`` weights (RGB order)."""
-    a = np.asarray(frame, dtype=float)
-    if a.ndim == 3 and a.shape[2] == 1:
-        a = a[..., 0]
-    elif a.ndim == 3:
-        a = a[..., :3] @ np.array(GREY_WEIGHTS)
-    return a
 
 
 def _check_number(x, name: str, lowest: float, inclusive: bool):
