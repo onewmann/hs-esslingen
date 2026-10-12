@@ -3,7 +3,8 @@ function [bp, frames] = simulate_pulsed_image(n, v, L, varargin)
 %   BP = fftvel.simulate_pulsed_image(N, V, L) returns the N-by-N mean of
 %   2L+1 exposures k = -L..L of a random texture shifted by k*V,
 %   V = [vx vy] in pixels per step (x along columns, y along rows pointing
-%   down). The camera window stays fixed while the texture moves
+%   down). L is the half-count of Horn's thesis: L = 4 gives K = 2L+1 = 9
+%   flashes. The camera window stays fixed while the texture moves
 %   underneath, so content enters and leaves the image as it would in a
 %   real recording. There are no zero-filled borders.
 %
@@ -20,9 +21,9 @@ function [bp, frames] = simulate_pulsed_image(n, v, L, varargin)
 %     'Noise'       standard deviation of white noise added to BP, relative
 %                   to the standard deviation of the noise-free BP
 %                   (default 0)
-%     'Exposures'   number of exposures K (default [] = 2L+1); an even K
-%                   puts the exposures at half-integer steps around the
-%                   centre
+%     'Exposures'   number of exposures K (default [] = 2L+1), overrides
+%                   L; an even K puts the exposures at half-integer steps
+%                   around the centre
 %     'Duty'        duration of each exposure divided by the time step, in
 %                   [0, 1): the texture also moves during each exposure
 %                   (box blur of Duty*|V| pixels along V). Default 0:
@@ -30,6 +31,12 @@ function [bp, frames] = simulate_pulsed_image(n, v, L, varargin)
 %
 %   [BP, FRAMES] = fftvel.simulate_pulsed_image(...) also returns the
 %   individual exposures as an N-by-N-by-K array.
+%
+%   Example:
+%     % L = 4, so K = 2L+1 = 9 flashes
+%     [bp, frames] = fftvel.simulate_pulsed_image(256, [5 -3], 4);
+%     est = fftvel.estimate_velocity(bp, 'Exposures', 9, 'Diagnostics', true);
+%     fftvel.plot_estimate(bp, est, frames(:, :, 5));   % the middle exposure, k = 0
 
     c = fftvel.internal.constants();
     opts = fftvel.internal.parse_options(varargin, struct('CorrLength', c.DEFAULT_CORR_LEN, ...

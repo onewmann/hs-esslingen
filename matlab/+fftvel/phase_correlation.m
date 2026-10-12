@@ -27,7 +27,7 @@ function [dx, dy, peak] = phase_correlation(a, b)
 %   Blank images give DX = DY = PEAK = 0; NaN or Inf in either image gives
 %   DX = DY = 0 and PEAK = NaN.
 %
-%   Same as fftvel.phase_correlation in Python (python/src/fftvel/reference.py).
+%   Same as fftvel.phase_correlation in Python (python/src/fftvel/phasecorr.py).
 
     a = double(a);
     b = double(b);
@@ -53,7 +53,7 @@ function [oy, ox, peak] = upsampled_peak(X, i0, j0)
 %   on the grid. Row P and column Q of R hold the lag map at
 %   (I0 + UY(P), J0 + UX(Q)); lags count from 0.
 
-    UPSAMPLE = 20;          % same as UPSAMPLE in python/src/fftvel/reference.py
+    UPSAMPLE = 20;          % same as UPSAMPLE in python/src/fftvel/phasecorr.py
     [h, w] = size(X);
     u = (-UPSAMPLE:UPSAMPLE)/UPSAMPLE;
     uy = u;

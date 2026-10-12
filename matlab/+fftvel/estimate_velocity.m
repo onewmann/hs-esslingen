@@ -2,16 +2,19 @@ function est = estimate_velocity(bp, varargin)
 %ESTIMATE_VELOCITY  Velocity of a moving texture from one pulsed-exposure image.
 %   EST = fftvel.estimate_velocity(BP) estimates direction and speed of the
 %   motion recorded in the pulsed-exposure image BP. BP is the sum or mean
-%   of 2L+1 exposures taken at equal time steps while the texture moves by
-%   v per step (a strobe within one camera frame, or the average of 2L+1
-%   consecutive video frames, see fftvel.pulsed_from_stack).
+%   of K exposures taken at equal time steps while the texture moves by v
+%   per step: K strobe flashes within one camera frame (a multi-flash
+%   image), or the average of K consecutive video frames (see
+%   fftvel.pulsed_from_stack).
 %
 %   EST = fftvel.estimate_velocity(BP, 'Name', Value, ...) sets options:
-%     'L'             half number of exposures, 2L+1 in total (default 4)
-%     'Exposures'     exact number of exposures (flashes) K >= 2, also
-%                     even; overrides L for the model (default [] = 2L+1).
-%                     For slow motion a wrong count scales the speed by
-%                     K_true/K without lowering the quality.
+%     'Exposures'     number of exposures K >= 2, even or odd: the
+%                     flashes in one multi-flash image, or the averaged
+%                     frames. Overrides L (default [] = 2L+1, 9 with the
+%                     default L). For slow motion a wrong count scales the
+%                     speed by K_true/K without lowering the quality.
+%     'L'             half-count of Horn's thesis, K = 2L+1, used when
+%                     'Exposures' is not given (default 4)
 %     'Duty'          duration of one exposure (flash pulse, or camera
 %                     exposure time) divided by the time step, in [0, 1)
 %                     (default 0 = short flashes). The motion blur within
@@ -108,12 +111,21 @@ function est = estimate_velocity(bp, varargin)
 %   Npad/|v| bins apart. The direction is the angle whose mean Radon
 %   projection of the log spectrum has the largest total variation (ripple
 %   profile WR). The speed is found by fitting the Dirichlet model for
-%   2L+1 exposures to the projection along that direction.
+%   K exposures to the projection along that direction.
 %
 %   The model, the ripple profile WR and GEBA follow Chapter 3 of J. Horn's
 %   doctoral thesis (Universitaet Karlsruhe (TH), 2006; full reference in
 %   README.md). The speed fit, the validity threshold, the isotropy check
 %   and the blur check were added in this implementation.
+%
+%   Example:
+%     bp = fftvel.simulate_pulsed_image(256, [5 -3], 4);   % L = 4, so K = 2L+1 = 9 flashes
+%     est = fftvel.estimate_velocity(bp, 'Exposures', 9);
+%     fprintf('%.1f deg, %.2f px per flash\n', est.angle_deg, est.speed)
+%     % about 31.0 deg, 5.83 px per flash
+%     if est.valid
+%         p = fftvel.to_physical(est, 0.04, 1e-3);   % 0.04 mm/px, 1 ms between flashes
+%     end
 %
 %   Non-square images are cropped to the central square. They are never
 %   resized, so the speed stays in camera pixels.

@@ -1,10 +1,19 @@
 function live_basler(varargin)
 %LIVE_BASLER  Live velocity estimate from a Basler camera (MATLAB only).
+%   From the repository root:
+%     addpath('matlab', 'matlab/examples')
+%     live_basler('Mode', 'flash', 'Exposures', 9, 'FlashPeriod', 5e-4, 'Duty', 0.04)
+%     live_basler('Mode', 'average', 'Exposures', 9, 'FrameRate', 80, ...
+%         'ExposureUs', 2000, 'SaveDir', 'data/measurements/2026-10-20_average', ...
+%         'Note', 'axis 20 mm/s')
+%   The figure has a Start/Stop button; close the figure to release the
+%   camera.
+%
 %   LIVE_BASLER('Mode', MODE, 'Name', Value, ...) streams from a GenTL
 %   camera and estimates direction and speed of the moving surface. MODE
 %   must be given:
-%     'flash'    every camera frame is one pulsed image: a strobe fires
-%                K = 2L+1 times (or 'Exposures') during one exposure. The
+%     'flash'    every camera frame is one multi-flash image: a strobe
+%                fires K times ('Exposures') during one exposure. The
 %                newest frame is estimated on its own. The speed is in px
 %                per flash step, and in px/s if 'FlashPeriod' is given.
 %     'average'  continuous light: the newest K consecutive frames are
@@ -15,28 +24,29 @@ function live_basler(varargin)
 %   python/examples/live_camera.py there).
 %
 %   Options:
-%     'Mode'          'flash' or 'average' (required)
-%     'L'             half number of flashes or frames, K = 2L+1 (4)
-%     'Exposures'     exact number K >= 2 of flashes or frames, overrides
-%                     L ([])
-%     'Duty'          flash mode: flash pulse length / flash period
-%                     ([] = 0). Average mode: exposure time / frame step
-%                     ([] = read the exposure time from the camera)
-%     'FlashPeriod'   flash mode: time between flashes in s, for px/s ([])
-%     'Exposure'      exposure time in us, switches auto exposure off ([]
-%                     keeps the camera setting)
-%     'FrameRate'     camera frame rate in Hz ([] keeps the camera setting)
-%     'Tol'           average mode: tolerance of the frame-interval check
-%                     described below (0.1)
-%     'ClipOutliers'  clip static bright spots before the FFT (false)
-%     'ROI'           side of the central square read from the sensor, px
-%                     (512; one estimate then takes several seconds)
-%     'Period'        seconds between estimates (0.5)
-%     'Device'        index into the GenTL device list (1)
-%     'SaveDir'       folder to save every estimated window in, for
-%                     experiments/real_measurements.py ([] = do not save)
-%     'Note'          with 'SaveDir': text for the note column of meta.csv
-%                     ('')
+%     'Mode'            'flash' or 'average' (required)
+%     'Exposures'       number K >= 2 of flashes or frames, overrides L
+%                       ([] = 2L+1)
+%     'L'               half-count of Horn's thesis, K = 2L+1, used when
+%                       'Exposures' is not given (4)
+%     'Duty'            flash mode: flash pulse length / flash period
+%                       ([] = 0). Average mode: exposure time / frame step
+%                       ([] = read the exposure time from the camera)
+%     'FlashPeriod'     flash mode: time between flashes in s, for px/s ([])
+%     'ExposureUs'      exposure time in us, switches auto exposure off ([]
+%                       keeps the camera setting)
+%     'FrameRate'       camera frame rate in Hz ([] keeps the camera setting)
+%     'Tol'             average mode: tolerance of the frame-interval check
+%                       described below (0.1)
+%     'ClipOutliers'    clip static bright spots before the FFT (false)
+%     'ROI'             side of the central square read from the sensor, px
+%                       (512; one estimate then takes several seconds)
+%     'UpdateInterval'  seconds between estimates (0.5)
+%     'Device'          index into the GenTL device list (1)
+%     'SaveDir'         folder to save every estimated window in, for
+%                       experiments/real_measurements.py ([] = do not save)
+%     'Note'            with 'SaveDir': text for the note column of meta.csv
+%                       ('')
 %
 %   Frame times (average mode): GETDATA returns toolbox times, taken on the
 %   host when a frame arrives, not camera timestamps (those would need
@@ -76,8 +86,8 @@ function live_basler(varargin)
 %   since the toolbox times jitter. Fill in gsd_mm_per_px, set_speed_mm_s,
 %   set_angle_deg and static before running
 %   python experiments/real_measurements.py FOLDER/meta.csv
-%   (data/real/README.md). An existing meta.csv keeps its header and
-%   separator; with semicolons (German Excel) the numbers get decimal
+%   (data/measurements/README.md). An existing meta.csv keeps its header
+%   and separator; with semicolons (German Excel) the numbers get decimal
 %   commas. If meta.csv cannot be written (open in Excel), the line is
 %   printed instead.
 %
@@ -87,9 +97,10 @@ function live_basler(varargin)
     here = fileparts(mfilename('fullpath'));
     addpath(fullfile(here, '..'));
     cst = fftvel.internal.constants();
-    opts =fftvel.internal.parse_options(varargin, struct('Mode', '', 'L', 4, 'Exposures', [], ...
-        'Duty', [], 'FlashPeriod', [], 'Exposure', [], 'FrameRate', [], 'Tol', 0.1, ...
-        'ClipOutliers', false, 'ROI', 512, 'Period', 0.5, 'Device', 1, 'SaveDir', [], 'Note', ''));
+    opts = fftvel.internal.parse_options(varargin, struct('Mode', '', 'L', 4, 'Exposures', [], ...
+        'Duty', [], 'FlashPeriod', [], 'ExposureUs', [], 'FrameRate', [], 'Tol', 0.1, ...
+        'ClipOutliers', false, 'ROI', 512, 'UpdateInterval', 0.5, 'Device', 1, 'SaveDir', [], ...
+        'Note', ''));
     if ~(ischar(opts.Mode) || isstring(opts.Mode)) || ~any(strcmpi(char(opts.Mode), {'flash', 'average'}))
         error('live_basler:Mode', ['Choose ''Mode'', ''flash'' (every frame holds several strobe ' ...
             'flashes) or ''Mode'', ''average'' (consecutive frames are averaged).']);
@@ -111,12 +122,10 @@ function live_basler(varargin)
     fftvel.internal.check_option(opts.ROI, 'ROI', 'roi', 'live_basler:ROI');
     fftvel.internal.check_option(opts.Device, 'Device', 'positive', 'live_basler:Device');
     check_positive(opts.FlashPeriod, 'FlashPeriod');
-    check_positive(opts.Exposure, 'Exposure');
+    check_positive(opts.ExposureUs, 'ExposureUs');
     check_positive(opts.FrameRate, 'FrameRate');
-    check_positive(opts.Period, 'Period');
-    if isempty(opts.Period)
-        error('live_basler:Period', 'Period must be a positive number.');
-    end
+    fftvel.internal.check_option(opts.UpdateInterval, 'UpdateInterval', 'positive_real', ...
+        'live_basler:UpdateInterval');
     if ~flash && ~isempty(opts.FlashPeriod)
         error('live_basler:FlashPeriod', ['FlashPeriod is for ''Mode'', ''flash''; in average ' ...
             'mode the frame times give px/s.']);
@@ -183,15 +192,15 @@ function live_basler(varargin)
                 'AcquisitionFrameRate nor AcquisitionFrameRateAbs).']);
         end
     end
-    if ~isempty(opts.Exposure)
+    if ~isempty(opts.ExposureUs)
         set_first(src, {'ExposureAuto'}, 'Off');
-        if isempty(set_first(src, {'ExposureTime', 'ExposureTimeAbs'}, opts.Exposure))
+        if isempty(set_first(src, {'ExposureTime', 'ExposureTimeAbs'}, opts.ExposureUs))
             warning('live_basler:exposure', ['Could not set the exposure time (neither ' ...
                 'ExposureTime nor ExposureTimeAbs).']);
         end
     elseif ~any(strcmpi(char(get_first(src, {'ExposureAuto'})), {'', 'Off'}))
         warning('live_basler:autoexposure', ['Auto exposure is on, so the exposure time can ' ...
-            'change; set ''Exposure''.']);
+            'change; set ''ExposureUs''.']);
     end
     cam_period = [];                                   % nominal frame period from the camera, s
 
@@ -220,7 +229,7 @@ function live_basler(varargin)
     h_btn = uicontrol('Style', 'togglebutton', 'String', 'Start', ...
         'Units', 'pixels', 'Position', [10 10 70 28], 'Callback', @on_toggle);
 
-    tmr = timer('ExecutionMode', 'fixedSpacing', 'Period', opts.Period, ...
+    tmr = timer('ExecutionMode', 'fixedSpacing', 'Period', opts.UpdateInterval, ...
         'BusyMode', 'drop', 'TimerFcn', @on_timer, 'ErrorFcn', @on_timer_error);
 
     % --- callbacks ------------------------------------------------------------

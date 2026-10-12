@@ -20,7 +20,7 @@ function p = to_physical(est, gsd, period)
 %   fftvel.to_physical in Python.
 %
 %   Example:
-%     est = fftvel.estimate_velocity(bp, 'L', 4);
+%     est = fftvel.estimate_velocity(bp, 'Exposures', 9);
 %     p = fftvel.to_physical(est, 0.04, 1e-3);    % 0.04 mm/px, 1 ms flash period
 %     fprintf('%.1f mm/s\n', p.speed);
 %

@@ -8,16 +8,17 @@ function [bp, K] = pulsed_from_stack(frames, varargin)
 %
 %   [BP, K] = fftvel.pulsed_from_stack(FRAMES, 'Name', Value, ...) sets
 %   options:
-%     'L'          average the first 2L+1 frames
 %     'Exposures'  average the first K frames (K >= 2, also even); wins
 %                  over 'L'
+%     'L'          average the first 2L+1 frames (L is the half-count of
+%                  Horn's thesis)
 %
 %   Pass K on: EST = fftvel.estimate_velocity(BP, 'Exposures', K).
 %   Same as fftvel.pulsed_from_stack in Python.
 %
 %   Example (Image Acquisition Toolbox):
 %     frames = getdata(vid, 9);              % H x W x 1 x 9
-%     [bp, K] = fftvel.pulsed_from_stack(frames);
+%     [bp, K] = fftvel.pulsed_from_stack(frames, 'Exposures', 9);
 %     est = fftvel.estimate_velocity(bp, 'Exposures', K);
 %
 %   See also fftvel.estimate_velocity.

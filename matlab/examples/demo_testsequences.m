@@ -9,7 +9,7 @@
 here = fileparts(mfilename('fullpath'));
 addpath(fullfile(here, '..'));
 d = load(fullfile(here, '..', '..', 'data', 'testsequences.mat'));
-L = 4;
+K = 9;                                          % frames per window
 names = {'model', 'tyre', 'accelerating'};
 
 figure('Name', 'Test sequences', 'Color', 'w');
@@ -21,15 +21,15 @@ for k = 1:numel(names)
         [dx, dy] = fftvel.phase_correlation(s(:, :, f), s(:, :, f + 1));
         shift(f, :) = [dx dy];
     end
-    starts = 1:(nf - 2*L);
+    starts = 1:(nf - K + 1);
     est_speed = nan(size(starts));
     ref_speed = nan(size(starts));
     valid = false(size(starts));
     for w = 1:numel(starts)
-        idx = starts(w) + (0:2*L);
+        idx = starts(w) + (0:K - 1);
         border = ceil(max(abs(sum(shift(1:idx(end) - 1, :), 1))));   % zero fill
         bp = mean(s(border + 1:end, border + 1:end, idx), 3);
-        e = fftvel.estimate_velocity(bp, 'L', L);
+        e = fftvel.estimate_velocity(bp, 'Exposures', K);
         est_speed(w) = e.speed;
         valid(w) = e.valid;
         ref_speed(w) = norm(mean(shift(idx(1:end-1), :), 1));
