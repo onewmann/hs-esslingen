@@ -1,6 +1,6 @@
 # Status and how to resume
 
-Saved on 11 October 2026. This folder (`docs/dev/`) is a working note for
+Saved on 11 October 2026, updated on 12 October 2026. This folder (`docs/dev/`) is a working note for
 the rework and should be removed before the repository is published as
 2D-FFT-Code. The plan this work follows is in
 [restructure_plan.md](restructure_plan.md).
@@ -81,7 +81,7 @@ documented:
   held out 4 of 1512 valid, all crops of the static room scene vid1.
 - `experiments/baselines.py`: share correct over 840 images, random / camera
   texture: fftvel 80 / 63 %, peak spacing 69 / 56 %, cepstrum 70 / 60 %,
-  autocorrelation 72 / 55 %, phase correlation with two frames 81 / 78 %.
+  autocorrelation 72 / 55 %, phase correlation with two frames 95 / 88 %.
 - `experiments/model_violations.py`: independent forward model; wrong but
   valid results appear with pulse width 0.25 to 0.5 without `duty`, step
   jitter of 10 %, continuous light during most of a long exposure, a strong
@@ -90,40 +90,41 @@ documented:
   a MATLAB job, the Octave demos and a smoke run.
 - 284 Python tests and 9 Octave test files pass.
 
-Found by these studies and not fixed yet (next work):
+Follow-ups done on 12 October:
 
-- Single camera frames of the moving surface (vid3, vid4: one exposure, so
-  motion blur, no flash repetition) come out valid in 8 to 11 % of crops,
-  with K x speed equal to the blur length. One blurred exposure and a slow
-  multi-flash image look alike in the spectrum. Options: a check that a
-  continuous-blur model does not fit as well as the Dirichlet model, a
-  warning for saturated pixels, and clear advice to keep ambient light out.
-- `clip_outliers` leaves a ring around a clipped glint; dilating the mask
-  would help.
-- `phase_correlation` has a sub-pixel bias of about 0.12 px, which limits the
-  two-frame cross-check for slow motion.
-- Docstrings and README still cite 8.6 and "1 in 1000 at 32 px".
+- Blur check: fields `quality_blur`, `blur_length`, `blur_like` and the option
+  `reject_blur`. Not part of `valid` by default: below about 2.2 px per flash
+  a blurred single exposure and a slow multi-flash image cannot be told
+  apart, and as a default it would cost 3.6 % of correct results on the noise
+  grid. It flags 41 of the 47 valid single frames of the moving surface.
+- Field `saturated` with a warning above 1 %; `clip_outliers` also clears a
+  3 px rim around each outlier.
+- `phase_correlation` refines its peak by upsampling: median error 0.002 px
+  instead of 0.12 px.
+- All studies rerun; default results unchanged.
+- New README (status first, no chapter structure), `docs/method.md`,
+  `docs/results.md`, `docs/hardware.md`, `docs/history.md`, `hero.png`,
+  `CITATION.cff`, `CONTRIBUTING.md`. Numbers checked against the CSV files,
+  style checked (British spelling, no dashes, no bold in sentences).
+- 306 Python tests and 9 Octave test files pass.
 
 ## Next steps
 
-1. Work on the items found by the studies (list above).
-2. Rewrite README.md following section 2 of the plan: no chapter structure,
-   a status table first ("works in simulation; real multi-flash images
-   not shown yet"), who did what, hero figure, try it, why one image, how it
-   works with [thesis]/[rework] tags, results ordered by independence, where
-   it fails, use it, development, how this was built, reference.
-3. Docs pages: `docs/method.md`, `docs/results.md`, `docs/hardware.md`,
-   `docs/history.md` (index of the 2025 scripts by function). `hero.png`,
-   retitled figures, `CITATION.cff`, `CONTRIBUTING.md`.
-   Style for everything published: British spelling, no em dashes, no bold
-   inside sentences, no marketing words.
-4. Final review: every number in the docs against `experiments/results`,
-   both suites, a check that no text names Hochschule Esslingen.
-5. Publishing: create the empty repository `onewmann/2D-FFT-Code`, add it to
-   the Claude session with push access (or push it yourself), push the clean
-   history as `main` plus the tag. Then set About, topics and the social
-   preview, make release v0.1.0, add a root README to hs-esslingen pointing
-   to the new repository and archive hs-esslingen read-only.
+1. Optional before publishing: a last read of README and docs by the owner,
+   `docs/related-work.md` once the sources have been read, and the owner's
+   own wording of the derivations in `docs/method.md`.
+2. Add the real multi-flash recordings (`data/real/README.md`), run
+   `experiments/real_measurements.py`, and update the status table, the
+   results table and `hero.png` with real data.
+3. Publishing: create the empty repository `onewmann/2D-FFT-Code`, add it to
+   the Claude session with push access (or push it yourself), rebuild the
+   clean history (commands above), delete `docs/dev/`, push `main` plus the
+   tag. Then set About ("Direction and speed of a moving textured surface
+   from one multi-flash camera image"), topics (machine-vision,
+   signal-processing, fft, radon-transform, matlab, octave, python),
+   `docs/figures/hero.png` as social preview, release v0.1.0. Check that the
+   MATLAB CI job is green. Then add a root README to hs-esslingen pointing to
+   the new repository and archive hs-esslingen read-only.
 
 ## Decisions
 
