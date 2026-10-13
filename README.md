@@ -29,7 +29,7 @@ In a student project in 2025 I implemented the method in MATLAB. Those scripts a
 
 The rework, in 2026, is everything after that tag, done with the assistance of AI (Claude by Anthropic): first a code review of the 2025 scripts, then the code in `python/` and `matlab/`, the tests, the experiments, the figures and this documentation. In this README "rework" means that code, and the label [rework] marks what it added to the method of the thesis. [docs/history.md](docs/history.md) lists what the review found and compares the 2025 code with the rework.
 
-I noticed errors in the results of my 2025 scripts, so I rebuilt the project with Claude. I asked for a review of the scripts and decided what to change and how to structure the repository; Claude wrote most of the new code, tests and documentation.
+I noticed errors in the results of my 2025 scripts and rebuilt the project with AI-assisted development, using Claude as a tool. I set the goals, asked for reviews of the old and the new code, and decided what to change and how to structure the repository; Claude wrote most of the new code, tests and documentation. Changes were checked with the tests in Python and GNU Octave and in separate reviews, and fixes from the reviews followed in later commits. Part of the aim is to show how I use AI in engineering work: with clear requirements, tests, reviews and documented limits, instead of accepting generated code unchecked.
 
 ## Quick start
 
