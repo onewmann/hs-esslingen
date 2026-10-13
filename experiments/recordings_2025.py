@@ -54,7 +54,7 @@ def plot(rows):
     common.style(ax, "frame pair", "displacement between frames (px)")
     ax.set_ylim(bottom=0)
     ax.legend(frameon=False, fontsize=9, labelcolor=INK2, loc="upper left")
-    common.title(fig, "Original recordings: steps are not equal",
+    common.title(fig, "2025 recordings: steps are not equal",
                  "phase correlation of consecutive frames, central 1024 x 1024 px")
     common.save(fig, "recordings.png")
 

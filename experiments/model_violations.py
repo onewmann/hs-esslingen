@@ -777,7 +777,7 @@ def plot(rows):
     per = len([r for r in rows if r["factor"] == "edge" and r["level"] == 0 and r["variant"] == "default"])
     grid_title(fig, "When the image breaks the model: correct and wrong valid estimates",
                f"independent forward model, one violation at a time, {per} images per level (camera and random "
-               f"texture), 0.5 to 30 px per step, 9 flashes, 256 px; correct = within 2 deg and 5 %")
+               f"texture), 0.5 to 30 px per flash, 9 flashes, 256 px; correct = within 2 deg and 5 %")
     for ax in axes[:len(FACTORS)]:
         ax.axhline(0, color=GRID, lw=0.8, zorder=0)
     common.save(fig, "violations.png")

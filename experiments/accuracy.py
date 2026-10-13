@@ -39,9 +39,9 @@ def run(pool, quick):
 
 def plot(rows):
     fig, (ax1, ax2) = common.figure(2, 9.6)
-    series = [("random", 4, BLUE, "random texture, 9 exposures"),
-              ("surface", 4, ORANGE, "camera texture, 9 exposures"),
-              ("random", 20, AQUA, "random texture, 41 exposures")]
+    series = [("random", 4, BLUE, "random texture, 9 flashes"),
+              ("surface", 4, ORANGE, "camera texture, 9 flashes"),
+              ("random", 20, AQUA, "random texture, 41 flashes")]
     for texture, L, col, label in series:
         sel = [r for r in rows if r["texture"] == texture and r["L"] == L]
         sp = sorted(s for s in {r["speed"] for r in sel}
@@ -55,12 +55,12 @@ def plot(rows):
         ax.set_yscale("log")
         common.plain_log_ticks(ax, "x")
         common.plain_log_ticks(ax, "y")
-        common.style(ax, "true speed (px per exposure step)", ylab)
+        common.style(ax, "true speed (px per flash)", ylab)
     ax1.legend(frameon=False, fontsize=9, labelcolor=INK2, loc="upper right")
     ndir = len({r["angle"] for r in rows})
     common.title(fig, "Accuracy over the speed range",
                  f"256 x 256 px, no noise, worst case over {ndir} directions; slower motion than shown "
-                 f"is outside the search range and comes out 'not valid'")
+                 f"is outside the measurable range and comes out 'not valid'")
     common.save(fig, "accuracy.png")
 
 
