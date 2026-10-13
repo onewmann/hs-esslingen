@@ -9,9 +9,11 @@ with an absolute ``MinPeakProminence`` of 0.05. The script is no longer in
 the tree; it is ``2D-FFT/aktuell/finaltest1.m`` at git tag
 ``student-project-2025``.
 
-``radon_matlab`` and ``findpeaks_matlab`` reproduce MATLAB's ``radon``
-(4 sub-pixels, linear binning, y up) and ``findpeaks`` semantics; the port was
-checked against the 2025 code run in GNU Octave.
+``radon_matlab`` follows MATLAB's ``radon`` (4 sub-pixels, linear binning,
+y up) and ``findpeaks_matlab`` its ``findpeaks``, with one known difference:
+peaks exactly ``MinPeakDistance`` apart are kept here, while MATLAB removes
+them. No comparison with an Octave run of the 2025 code is stored in the
+repository; docs/history.md gives the spread of the result over port variants.
 
 Only used by ``before_after.py`` to compare the 2025 code with the rework.
 Do not use it for measurements.

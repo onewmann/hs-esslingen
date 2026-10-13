@@ -28,7 +28,7 @@ average  Continuous light: K consecutive frames are averaged into a pulsed
          ("uneven frame steps"). The speed is in px per frame and px/s. For
          Basler cameras the exposure time is read from the camera and passed
          to the estimator as duty = exposure / frame step; keep it below
-         about 0.3 of the step.
+         at most a quarter of the step.
 
 Frame times: Basler cameras use the camera clock (the host clock if the
 camera sends no timestamps, as the pylon emulator; the window is then checked
@@ -486,7 +486,7 @@ def exposure_duty(exposure: float, step: float, warned: set) -> float:
         if band == "half":
             print(f"warning: the exposure is {duty:.2f} of the frame step. Between 0.4 and 0.6 the "
                   f"speed fit depends strongly on the exact exposure (at 0.5 every second spectral "
-                  f"line vanishes); use an exposure below about 0.3 of the step.")
+                  f"line vanishes); use an exposure of at most a quarter of the step.")
         else:
             print(f"warning: the exposure is {duty:.2f} of the frame step, so the frames are strongly "
                   f"blurred and most estimates will not be valid; shorten the exposure.")

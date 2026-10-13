@@ -28,6 +28,20 @@ def make_texture(m: int, corr_len: float = DEFAULT_CORR_LEN, rng=None) -> np.nda
     return (t - t.mean()) / t.std(ddof=1)
 
 
+def _velocity(v) -> tuple:
+    """``(vx, vy)`` as floats; ValueError unless ``v`` holds exactly two finite real numbers.
+
+    Same rule and message as ``matlab/+fftvel/simulate_pulsed_image.m``.
+    """
+    try:
+        a = None if isinstance(v, (str, bytes)) else np.asarray(v)
+    except ValueError:                          # e.g. a ragged list
+        a = None
+    if a is None or a.size != 2 or a.dtype.kind not in "iuf" or not np.all(np.isfinite(a)):
+        raise ValueError("v must hold two finite real numbers (vx, vy)")
+    return float(a.flat[0]), float(a.flat[1])
+
+
 def simulate_pulsed_image(n: int, v: Sequence[float], L: int, *,
                           exposures: Optional[int] = None, duty: float = 0.0,
                           texture: Optional[np.ndarray] = None, corr_len: float = DEFAULT_CORR_LEN,
@@ -69,7 +83,7 @@ def simulate_pulsed_image(n: int, v: Sequence[float], L: int, *,
     L = _check_option(L, "L", "positive")
     K = 2 * L + 1 if exposures is None else _check_option(exposures, "exposures", "exposures")
     duty = _check_option(duty, "duty", "duty")
-    vx, vy = float(v[0]), float(v[1])
+    vx, vy = _velocity(v)
     margin = ((K - 1) + duty) * max(abs(vx), abs(vy)) + SIM_MARGIN
     if texture is None:
         m = int(2 ** np.ceil(np.log2(n + margin)))

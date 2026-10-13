@@ -102,7 +102,50 @@ def test_files_are_read_with_fftvel_io(rm, repo, tmp_path):
     assert [t["name"] for t in tasks] == ["image.npz"] and rm.analyse(tasks[0])["valid"] == 1
     errors = [r["error"] for r in failed]
     assert "two.npz holds several numeric arrays" in errors[0] and "--var" not in errors[0]
+    assert "give the name" not in errors[0] and "save only the image" in errors[0] and "np.savez" in errors[0]
     assert "cannot tell which axis of the 48 x 48 x 40 stack" in errors[1] and "--frames-axis" not in errors[1]
+
+
+def test_a_file_that_cannot_be_read_fails_only_its_own_row(rm, tmp_path, monkeypatch):
+    bp = simulate_pulsed_image(96, (3.0, -1.0), 4, rng=2)
+    np.save(tmp_path / "good.npy", bp)
+    (tmp_path / "empty.npy").write_bytes(b"")                                  # 0 bytes: EOFError in NumPy
+    (tmp_path / "odd.npy").write_bytes(b"x")
+    meta = write_meta(tmp_path / "meta.csv", ["file", "exposures"], ["empty.npy", "9"], ["odd.npy", "9"],
+                      ["good.npy", "9"])
+    rows, _, problems, _ = rm.read_meta(meta)
+    real = rm.fftvel.io.load
+
+    def load(path, **kw):                       # a loader error of a type that fftvel.io does not promise
+        if path.endswith("odd.npy"):
+            raise RuntimeError("damaged")
+        return real(path, **kw)
+
+    monkeypatch.setattr(rm.fftvel.io, "load", load)
+    rm._read.cache_clear()
+    tasks, failed = rm.build_tasks(rows)
+    assert [t["name"] for t in tasks] == ["good.npy"]
+    assert "cannot read" in failed[0]["error"] and "empty.npy" in failed[0]["error"]
+    assert failed[1]["error"].endswith("odd.npy (RuntimeError: damaged)")
+
+
+def test_colour_arrays_get_a_warning(rm, tmp_path):
+    from scipy.io import savemat
+    bp = simulate_pulsed_image(96, (3.0, -1.0), 4, rng=2)
+    rgb = np.round(np.stack([bp, bp, bp], axis=2) * 20 + 128).astype(np.uint8)
+    np.save(tmp_path / "colour.npy", rgb)
+    savemat(tmp_path / "getdata.mat", {"recording": rgb[:, :, None, :]})      # rows x cols x 1 x frames
+    from PIL import Image
+    Image.fromarray(rgb).save(tmp_path / "colour.png")                        # the loader makes it grey
+    meta = write_meta(tmp_path / "meta.csv", ["file", "exposures"], ["colour.npy#2", "9"], ["getdata.mat", "9"],
+                      ["colour.png", "9"])
+    rows, _, _, _ = rm.read_meta(meta)
+    tasks, failed = rm.build_tasks(rows)
+    assert failed == [] and [t["name"] for t in tasks] == ["colour.npy#2", "getdata.mat#1", "getdata.mat#2",
+                                                           "getdata.mat#3", "colour.png"]
+    assert tasks[0]["warnings"] == ["the file holds 96 x 96 x 3: if it is a colour image, convert it to grey; "
+                                    "otherwise its 3 frames count as separate images"]
+    assert all(t["warnings"] == [] for t in tasks[1:])
 
 
 def test_upper_bound(rm):
@@ -192,8 +235,10 @@ def test_stack_gives_one_image_per_frame(rm, tmp_path):
     assert [t["name"] for t in tasks] == ["stack.npy#1", "stack.npy#2", "stack.npy#3", "stack.npy#2"]
     assert all(t["image"].shape == (128, 128) for t in tasks)
     assert len(failed) == 1 and "has 3 frames, not frame 4" in failed[0]["error"]
-    assert tasks[1]["warnings"] == [] and tasks[3]["warnings"] == [
-        "the same image as in line 2, so it counts twice in the summary"]
+    colour = ("the file holds 128 x 128 x 3: if it is a colour image, convert it to grey; otherwise its 3 frames "
+              "count as separate images")
+    assert tasks[1]["warnings"] == [colour] and tasks[3]["warnings"] == [
+        colour, "the same image as in line 2, so it counts twice in the summary"]
     assert tasks[0]["image"].base is None                 # a copy, not a view of the whole frame
     res = rm.analyse(tasks[3])
     assert res["valid"] == 1 and res["speed_px"] == pytest.approx(np.hypot(6, 1), rel=0.01)

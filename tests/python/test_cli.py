@@ -138,11 +138,20 @@ def test_simulate_flash_count(capsys):
 
 @pytest.mark.parametrize("bad, text", [(["--L", "4", "--exposures", "8"], "only one"), (["--L", "0"], "--L"),
                                        (["--exposures", "1"], "--exposures"), (["--n", "8"], "--n"),
-                                       (["--noise", "-1"], "--noise")])
+                                       (["--noise", "-1"], "--noise"), (["--vx", "nan"], "--vx"),
+                                       (["--vy", "-inf"], "--vy"), (["--seed", "-1"], "--seed"),
+                                       (["--vx", "1e6"], "more than 4 times --n (1024 px)"),
+                                       (["--L", "20", "--vx", "26"], "move by 1040 px")])
 def test_simulate_invalid_options(capsys, bad, text):
     with pytest.raises(SystemExit) as exc:
         main(["simulate"] + bad)
-    assert exc.value.code == 2 and text in capsys.readouterr().err
+    cap = capsys.readouterr()
+    assert exc.value.code == 2 and text in cap.err and cap.out == ""       # stopped before any work
+
+
+def test_simulate_travel_limit(capsys):
+    r, _ = run(["simulate", "--vx", "128", "--vy", "0", "--exposures", "9"], capsys)   # 8 * 128 = 4 * 256 px
+    assert r["exposures"] == 9
 
 
 def test_console_script(shot, tmp_path):
@@ -180,7 +189,9 @@ def test_single_image_needs_the_flash_count(shot, tmp_path, capsys):
     r, _ = run(["estimate", tmp_path / "bp.npy", "--exposures", "9"], capsys)
     same(r, estimate_velocity(bp, L=4))
     assert r["L"] == 4
-    assert "only one" in fails(["estimate", tmp_path / "bp.npy", "--L", "4", "--exposures", "8"], capsys)
+    with pytest.raises(SystemExit) as exc:      # checked with the other options, before the file is read
+        main(["estimate", str(tmp_path / "none.npy"), "--L", "4", "--exposures", "8"])
+    assert exc.value.code == 2 and "--L 4 means 9 exposures but --exposures is 8" in capsys.readouterr().err
 
 
 def test_even_flash_count(tmp_path, capsys):
@@ -594,6 +605,34 @@ def test_plot_without_display(shot, tmp_path, monkeypatch, capsys):
     r, _ = run(["estimate", tmp_path / "bp.npy", "--L", "4", "--roi", "96", "--plot", png], capsys)
     assert png.stat().st_size > 10_000 and r["n"] == 96
     assert matplotlib.get_backend().lower() == "agg"
+
+
+def test_plot_path_is_checked_before_any_work(shot, tmp_path, capsys):
+    pytest.importorskip("matplotlib")
+    np.save(tmp_path / "bp.npy", shot[0])
+    for target, text in ((tmp_path / "none" / "fig.png", "no such folder"), (tmp_path, "not the folder"),
+                         (tmp_path / "fig.xyz", "cannot write .xyz files")):
+        for argv in (["simulate", "--n", "64"], ["estimate", tmp_path / "bp.npy", "--L", "4"]):
+            with pytest.raises(SystemExit) as exc:
+                main([str(x) for x in argv] + ["--plot", str(target)])
+            cap = capsys.readouterr()
+            assert exc.value.code == 2 and text in cap.err and cap.out == "", (target, argv)
+    _, err = run(["simulate", "--n", "64", "--plot", tmp_path / "fig"], capsys)    # matplotlib adds .png
+    assert (tmp_path / "fig.png").is_file() and f"figure written to {tmp_path / 'fig.png'}" in err
+
+
+def test_plot_that_cannot_be_written_gives_no_result(shot, tmp_path, monkeypatch, capsys):
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from matplotlib.figure import Figure
+
+    def refuse(self, *args, **kw):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Figure, "savefig", refuse)
+    msg = fails(["simulate", "--n", "64", "--plot", tmp_path / "fig.png"], capsys)
+    assert msg == f"cannot write the figure {tmp_path / 'fig.png'}: Permission denied"
+    assert capsys.readouterr().out == ""                       # no JSON before the error
 
 
 def test_plot_without_matplotlib(shot, tmp_path, monkeypatch, capsys):

@@ -283,3 +283,13 @@ def test_simulate_checks_its_options(kwargs):
     args = {"L": 2, **kwargs}
     with pytest.raises(ValueError, match=next(iter(kwargs))):
         simulate_pulsed_image(64, (2, 1), args.pop("L"), rng=0, **args)
+
+
+@pytest.mark.parametrize("v", [(np.nan, 0), (0, np.inf), (1, 2, 3), (1,), "12", (1j, 0), (True, False), None])
+def test_simulate_checks_the_velocity(v):
+    # same rule as tests/matlab/test_model_options.m
+    with pytest.raises(ValueError, match=r"^v must hold two finite real numbers \(vx, vy\)$"):
+        simulate_pulsed_image(64, v, 2, rng=0)
+    a = simulate_pulsed_image(64, (2, 1), 2, rng=0)
+    for same in ([2, 1], np.array([2.0, 1.0]), np.array([[2], [1]]), np.array([2, 1], dtype=np.int32)):
+        assert np.array_equal(simulate_pulsed_image(64, same, 2, rng=0), a)

@@ -321,14 +321,24 @@ def _read(path: str, stack: bool = False):
     ``stack`` tells the loader that a stack is expected (which array of a
     .mat or .npz file fits). Its warnings are left out: a JPEG file gets a
     warning of its own in results.csv (see _image_warnings). Raises
-    ValueError with a message if the file cannot be read.
+    ValueError with a message if the file cannot be read, whatever the
+    loader raised, so that a bad file fails only its own rows.
     """
     try:
         with catch_warnings():
             simplefilter("ignore", UserWarning)
             return fftvel.io.load(path, stack=stack)
+    except fftvel.io._SeveralArrays as err:     # meta.csv cannot name the array, unlike --var of fftvel
+        raise ValueError(f"{err.path} holds several numeric arrays; save only the "
+                         f"{'stack' if stack else 'image or the stack'} (and its timestamps t) in the file, "
+                         f"e.g. save('rec1.mat', 'frames', 't') or np.savez(file, frames=frames, t=t):\n"
+                         f"{err.listing}") from None
+    except ValueError:
+        raise
     except (OSError, ImportError) as err:       # a file that has gone, or a reader that is not installed
         raise ValueError(str(err)) from None
+    except Exception as err:  # noqa: BLE001 - a loader error of another type: fail this file only
+        raise ValueError(f"cannot read {path} ({type(err).__name__}: {err})") from None
 
 
 @lru_cache(maxsize=4)
@@ -442,6 +452,23 @@ def frames_of(path: Path, frame=None):
     return [(f"#{k + 1}", np.take(a, k, axis=axis)) for k in range(nf)]
 
 
+def _colour_warning(path: Path):
+    """Warning for a .npy, .npz or .mat array of rows x cols x 3 or 4 (frames on the last axis), else None.
+
+    frames_of takes such an array as 3 or 4 frames, but it may as well be a
+    colour image (image files are converted to grey by the loader). A
+    MATLAB getdata stack keeps its axis of length 1 (rows x cols x 1 x
+    frames), so it does not get the warning.
+    """
+    if path.suffix.lower() not in (".npy", ".npz", ".mat"):
+        return None
+    shape = _read(str(path)).shape              # cached: frames_of has just read it
+    if len(shape) != 3 or shape[2] not in (3, 4) or fftvel.io.frames_axis(shape) != -1:
+        return None
+    return (f"the file holds {' x '.join(map(str, shape))}: if it is a colour image, convert it to grey; "
+            f"otherwise its {shape[2]} frames count as separate images")
+
+
 def build_tasks(rows, clip_outliers: bool = False):
     """One task per image (a stack gives one per frame), and the result rows of files that failed.
 
@@ -474,6 +501,7 @@ def build_tasks(rows, clip_outliers: bool = False):
             continue
         try:
             images = frames_of(row["path"], row["frame"])
+            colour = _colour_warning(row["path"])
             ref = None
             if row["ref"] is not None:
                 ref = [frames_of(p, k) for p, k in row["ref"]]
@@ -488,7 +516,7 @@ def build_tasks(rows, clip_outliers: bool = False):
             h, w = img.shape
             side = min(h, w) if row["roi"] == 0 else min(row["roi"], h, w)
             task = dict(row=row, name=name, image=central(img, side).copy(), clip=clip_outliers,
-                        warnings=_image_warnings(row))
+                        warnings=_image_warnings(row) + ([colour] if colour else []))
             key = (str(row["path"].resolve()), label or "#1")
             if key in seen:
                 task["warnings"].append(f"the same image as in line {seen[key]}, so it counts twice in "

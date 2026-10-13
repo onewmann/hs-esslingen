@@ -23,6 +23,13 @@ p = argparse.ArgumentParser()
 p.add_argument("--save")
 a = p.parse_args()
 
+
+
+def zero_border(frame):
+    """Rows or columns of zero fill at the top and left (the sequences move down and right)."""
+    return max(int(np.argmax(frame.any(axis=1))), int(np.argmax(frame.any(axis=0))))
+
+
 data = loadmat(REPO / "data" / "testsequences.mat")
 names = ["model", "tyre", "accelerating"]
 fig, axes = plt.subplots(1, len(names), figsize=(13, 3.8), constrained_layout=True)
@@ -34,7 +41,7 @@ for ax, name in zip(axes, names):
     est, ref, valid = [], [], []
     for st in starts:
         last = st + K - 1
-        border = int(np.ceil(np.abs(shift[:last].sum(axis=0)).max()))   # zero fill so far
+        border = max(zero_border(s[:, :, f]) for f in range(st, last + 1))   # zero fill in the window
         bp = s[border:, border:, st:last + 1].mean(axis=2)
         e = estimate_velocity(bp, exposures=K)
         est.append(e.speed)

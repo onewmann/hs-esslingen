@@ -1,4 +1,5 @@
-"""fftvel.io: reading .npz files, the frames axis, grey conversion, notes, warnings and errors.
+"""fftvel.io: reading .npz files, damaged files, 16-bit colour, the frames axis, grey conversion, notes,
+warnings and errors.
 
 The other formats are checked through the command line in test_cli.py.
 """
@@ -83,6 +84,89 @@ def test_errors(frames, tmp_path):
         io.load(tmp_path / "ab.mat")
     assert "several numeric arrays" in str(exc.value) and "--" not in str(exc.value)
     assert np.array_equal(io.load(tmp_path / "ab.mat", var="b"), frames[:, :, 1])
+
+
+def test_damaged_files_give_value_error(frames, tmp_path):
+    # the promise of load: ValueError for a file that cannot be read, whatever NumPy or h5py raise
+    np.save(tmp_path / "a.npy", frames)
+    data = (tmp_path / "a.npy").read_bytes()
+    for name, content in (("empty.npy", b""), ("cut.npy", data[:60]), ("head.npy", data[:20] + b"\x00" * 200)):
+        (tmp_path / name).write_bytes(content)
+        with pytest.raises(ValueError, match=f"cannot read .*{name}"):
+            io.load(tmp_path / name)
+    h5py = pytest.importorskip("h5py")
+    with h5py.File(tmp_path / "v73.mat", "w", userblock_size=512) as f:
+        for name in ("a", "b"):
+            f[name] = np.ascontiguousarray(frames.T)
+            f[name].attrs["MATLAB_class"] = np.bytes_("uint8")
+    assert np.array_equal(io.load(tmp_path / "v73.mat", var="b"), frames)
+    with pytest.raises(io._SeveralArrays):                  # the messages of the loader itself stay as they are
+        io.load(tmp_path / "v73.mat")
+    with pytest.raises(ValueError, match="no variable 'c'"):
+        io.load(tmp_path / "v73.mat", var="c")
+    (tmp_path / "cut.mat").write_bytes((tmp_path / "v73.mat").read_bytes()[:3000])   # h5py: OSError
+    with pytest.raises(ValueError, match="cannot read .*cut.mat as a MATLAB v7.3 file"):
+        io.load(tmp_path / "cut.mat", var="a")
+
+
+def write_png16(path, a):
+    """16-bit PNG written by hand (Pillow cannot write 16-bit colour): grey, grey and alpha, RGB or RGBA."""
+    import struct
+    import zlib
+    colour_type = {1: 0, 2: 4, 3: 2, 4: 6}[1 if a.ndim == 2 else a.shape[2]]
+    raw = b"".join(b"\x00" + row.astype(">u2").tobytes() for row in a)
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    head = struct.pack(">IIBBBBB", a.shape[1], a.shape[0], 16, colour_type, 0, 0, 0)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", head) + chunk(b"IDAT", zlib.compress(raw))
+                     + chunk(b"IEND", b""))
+
+
+def test_16_bit_colour_is_not_cut_to_8_bits(tmp_path):
+    pytest.importorskip("PIL")
+    rgb = np.random.default_rng(0).integers(0, 65536, (32, 40, 3)).astype(np.uint16)
+    grey = io.to_grey(rgb)
+    write_png16(tmp_path / "grey16.png", rgb[..., 0])
+    assert np.array_equal(io.load(tmp_path / "grey16.png"), rgb[..., 0])
+    for name, a in (("rgb16.png", rgb), ("rgba16.png", np.dstack([rgb, rgb[..., :1]])),
+                    ("la16.png", rgb[..., :2])):
+        write_png16(tmp_path / name, a)                   # Pillow would keep only the high byte
+        with pytest.raises(ValueError, match="only 8 bits .* 16-bit colour"):
+            io.load(tmp_path / name)
+    (tmp_path / "rgb16.ppm").write_bytes(b"P6 40 32 65535\n" + rgb.astype(">u2").tobytes())
+    with pytest.raises(ValueError, match="only 8 bits .* 16-bit colour"):    # Pillow scales it to 8 bits
+        io.load(tmp_path / "rgb16.ppm")
+    (tmp_path / "rgb8.ppm").write_bytes(b"P6 40 32 255\n" + (rgb >> 8).astype(np.uint8).tobytes())
+    assert np.allclose(io.load(tmp_path / "rgb8.ppm"), io.to_grey(rgb >> 8), rtol=0, atol=1e-9)
+    tifffile = pytest.importorskip("tifffile")
+    tifffile.imwrite(tmp_path / "rgb16.tif", rgb, photometric="rgb")
+    tifffile.imwrite(tmp_path / "planar.tif", np.moveaxis(rgb, 2, 0), photometric="rgb", planarconfig="separate")
+    tifffile.imwrite(tmp_path / "pages.tif", np.stack([rgb, rgb[::-1]]), photometric="rgb")
+    for name in ("rgb16.tif", "planar.tif"):
+        assert np.allclose(io.load(tmp_path / name), grey, rtol=0, atol=1e-9), name
+    a = io.load(tmp_path / "pages.tif")
+    assert a.shape == (32, 40, 2) and np.allclose(a[..., 1], grey[::-1], rtol=0, atol=1e-9)
+    tifffile.imwrite(tmp_path / "rgb8.tif", (rgb >> 8).astype(np.uint8), photometric="rgb")
+    assert np.allclose(io.load(tmp_path / "rgb8.tif"), io.to_grey(rgb >> 8), rtol=0, atol=1e-9)
+
+
+def test_16_bit_bmp_is_not_taken_for_16_bit_colour(tmp_path):
+    # 16 bits per pixel (5-6-5, raw mode BGR;16) are fewer than 8 bits per channel: read as usual
+    import struct
+    Image = pytest.importorskip("PIL.Image")
+    w, h = 8, 4
+    pixels = (np.arange(w * h, dtype=np.uint16) * 0x0841).astype("<u2").tobytes()
+    head = struct.pack("<IiiHHIIiiII", 40, w, h, 1, 16, 3, len(pixels), 2835, 2835, 0, 0)
+    masks = struct.pack("<III", 0xF800, 0x07E0, 0x001F)
+    offset = 14 + len(head) + len(masks)
+    (tmp_path / "565.bmp").write_bytes(b"BM" + struct.pack("<IHHI", offset + len(pixels), 0, 0, offset) + head
+                                       + masks + pixels)
+    with Image.open(tmp_path / "565.bmp") as im:
+        assert im.mode == "RGB" and im.tile[0][3][0] == "BGR;16"
+        expected = io.to_grey(np.asarray(im))
+    assert np.array_equal(io.load(tmp_path / "565.bmp"), expected)
 
 
 def test_notes_go_to_the_logger(frames, tmp_path, caplog):

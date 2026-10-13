@@ -22,6 +22,7 @@ from .core import (DEFAULT_L, MIN_EXPOSURES, MIN_SIZE, SAT_WARN, estimate_veloci
 from .io import _SeveralArrays, frames_axis, load
 from .simulate import simulate_pulsed_image
 
+MAX_TRAVEL = 4          # fftvel simulate: (K - 1) * max(|vx|, |vy|) at most this times --n (texture size)
 DESCRIPTION = """\
 Surface velocity from a single multi-flash image (2-D FFT and Radon
 transform). "simulate" estimates a simulated image whose motion is known,
@@ -135,9 +136,6 @@ def _pulsed_image(a: np.ndarray, stack: bool, L: int | None = None, exposures: i
     are dropped first, so a MATLAB ``getdata`` stack (rows x cols x 1 x frames)
     works as it is. Only the frames used are converted to float.
     """
-    if L is not None and exposures is not None and exposures != 2 * L + 1:
-        raise SystemExit(f"--L {L} means {2 * L + 1} exposures but --exposures is {exposures}; "
-                         f"give only one of them")
     shape = a.shape
     a = np.squeeze(a)
     if not stack:
@@ -196,6 +194,13 @@ def _physical(est, gsd: float, period: float) -> dict:
             "vx_per_s": float(f"{p.vx:.6g}"), "vy_per_s": float(f"{p.vy:.6g}")}
 
 
+def _simulated_count(L: int | None, exposures: int | None) -> tuple:
+    """``(L, K)`` of fftvel simulate: from --L, else from --exposures, else the default L."""
+    if L is None:
+        L = DEFAULT_L if exposures is None else max(1, (exposures - 1) // 2)
+    return L, (2 * L + 1 if exposures is None else exposures)
+
+
 def _use_agg() -> None:
     """Check for matplotlib before any work and select its file-only backend (no display needed)."""
     try:
@@ -203,6 +208,24 @@ def _use_agg() -> None:
     except ImportError:
         raise SystemExit('--plot needs matplotlib: pip install -e "./python[plot]"') from None
     matplotlib.use("Agg")
+
+
+def _plot_path(sp, path: str) -> str:
+    """The file that --plot writes, checked before any work: ``.png`` is added if it has no extension."""
+    from matplotlib.backend_bases import FigureCanvasBase
+
+    if os.path.isdir(path):
+        sp.error(f"--plot needs a file name such as estimate.png, not the folder {path}")
+    folder = os.path.dirname(os.path.abspath(path))
+    if not os.path.isdir(folder):
+        sp.error(f"--plot: no such folder: {folder}")
+    ext = os.path.splitext(path)[1][1:].lower()
+    if not ext:
+        return path + ".png"
+    types = FigureCanvasBase.get_supported_filetypes()
+    if ext not in types:
+        sp.error(f"--plot: matplotlib cannot write .{ext} files; it writes {', '.join(sorted(types))}")
+    return path
 
 
 def _parser():
@@ -272,14 +295,23 @@ def main(argv=None) -> int:
         sp.error("--L must be a positive integer")
     if a.exposures is not None and a.exposures < MIN_EXPOSURES:
         sp.error(f"--exposures must be at least {MIN_EXPOSURES}")
+    if a.L is not None and a.exposures is not None and a.exposures != 2 * a.L + 1:
+        sp.error(f"--L {a.L} means {2 * a.L + 1} exposures but --exposures is {a.exposures}; "
+                 f"give only one of them")
     if a.cmd == "simulate":
-        if a.L is not None and a.exposures is not None and a.exposures != 2 * a.L + 1:
-            s.error(f"--L {a.L} means {2 * a.L + 1} flashes but --exposures is {a.exposures}; "
-                    f"give only one of them")
         if a.n < MIN_SIZE:
             s.error(f"--n must be at least {MIN_SIZE}")
         if not (np.isfinite(a.noise) and a.noise >= 0):
             s.error("--noise must be a finite number >= 0")
+        if not (np.isfinite(a.vx) and np.isfinite(a.vy)):
+            s.error("--vx and --vy must be finite numbers")
+        if a.seed < 0:
+            s.error("--seed must be an integer >= 0")
+        L, K = _simulated_count(a.L, a.exposures)
+        travel = (K - 1) * max(abs(a.vx), abs(a.vy))
+        if travel > MAX_TRAVEL * a.n:
+            s.error(f"with {K} flashes the texture would move by {travel:.4g} px, more than {MAX_TRAVEL} times "
+                    f"--n ({MAX_TRAVEL * a.n} px); lower --vx and --vy, or the flash count")
     else:
         if not 0 <= a.duty < 1:
             e.error("--duty must be in [0, 1)")
@@ -295,12 +327,8 @@ def main(argv=None) -> int:
                 e.error(f"--{name} must be a finite number > 0")
     if a.plot:
         _use_agg()
+        a.plot = _plot_path(sp, a.plot)
     if a.cmd == "simulate":
-        if a.L is not None:
-            L = a.L
-        else:
-            L = DEFAULT_L if a.exposures is None else max(1, (a.exposures - 1) // 2)
-        K = 2 * L + 1 if a.exposures is None else a.exposures
         bp = simulate_pulsed_image(a.n, (a.vx, a.vy), L, exposures=K, noise=a.noise, rng=a.seed)
         true_angle = float(np.rad2deg(np.arctan2(-a.vy, a.vx)) % 180)
         _note(f"true: angle {true_angle:.2f} deg, speed {np.hypot(a.vx, a.vy):.3f} px per flash")
@@ -325,16 +353,21 @@ def main(argv=None) -> int:
         _note(f"units: speed_per_s = speed * gsd / period, gsd {a.gsd:g} (length unit) per px, "
               f"period {a.period:g} s")
         out.update(_physical(est, a.gsd, a.period))
-    print(json.dumps(out, indent=2))
-    if a.plot:
+    if a.plot:                                  # before the JSON, so that a result is never followed by an error
         import matplotlib.pyplot as plt
 
         from .plotting import plot_estimate
 
         fig = plot_estimate(bp, est)
-        fig.savefig(a.plot, dpi=120)
-        plt.close(fig)
+        try:
+            fig.savefig(a.plot, dpi=120)
+        except (OSError, ValueError) as err:    # e.g. no write permission
+            reason = getattr(err, "strerror", None) or err
+            raise SystemExit(f"cannot write the figure {a.plot}: {reason}") from None
+        finally:
+            plt.close(fig)
         _note(f"figure written to {a.plot}")
+    print(json.dumps(out, indent=2))
     return 0
 
 

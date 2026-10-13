@@ -27,7 +27,11 @@ for k = 1:numel(names)
     valid = false(size(starts));
     for w = 1:numel(starts)
         idx = starts(w) + (0:K - 1);
-        border = ceil(max(abs(sum(shift(1:idx(end) - 1, :), 1))));   % zero fill
+        border = 0;                                   % zero fill in the window
+        for f = idx
+            filled = s(:, :, f) ~= 0;
+            border = max([border, find(any(filled, 2), 1) - 1, find(any(filled, 1), 1) - 1]);
+        end
         bp = mean(s(border + 1:end, border + 1:end, idx), 3);
         e = fftvel.estimate_velocity(bp, 'Exposures', K);
         est_speed(w) = e.speed;

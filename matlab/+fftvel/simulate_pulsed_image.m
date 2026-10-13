@@ -49,8 +49,12 @@ function [bp, frames] = simulate_pulsed_image(n, v, L, varargin)
             'simulate_pulsed_image:Exposures');
     end
     duty = fftvel.internal.check_option(opts.Duty, 'Duty', 'duty', 'simulate_pulsed_image:Duty');
-    vx = v(1);
-    vy = v(2);
+    % same rule as _velocity in python/src/fftvel/simulate.py
+    if ~isnumeric(v) || ~isreal(v) || numel(v) ~= 2 || ~all(isfinite(v(:)))
+        error('simulate_pulsed_image:v', 'v must hold two finite real numbers [vx vy].');
+    end
+    vx = double(v(1));
+    vy = double(v(2));
     margin = ((K - 1) + duty)*max(abs([vx vy])) + c.SIM_MARGIN;
     if isempty(opts.Texture)
         m = 2^ceil(log2(n + margin));

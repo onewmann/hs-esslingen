@@ -8,9 +8,9 @@
   MATLAB ``rgb2gray``.
 
 ``.npy`` and ``.npz`` files need only NumPy. Image files need Pillow (or,
-without it, matplotlib), float64 TIFF files tifffile, MAT-files SciPy and
-MATLAB v7.3 files also h5py; the extra ``data`` of the package brings
-SciPy, h5py and Pillow.
+without it, matplotlib), float64 and 16-bit colour TIFF files tifffile,
+MAT-files SciPy and MATLAB v7.3 files also h5py; the extra ``data`` of the
+package brings SciPy, h5py and Pillow.
 
 Errors are raised as FileNotFoundError (no such file), ImportError (a
 reader that the file needs is not installed) and ValueError (the file
@@ -21,6 +21,7 @@ the logger ``fftvel.io``; the command line prints these lines on stderr.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import warnings
@@ -37,6 +38,7 @@ NUMERIC = ("double", "single", "int8", "uint8", "int16", "uint16", "int32", "uin
 PIL_KEEP = ("1", "L", "I", "F", "RGB", "RGBA")     # Pillow modes read as they are (also I;16*)
 MAT_HINT = "frames = s.frames (struct) or frames = cat(3, c{:}) (cell); save(file, 'frames', '-v7')"
 NPZ_HINT = "np.savez(file, frames=frames, t=t)"
+DEEP_COLOUR = "Pillow reads only 8 bits of each channel of a 16-bit colour (or grey and alpha) image"
 JPEG_WARNING = ("JPEG compression adds an 8 x 8 px block grid, which can give wrong results that are "
                 "marked valid; use a lossless format (PNG, TIFF, BMP) for measurements")
 
@@ -120,7 +122,9 @@ def load(path, *, var: str | None = None, stack: bool = False) -> np.ndarray:
     ``path`` is an image file, a ``.npy``, ``.npz`` or ``.mat`` file (the
     extension decides). Image files keep 16-bit, 32-bit integer and float32
     data; colour images become grey (see :func:`to_grey`), several pages of
-    the size of the first one a stack (rows, cols, pages). ``.npy`` files
+    the size of the first one a stack (rows, cols, pages). 16-bit colour
+    TIFF is read through tifffile; 16-bit colour in other formats raises
+    ValueError, because Pillow reads only 8 bits of it. ``.npy`` files
     are memory-mapped, so only the frames used are read from disk. MAT-files
     are read through SciPy (v5 and v7) or h5py (v7.3, axes in MATLAB order).
 
@@ -148,8 +152,8 @@ def load(path, *, var: str | None = None, stack: bool = False) -> np.ndarray:
     if low.endswith(".npy"):
         try:
             a = np.load(path, mmap_mode="r")
-        except ValueError as err:               # e.g. an array of Python objects
-            raise ValueError(f"cannot read {path}: {err}") from None
+        except Exception as err:  # noqa: BLE001 - objects, an empty or damaged file (EOFError, TokenError, ...)
+            raise ValueError(f"cannot read {path} as a .npy file ({err})") from None
         _log.info("%s: %s %s", path, _size(a.shape), a.dtype)
     elif low.endswith(".npz"):
         a = _load_npz(path, var, stack)
@@ -266,29 +270,47 @@ def _load_mat73(path: str, var: str | None, stack: bool = False) -> np.ndarray:
         raise ImportError(f"{path} is a MATLAB v7.3 (HDF5) file; reading it needs h5py: pip install h5py "
                           f"(the extra \"data\" of fftvel brings it). Or save it in MATLAB with "
                           f"save(file, 'frames', '-v7')") from None
-    with h5py.File(path, "r") as f:
-        info = []
-        for name, obj in f.items():
-            if name.startswith("#"):            # #refs#, #subsystem#: data behind cells and objects
-                continue
-            cls = obj.attrs.get("MATLAB_class", b"")
-            cls = cls.decode() if isinstance(cls, bytes) else str(cls)
-            if isinstance(obj, h5py.Group):     # struct, object or sparse matrix
-                info.append((name, (), "sparse" if "MATLAB_sparse" in obj.attrs else cls or "group", False))
-                continue
-            numeric = obj.dtype.kind in "biuf" and "MATLAB_empty" not in obj.attrs
-            if cls and obj.dtype.kind == "V":
-                cls = "complex " + cls          # stored as (real, imag) pairs
-            if cls:
-                info.append((name, obj.shape[::-1], cls, numeric and cls in NUMERIC))
-            else:                               # HDF5 data not written by MATLAB: keep the axes
-                info.append((name, obj.shape, obj.dtype.name if numeric else "non-numeric", numeric))
-        name = _pick_variable(path, info, var, stack)
-        a = np.asarray(f[name][()])
-        if "MATLAB_class" in f[name].attrs:
-            a = a.T
+    with _reading_mat73(path):
+        with h5py.File(path, "r") as f:
+            info = _mat73_info(h5py, f)
+    name = _pick_variable(path, info, var, stack)   # outside: its ValueError has a message of its own
+    with _reading_mat73(path):
+        with h5py.File(path, "r") as f:
+            a = np.asarray(f[name][()])
+            if "MATLAB_class" in f[name].attrs:
+                a = a.T
     _log.info("%s: variable '%s' (MATLAB v7.3), %s %s", path, name, _size(a.shape), a.dtype)
     return a
+
+
+@contextlib.contextmanager
+def _reading_mat73(path: str):
+    """Turn any error of h5py into ValueError: OSError (truncated file), RuntimeError (damaged file), ..."""
+    try:
+        yield
+    except Exception as err:  # noqa: BLE001 - only h5py calls run inside
+        raise ValueError(f"cannot read {path} as a MATLAB v7.3 file ({err})") from None
+
+
+def _mat73_info(h5py, f) -> list:
+    """``(name, shape, class, numeric)`` of every variable in an open MATLAB v7.3 file."""
+    info = []
+    for name, obj in f.items():
+        if name.startswith("#"):                # #refs#, #subsystem#: data behind cells and objects
+            continue
+        cls = obj.attrs.get("MATLAB_class", b"")
+        cls = cls.decode() if isinstance(cls, bytes) else str(cls)
+        if isinstance(obj, h5py.Group):         # struct, object or sparse matrix
+            info.append((name, (), "sparse" if "MATLAB_sparse" in obj.attrs else cls or "group", False))
+            continue
+        numeric = obj.dtype.kind in "biuf" and "MATLAB_empty" not in obj.attrs
+        if cls and obj.dtype.kind == "V":
+            cls = "complex " + cls              # stored as (real, imag) pairs
+        if cls:
+            info.append((name, obj.shape[::-1], cls, numeric and cls in NUMERIC))
+        else:                                   # HDF5 data not written by MATLAB: keep the axes
+            info.append((name, obj.shape, obj.dtype.name if numeric else "non-numeric", numeric))
+    return info
 
 
 def _load_image(path: str):
@@ -297,11 +319,15 @@ def _load_image(path: str):
         from PIL import Image, ImageSequence
     except ImportError:
         return _load_image_mpl(path)
+    deep = False
     try:
         with Image.open(path) as im:
             fmt = im.format
             pages = []
             for page in ImageSequence.Iterator(im):
+                if _deep_colour(page, fmt):
+                    deep = True
+                    break
                 if page.mode not in PIL_KEEP and not page.mode.startswith("I;16"):
                     page = page.convert("L" if page.mode in ("LA", "La") else "RGB")
                 pages.append(_colour_to_grey(np.asarray(page)))
@@ -309,19 +335,51 @@ def _load_image(path: str):
         if path.lower().endswith((".tif", ".tiff")):
             return _load_tiff(path, err), False
         raise ValueError(f"cannot read {path} as an image ({err})") from None
+    if deep and fmt == "TIFF":
+        return _load_tiff(path, DEEP_COLOUR), False
+    if deep:
+        raise ValueError(f"cannot read {path}: {DEEP_COLOUR}; save it as 16-bit grey, as TIFF or as .npy")
     return _stack_pages(path, pages, fmt), fmt in ("JPEG", "MPO")
 
 
-def _load_tiff(path: str, err: Exception) -> np.ndarray:
-    """TIFF that Pillow cannot read (e.g. float64), through tifffile if it is installed."""
+def _deep_colour(page, fmt) -> bool:
+    """True for a colour page with more than 8 bits per sample, which Pillow would read as 8 bits.
+
+    PNG shows it in the raw mode of its tiles (``RGB;16B``; but ``BGR;16``
+    of a BMP is 5-6-5 bits in 16), PPM in the maximum value that its tiles
+    carry, TIFF in its BitsPerSample tag (a planar TIFF has the raw modes
+    ``R``, ``G``, ``B``).
+    """
+    if page.mode not in ("RGB", "RGBA", "RGBX", "LA", "La"):     # I;16, I and F keep their depth
+        return False
+    if fmt == "TIFF":
+        bits = page.tag_v2.get(258, 8)          # BitsPerSample, one value per channel
+        return max(bits if isinstance(bits, tuple) else (bits,)) > 8
+    for tile in page.tile:
+        args = tile[3] if len(tile) > 3 else None
+        raw = args[0] if isinstance(args, tuple) and args else args
+        if isinstance(raw, str) and raw.endswith((";16B", ";16L", ";16N")):
+            return True
+        if tile[0] == "ppm" and isinstance(args, tuple) and len(args) > 1 and args[1] > 255:
+            return True                         # Pillow scales the values to 0..255
+    return False
+
+
+def _load_tiff(path: str, err) -> np.ndarray:
+    """TIFF that Pillow cannot read (e.g. float64) or not in full (16-bit colour), through tifffile."""
     try:
         import tifffile
     except ImportError:
-        raise ImportError(f"cannot read {path} with Pillow ({err}); pip install tifffile, or save it as "
-                          f"8 or 16 bit integer or float32 TIFF, or as .npy") from None
+        raise ImportError(f"cannot read {path} with Pillow ({err}); pip install tifffile, or save it as a "
+                          f"grey TIFF of 8 or 16 bit integers or float32, or as .npy") from None
     try:
         with tifffile.TiffFile(path) as tf:
-            pages = [_colour_to_grey(p.asarray()) for p in tf.pages]
+            pages = []
+            for p in tf.pages:
+                a = p.asarray()
+                if a.ndim == 3 and p.axes.startswith("S"):     # planar: samples first (SYX)
+                    a = np.moveaxis(a, 0, -1)
+                pages.append(_colour_to_grey(a))
     except (OSError, ValueError) as err2:
         raise ValueError(f"cannot read {path} as a TIFF ({err2})") from None
     return _stack_pages(path, pages, "TIFF (tifffile)")

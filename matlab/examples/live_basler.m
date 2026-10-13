@@ -66,7 +66,7 @@ function live_basler(varargin)
 %   The script passes Duty = exposure / frame step to the estimator and
 %   warns when it lies between 0.4 and 0.6, where the speed fit depends
 %   strongly on the exact value, or above 0.9. Keep the exposure below
-%   about 0.3 of the frame step.
+%   at most a quarter of the frame step.
 %
 %   Saturation: the script warns once when more than 1 % of the analysed
 %   pixels are saturated (EST.saturated), because glints and saturated
@@ -404,7 +404,7 @@ function live_basler(varargin)
             warned{end + 1} = 'half';
             warning('live_basler:duty', ['The exposure is %.2f of the frame step. Between 0.4 ' ...
                 'and 0.6 the speed fit depends strongly on the exact exposure (at 0.5 every ' ...
-                'second spectral line vanishes); use an exposure below about 0.3 of the step.'], duty);
+                'second spectral line vanishes); use an exposure of at most a quarter of the step.'], duty);
         elseif duty > 0.9 && ~any(strcmp(warned, 'full'))
             warned{end + 1} = 'full';
             warning('live_basler:duty', ['The exposure is %.2f of the frame step, so the frames ' ...

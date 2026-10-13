@@ -219,6 +219,20 @@ function test_model_options()
         'simulate_pulsed_image:Exposures');
     expect_error(@() fftvel.simulate_pulsed_image(64, [2 1], 2, 'Duty', 1), 'simulate_pulsed_image:Duty');
     expect_error(@() fftvel.simulate_pulsed_image(64, [2 1], 2, 'Duty', '0.2'), 'simulate_pulsed_image:Duty');
+    % same rule as test_simulate_checks_the_velocity in tests/python/test_model_options.py
+    bad = {[NaN 0], [0 Inf], [1 2 3], 1, '12', [1i 0], [true false], {2, 1}};
+    for k = 1:numel(bad)
+        expect_error(@() fftvel.simulate_pulsed_image(64, bad{k}, 2), 'simulate_pulsed_image:v');
+    end
+    try
+        fftvel.simulate_pulsed_image(64, [NaN 0], 2);
+    catch err
+        assert(strcmp(err.message, 'v must hold two finite real numbers [vx vy].'), err.message);
+    end
+    seed_rng(0);
+    a = fftvel.simulate_pulsed_image(64, [2 1], 2);
+    seed_rng(0);
+    assert(isequal(a, fftvel.simulate_pulsed_image(64, int32([2; 1]), 2)), 'v as an int32 column');
 end
 
 function check(e, speed, angle, what)
