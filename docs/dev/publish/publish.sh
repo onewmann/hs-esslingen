@@ -9,22 +9,44 @@
 # The rewrite drops docs/dev and the 2025 GitLab template README from every
 # commit, replaces the remaining mentions of the university, sets every author
 # and committer to Oliver Neumann and removes the AI trailers from the messages.
+# It stops if the local repository that holds this script has uncommitted
+# changes (outside docs/dev) or another HEAD than the commit it publishes;
+# ALLOW_DIFF=1 turns that into a warning.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 SRC=${SRC:-https://github.com/onewmann/hs-esslingen}
 BRANCH=${BRANCH:-claude/pensive-gates-pzcxla}
 DEST=${DEST:-https://github.com/onewmann/2D-FFT-Code}
+TAG=student-project-2025
+OWNER_NAME='Oliver Neumann'
+OWNER_EMAIL='149961666+onewmann@users.noreply.github.com'
 WORK=$(mktemp -d)
+
+fail() { echo "error: $*" >&2; exit 1; }
+differs() {
+  if [ "${ALLOW_DIFF:-0}" = 1 ]; then echo "warning: $*" >&2; else fail "$* (ALLOW_DIFF=1 to go on)"; fi
+}
 
 cp "$HERE/replacements.txt" "$HERE/messages.txt" "$HERE/mailmap.txt" "$WORK/"
 git clone -q "$SRC" "$WORK/repo"
 cd "$WORK/repo"
 git checkout -q -B main "origin/$BRANCH"
-git tag -a student-project-2025 8f0aec4 \
-  -m "Student project scripts as uploaded. The AI-assisted rework starts after this commit." 2>/dev/null || true
+echo "source: $SRC $BRANCH at $(git rev-parse --short HEAD): $(git log -1 --format=%s)"
+if ROOT=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null); then
+  if [ -n "$(git -C "$ROOT" status --porcelain -- . ':(exclude)docs/dev')" ]; then
+    differs "$ROOT has uncommitted changes outside docs/dev; they would not be published"
+  fi
+  if [ "$(git -C "$ROOT" rev-parse HEAD)" != "$(git rev-parse HEAD)" ]; then
+    differs "the local HEAD $(git -C "$ROOT" rev-parse --short HEAD) is not the published commit;" \
+      "push it first, or run with SRC=$ROOT"
+  fi
+fi
+# the tagger takes the committer identity: fixed here, not whatever this machine has configured
+GIT_COMMITTER_NAME=$OWNER_NAME GIT_COMMITTER_EMAIL=$OWNER_EMAIL git tag -f -a "$TAG" 8f0aec4 \
+  -m "Student project scripts as uploaded. The AI-assisted rework starts after this commit." >/dev/null
 for ref in $(git for-each-ref --format='%(refname)' refs/remotes refs/heads refs/tags); do
-  case "$ref" in refs/heads/main|refs/tags/student-project-2025) ;; *) git update-ref -d "$ref" ;; esac
+  case "$ref" in refs/heads/main|refs/tags/$TAG) ;; *) git update-ref -d "$ref" ;; esac
 done
 git remote remove origin
 
@@ -35,16 +57,21 @@ git filter-repo --force \
   --mailmap ../mailmap.txt
 
 if git grep -i -q esslingen $(git rev-list --all); then
-  echo "error: a file in the history still names the university" >&2; exit 1
+  fail "a file in the history still names the university"
 fi
-if git log --all --format='%B%n%an %ae%n%cn %ce' \
-    | grep -i -q -e esslingen -e 'co-authored-by: claude' -e 'claude-session' -e 'noreply@anthropic'; then
-  echo "error: a commit message or identity still needs cleaning" >&2; exit 1
+if { git log --all --format='%B%n%an %ae%n%cn %ce'; git for-each-ref refs/tags --format='%(contents)'; } \
+    | grep -i -q -e esslingen -e 'docs/dev' -e 'co-authored-by: claude' -e 'claude-session' -e 'noreply@anthropic'; then
+  fail "a commit or tag message or identity still needs cleaning"
 fi
-echo "clean history: $WORK/repo ($(git rev-list --count main) commits)"
+[ "$(git for-each-ref --format='%(refname)' refs/heads refs/tags | tr '\n' ' ')" = "refs/heads/main refs/tags/$TAG " ] \
+  || fail "expected exactly the branch main and the tag $TAG"
+[ "$(git for-each-ref refs/tags --format='%(objecttype) %(taggername) %(taggeremail)')" = "tag $OWNER_NAME <$OWNER_EMAIL>" ] \
+  || fail "the tag $TAG is not annotated by $OWNER_NAME <$OWNER_EMAIL>"
+git merge-base --is-ancestor "$TAG" main || fail "the tag $TAG is not in the history of main"
+git cat-file -e "$TAG:2D-FFT" 2>/dev/null || fail "the README links $TAG/2D-FFT, which the tag does not hold"
+echo "clean history: $WORK/repo ($(git rev-list --count main) commits, tag $TAG)"
 
 if [ "${1:-}" = "--push" ]; then
   git remote add origin "$DEST"
-  git push -u origin main
-  git push origin student-project-2025
+  git push --atomic -u origin main "$TAG"
 fi
