@@ -14,8 +14,6 @@ authors:
   - family-names: Neumann
     given-names: Oliver
 version: 0.1.0
-# date-released: set to the date of the v0.1.0 release when the tag is created
-date-released: 2026-10-12
 license: MIT
 repository-code: "https://github.com/onewmann/2D-FFT-Code"
 keywords:

@@ -120,9 +120,11 @@ static_0001.png,9,0.0005,0.04,0.0512,,,1,,0.0045,axis stopped
 * Lossless formats only: PNG or TIFF with 8 or 16 bit, BMP, `.npy`, `.npz`
   (the image or stack under the name `frames`, or its only array), or `.mat`
   with one numeric array (MATLAB v7.3 files need h5py; a `.mat` may also
-  hold timestamps, see below). Colour images are converted to grey. JPEG
-  compression adds an 8 x 8 px block grid that can give wrong results marked
-  valid; the script warns about JPEG files.
+  hold timestamps, see below). Colour image files are converted to grey
+  (16-bit colour only from TIFF); convert a colour array in a `.npy`, `.npz`
+  or `.mat` file to grey first, otherwise its channels count as frames (the
+  script warns). JPEG compression adds an 8 x 8 px block grid that can give
+  wrong results marked valid; the script warns about JPEG files.
 * In flash mode, a file that holds several frames gives one result per
   frame, each estimated on its own and named `file#1`, `file#2`, ...: a
   MATLAB `getdata` recording (rows x columns x 1 x frames, saved with
@@ -180,8 +182,8 @@ frame) of the moving surface at the same speed, `ref_dt_s` apart. Phase
 correlation of their central squares (the same size as the analysed square)
 gives the displacement (dx, dy) in px. The script reports it, its direction,
 the reference speed in px per flash, |d| * T / `ref_dt_s`, and in mm/s,
-|d| * gsd / `ref_dt_s`, and the differences to the estimate. The comparison
-in px per flash does not depend on the gsd or on the accuracy of the axis,
+|d| * GSD / `ref_dt_s`, and the differences to the estimate. The comparison
+in px per flash does not depend on the GSD or on the accuracy of the axis,
 only on the timing. Keep |d| well below half of the analysed square; the
 script warns above a quarter. The frames can be in a stack: `ref.mat#1` and
 `ref.mat#2`.
@@ -200,7 +202,7 @@ settings and how to choose the frame rate from the speed are in
 [docs/acquisition.md](../../docs/acquisition.md#testing-without-a-flash).
 
 Label the results of this mode as emulated multi-flash. They test the
-estimator on a real camera, lens, texture and noise, with the real gsd and
+estimator on a real camera, lens, texture and noise, with the real GSD and
 set motion. They do not test the flash timing, the number of flashes in one
 exposure, or other light during one long exposure (see the
 [checklist](../../docs/acquisition.md#checklist)); report them separately from
@@ -373,9 +375,11 @@ comma); a double click puts each row into one cell.
   median, 95th percentile and maximum of the errors of the valid images
   (with fewer than 20 images the 95th percentile lies between the largest
   values), the valid images that are off by more than 5 % or 2 deg, and the
-  static images marked valid, each with its upper bound.
+  static images marked valid, each with its upper bound. The bound assumes
+  independent images, so count static images of one surface patch as one
+  ([static images](../../docs/acquisition.md#static-images)).
 * State the uncertainty of the reference: the set speed against the actual
-  speed of the axis (encoder), the gsd and the flash period. Their relative
+  speed of the axis (encoder), the GSD and the flash period. Their relative
   errors add to the speed error in mm/s; a smaller error than theirs cannot
   be claimed.
 * Give the settings: K, flash period, pulse length, exposure, ROI, camera,
@@ -384,13 +388,14 @@ comma); a double click puts each row into one cell.
 ## Example
 
 `synthetic_flash/` holds a synthetic example to try the script on before real
-multi-flash images exist: three multi-flash images (9 flashes at 4 px per flash; 8 flashes at
-5.6 px per flash with duty 0.2 and noise; a stopped surface) and two
+multi-flash images exist: three multi-flash images (9 flashes at 4 px per
+flash, duty 0.02, noise 10 %; 8 flashes at 5.6 px per flash, duty 0.2, noise
+30 %; a stopped surface) and two
 single-flash reference frames, 256 x 256 px, 16-bit PNG.
 `synthetic_flash/make_example.py` writes them with `fftvel.simulate_pulsed_image`
 from `data/surface_texture.png` (a real Basler texture) with exactly known
 motion, so the errors it shows (below 0.1 % and 0.2 deg) come from the
-estimator alone, without the errors of a real axis, gsd or flash timing.
+estimator alone, without the errors of a real axis, GSD or flash timing.
 
 `synthetic_average/` holds a synthetic example of average mode: three stacks
 of 9 frames of 192 x 192 px, 8-bit, as `.npz` files in the format that

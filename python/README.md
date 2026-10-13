@@ -26,6 +26,10 @@ lies in the subfolder `python`, so the URL needs `#subdirectory=python`:
 python -m pip install "fftvel @ git+https://github.com/onewmann/2D-FFT-Code#subdirectory=python"
 ```
 
+This still downloads the files of the current version, about 70 MB, most of
+it the recordings in `data/recordings`, although the package itself is about
+100 KB.
+
 The core (`python -m pip install -e ./python`) needs only NumPy and reads
 `.npy` and `.npz` files. The extras add:
 
@@ -84,12 +88,15 @@ est = fftvel.estimate_velocity(bp, exposures=K)
 its own data type. Pillow reads PNG, TIFF, BMP and JPEG and keeps 16-bit,
 32-bit integer and float32 data; colour becomes grey (`to_grey`, with the
 weights of MATLAB `rgb2gray`), a multi-page TIFF a stack, and float64 TIFF
-needs tifffile. `.npy` files are memory-mapped, so only the frames used are
-read. In a `.npz` file, such as those that the live script writes with
-`--save`, the array `frames` is read; `var` names another one, in a `.npz`
-or a `.mat` file. `.mat` files need SciPy, MATLAB v7.3 files also h5py.
-Octave's default `save` writes text, which is not a MAT-file: use
-`save('-v7', file, 'frames')`, with structs and cells saved as plain arrays.
+and 16-bit colour TIFF need tifffile. Pillow reads only 8 bits of 16-bit
+colour, so 16-bit colour in other formats (PNG, PPM) gives a `ValueError`;
+save it as 16-bit grey, as TIFF or as `.npy`. `.npy` files are memory-mapped,
+so only the frames used are read. In a `.npz` file, such as those that the
+live script writes with `--save`, the array `frames` is read; `var` names
+another one, in a `.npz` or a `.mat` file. `.mat` files need SciPy, MATLAB
+v7.3 files also h5py. Octave's default `save` writes text, which is not a
+MAT-file: use `save('-v7', file, 'frames')`, with structs and cells saved as
+plain arrays.
 `frames_axis(shape)` tells whether the first or the last axis of a stack
 holds the frames. Errors are `FileNotFoundError`, `ImportError` (a reader
 that the file needs is not installed) and `ValueError`; what was read is
@@ -107,3 +114,6 @@ From the repository root:
 python -m pip install -e "./python[test]"
 python -m pytest -q tests/python
 ```
+
+The test of video files in the live script needs OpenCV and is skipped
+without it; `./python[test,video]` installs it too, as the CI does.

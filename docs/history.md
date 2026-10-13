@@ -30,11 +30,11 @@ The speed came from peaks picked with a fixed prominence. The live GUI
 direction found and calls `findpeaks(..., 'MinPeakProminence', 0.05,
 'MinPeakDistance', 3)`; the speed is $2N$ divided by the mean spacing of the
 peaks. MATLAB's `radon` sums along lines, so the projection values grow with
-the image size, and an absolute prominence of 0.05 lets small ripples from
-noise through. Extra peaks shorten the mean spacing and make the speed too
-large. The same fixed value of 0.05 appears in `main.m` and
-`studiprojekKapitel34_v2.m` (both copies of each), `G/finaltest1.m`,
-`G/studiprojekKapitel34_v1.m`, `G/radon_video_gui_fixedspeed.m`,
+the image size, and an absolute prominence of 0.05 lets small ripples of the
+spectrum through, from the texture itself or from noise. Extra peaks shorten
+the mean spacing and make the speed too large. The same fixed value of 0.05
+appears in `main.m` and `studiprojekKapitel34_v2.m` (both copies of each),
+`G/finaltest1.m`, `G/studiprojekKapitel34_v1.m`, `G/radon_video_gui_fixedspeed.m`,
 `G/radon_video_gui_withnoise.m` and `G/test.m`.
 
 Live frames were resized anisotropically. `aktuell/finaltest1.m` sets the
@@ -91,15 +91,29 @@ per flash in 6 directions).
 |---|---|---|
 | Direction within 2 deg | 31 of 36 | 36 of 36 (largest error 0.049 deg) |
 | Speeds reported | 32.1 to 78.1 px per flash, whatever the true speed | within 0.13 % of the true speed |
-| Median speed error | 733 % | 0.018 % |
+| Median speed error | several hundred % (733 % in this port, see below) | 0.018 % |
 | Marked valid | (no validity check) | 36 of 36 |
 
 ![Before and after](figures/before_after.png)
 
 In simulation, the 2025 code found the direction in most cases and took its
-speed from noise peaks. The images come from the rework's own simulator, the
-model the rework fits, so the table documents what changed in the code. It
-says nothing about real images.
+speed from small ripples of the texture spectrum (the test images have no
+noise). The images come from the rework's own simulator, the model the rework
+fits, so the table documents what changed in the code. It says nothing about
+real images.
+
+The median of the 2025 code is a coarse number. It lies between the 18th and
+the 19th of the 36 sorted errors, 544 and 923 %, and since the reported speed
+hardly depends on the true one, the median depends mainly on which true
+speeds are in the test set. It also depends on the port, which no script in
+this repository compares with the 2025 code run in MATLAB or Octave. The port
+differs from `finaltest1.m` in two details: its `findpeaks_matlab` keeps peaks
+exactly `MinPeakDistance` apart, which MATLAB's `findpeaks` removes, and
+`before_after.py` scales the mean image from its minimum to its maximum,
+while the GUI stretches each frame between its 1 and 99 % percentiles
+(`stretchlim`). With either or both of these changed, the median comes out at
+624 to 708 %; the reported speeds stay between 32.1 and 78.1 px per flash, and
+31 of 36 directions stay within 2 deg.
 
 ```bash
 python experiments/history/before_after.py

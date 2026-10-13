@@ -315,15 +315,18 @@ being prepared and are not in the repository yet.
 
 Record a number of images of the stopped surface with the same settings (K,
 flash period, exposure, ROI) and give them `static` 1 in `meta.csv`. All of
-them must come out not valid. `static` 1 means "must come out not valid", so it
+them must come out not valid. Move the surface to a new patch (or change the
+set-up) between static images: repeated images of one patch differ only by
+sensor noise, so they count as one in the bound below. `static` 1 means "must come out not valid", so it
 also fits a second control: images of the moving surface with a single flash
 in the same exposure time (listed with the `exposures` of the real
 measurements). They hold no flash pattern, and a valid one shows blur from
-other light or vibration. With none of N static images valid, the one-sided
-95 % Clopper-Pearson upper bound of the rate of static images marked valid is
-$1 - 0.05^{1/N}$: 26 % for N = 10, 9.5 % for N = 30, 4.9 % for N = 60, 3.0 %
-for N = 100. The summary of `real_measurements.py` prints this bound for the
-images given.
+other light or vibration. With none of N independent static images valid,
+the one-sided 95 % Clopper-Pearson upper bound of the rate of static images
+marked valid is $1 - 0.05^{1/N}$: 26 % for N = 10, 9.5 % for N = 30, 4.9 % for
+N = 60, 3.0 % for N = 100. N is the number of distinct patches or set-ups,
+not of frames. The summary of `real_measurements.py` prints this bound and
+counts every static image it is given as independent.
 
 ## Testing without a flash
 

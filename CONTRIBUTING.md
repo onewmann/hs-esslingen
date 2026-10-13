@@ -150,8 +150,9 @@ their content has changed.
    python experiments/run.py --replot --all
    ```
 
-   The last command redraws the figures from the CSV files and prints the
-   numbers that the documentation quotes.
+   The last command redraws the figures from the CSV files and prints a
+   summary of each study. Not every number in the documentation is in these
+   summaries; the others are computed from the same CSV files.
 6. Update every number in `README.md`, `docs/*.md` and
    `data/measurements/README.md` that the new CSV files change.
 

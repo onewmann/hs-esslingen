@@ -4,7 +4,7 @@
 
 [![tests](https://github.com/onewmann/2D-FFT-Code/actions/workflows/ci.yml/badge.svg)](https://github.com/onewmann/2D-FFT-Code/actions/workflows/ci.yml)
 
-A strobe flashes K = 2L+1 times (9 by default) during one camera exposure, so a moving textured surface appears K times in one image, shifted by the same step each time.
+A strobe flashes K times (9 by default) during one camera exposure, so a moving textured surface appears K times in one image, shifted by the same step each time.
 In the 2-D spectrum of that image the shifts become evenly spaced straight lines: their angle gives the direction of motion, their spacing the distance moved per flash.
 The intended use is contactless measurement of a vehicle's speed over ground and sideslip angle, as in the thesis the method comes from, or of a conveyor belt or a paper web, with one image per measurement.
 
@@ -53,7 +53,7 @@ est = fftvel.estimate_velocity(bp, 'Exposures', 9)
 
 A camera that takes separate frames measures motion against the frame period, 10 ms at 100 frames per second. A multi-flash image measures it against the flash period, which a controller can set in microseconds. Take a vehicle at 30 m/s, a ground sample distance (the length on the surface that one pixel covers) of 0.2 mm/px and a 256 px field, 51.2 mm wide. At 100 frames per second two consecutive frames are 300 mm apart and share no content; frames 20 px apart would need 7500 frames per second. Flashes 133 µs apart give 20 px per flash inside one exposure, well within the 0.4 to 64 px per flash tested for a 256 px square.
 
-If you have separate frames that overlap, use phase correlation (the shift between two images from the phase of their cross-power spectrum). It was correct more often in simulation and also gives the sign of the motion, which one multi-flash image cannot. On the 840 noisy images of the noise study, in simulation:
+If you have separate frames that overlap, use phase correlation (the shift between two images from the phase of their cross-power spectrum). It was correct more often in simulation and also gives the sign of the motion, which one multi-flash image cannot. On the 840 images of the noise study (120 of them without noise), in simulation:
 
 | Method | Input | Correct, random texture | Correct, camera texture |
 |---|---|---:|---:|
@@ -61,7 +61,7 @@ If you have separate frames that overlap, use phase correlation (the shift betwe
 | cepstrum / autocorrelation | one multi-flash image | 69.5 % / 72.1 % | 59.8 % / 55.0 % |
 | phase correlation | two overlapping single exposures | 95.0 % | 87.9 % |
 
-"Correct" means a direction within 2 deg and a speed within 5 %. Only `fftvel` also marks its results as valid or not. [results.md](docs/results.md#baselines) has the results per speed and the 2025 peak-spacing rule in corrected form.
+"Correct" means a direction within 2 deg and a speed within 5 %. On the random texture `fftvel` is correct more often than each single-image baseline (exact McNemar test on the same images, p < 0.001). On the camera texture its lead over the cepstrum is not significant (p = 0.09) and comes from the 60 images without noise; on the 360 noisy ones the cepstrum is correct in 208, `fftvel` in 206. Only `fftvel` also marks its results as valid or not. [results.md](docs/results.md#baselines) has the results per speed and the 2025 peak-spacing rule in corrected form.
 
 ## How it works
 
@@ -91,13 +91,13 @@ Ordered by how independent the data are of the estimator's own model. All number
 | [Single camera frames](docs/results.md#single-camera-frames-a-real-null-test) | 1360 crops of single frames of the 2025 recordings: one exposure each, so nothing repeats | 59 valid, all false alarms; 41 of the 47 on the moving surface look like motion blur |
 | [Accuracy](docs/results.md#accuracy-and-noise-in-simulation) | in simulation: 256 px, 9 flashes, no noise, random and camera texture | Within 0.70 deg and 0.47 % from 0.4 to 64 px per flash; 0 of 24 valid at 0.3 px per flash, below the range |
 | [Noise](docs/results.md#accuracy-and-noise-in-simulation) | in simulation: 60 images per noise level and texture | Noise at half the signal: 91.7 % correct (random texture) and 70.0 % (camera texture); noise as strong as the signal: 71.7 % and 50.0 %. 11 of 592 valid estimates wrong; 0 of 120 images without motion valid |
-| [Baselines](docs/results.md#baselines) | in simulation: the 840 noise images | Correct (random / camera texture): `fftvel` 80.2 / 63.3 %, single-image baselines at most 72.1 / 59.8 %, phase correlation of two frames 95.0 / 87.9 % |
+| [Baselines](docs/results.md#baselines) | in simulation: the 840 noise images | Correct (random / camera texture): `fftvel` 80.2 / 63.3 %, single-image baselines at most 72.1 / 59.8 % (on the camera texture not significantly different from the cepstrum), phase correlation of two frames 95.0 / 87.9 % |
 
 The simulated images come from the model the estimator fits. They check the implementation and say nothing about how well that model describes a real camera. Most numbers in the next section come from an independent forward model, which does not use the estimator's simulator and adds sensor noise, flash jitter and other violations of the model ([results.md](docs/results.md#model-violations-in-an-independent-forward-model)).
 
 ## Where it fails
 
-All numbers are in simulation unless the row says otherwise.
+All numbers are in simulation unless the row says otherwise. The shares from the forward model are of 32 images per level, so one image is 3.1 percentage points, and 4 of 32 (12.5 %) has a 95 % confidence interval of 5.0 to 28.1 % (Wilson).
 
 ### Wrong but marked valid
 
@@ -107,11 +107,11 @@ These causes give a wrong result that is still marked valid.
 |---|---|---|
 | Long flashes, `duty` not set | flashes of 0.25 and 0.5 of the period: 12.5 % and 18.8 % wrong but valid, speed near duty x speed / K | short flashes, or `duty` / `--duty`; with the true duty all images were correct and valid ([duty](docs/acquisition.md#flash-duration-and-duty)) |
 | Wrong flash count | 7, 8, 10 or 11 assumed for 9: 34.4 % wrong but valid, speed scaled by 9/K | the exact K with `exposures` / `--exposures`; count the pulses once with a photodiode ([flash count](docs/acquisition.md#the-exact-flash-count)) |
-| Continuous light, or motion blur at slow speed | real single camera frames: 59 of 1360 crops valid. Continuous light for 3/4 of the signal: 34.4 % wrong but valid | dark enclosure or band-pass filter, control images with one flash; `reject_blur`, which costs correct results below about 2.2 px per flash ([ambient light](docs/acquisition.md#ambient-light)) |
+| Continuous light, or motion blur at slow speed | real single frames of the moving surface: 47 of 1020 crops valid, 41 of them blur-like. Continuous light for 3/4 of the signal: 34.4 % wrong but valid | dark enclosure or band-pass filter, control images with one flash; `reject_blur`, which costs correct results below about 2.2 px per flash ([ambient light](docs/acquisition.md#ambient-light)) |
 | Glints, saturated spots | two static glints of 3 times the mean signal: 96.9 % wrong but valid | `clip_outliers`, with which all were correct and valid; diffuse light, no saturated pixels ([glints](docs/acquisition.md#saturation-and-glints)) |
 | Strong static edges | an edge of twice the mean signal: 28.1 % wrong but valid | keep edges and masks out of the analysed square (`roi`), fill masked areas with the image mean ([edges](docs/acquisition.md#saturation-and-glints)) |
 | Periodic texture | a pattern repeating every 64 or 128 px: 100 % wrong but valid; every 160 px: 50.0 % | a non-repeating texture ([assumptions](docs/method.md#assumptions)) |
-| Uneven flash intervals, changing speed | intervals alternating between 0.8 and 1.2 periods: 87 of 240 valid at twice the speed; one missing flash: 22 of 240 valid but wrong; accelerating test sequence: 17 of 22 windows valid, errors up to 11.1 % | flashes from a hardware timer, period checked with a photodiode ([flash count](docs/acquisition.md#the-exact-flash-count)) |
+| Uneven flash intervals, changing speed | intervals alternating between 0.8 and 1.2 periods: 87 of 240 valid at twice the speed; one missing flash: 22 of 240 valid but wrong; test sequence with changing speed (`accelerating`): 17 of 22 windows valid, errors up to 11.1 % | flashes from a hardware timer, period checked with a photodiode ([flash count](docs/acquisition.md#the-exact-flash-count)) |
 
 ### Marked not valid
 
@@ -222,7 +222,7 @@ data/                test sequences, a camera texture, the 2025 recordings; meas
 docs/                method.md, results.md, acquisition.md, history.md; figures/
 ```
 
-A full clone is about 120 MB, because the history also holds the files of the 2025 student project. A partial clone fetches only the files of the version you check out (about 70 MB, most of it the four recordings in `data/recordings/`) and older files when they are needed:
+A full clone is about 130 MB, because the history also holds the files of the 2025 student project. A partial clone fetches only the files of the version you check out (about 70 MB, most of it the four recordings in `data/recordings/`) and older files when they are needed:
 
 ```bash
 git clone --filter=blob:none https://github.com/onewmann/2D-FFT-Code
@@ -230,7 +230,7 @@ git clone --filter=blob:none https://github.com/onewmann/2D-FFT-Code
 
 ## Reference
 
-Jan Horn: *Zweidimensionale Geschwindigkeitsmessung texturierter Oberflächen mit flächenhaften bildgebenden Sensoren* (two-dimensional velocity measurement of textured surfaces with area image sensors). Dissertation, Universität Karlsruhe (TH), 2006. Schriftenreihe des Instituts für Mess- und Regelungstechnik, Band 006, Universitätsverlag Karlsruhe, 2007. ISBN 978-3-86644-076-0. [Full text (CC BY-NC-ND 2.0 DE)](https://publikationen.bibliothek.kit.edu/1000006276)
+Jan Horn: *Zweidimensionale Geschwindigkeitsmessung texturierter Oberflächen mit flächenhaften bildgebenden Sensoren* (two-dimensional velocity measurement of textured surfaces with area image sensors). Doctoral thesis, Universität Karlsruhe (TH), 2006. Schriftenreihe des Instituts für Mess- und Regelungstechnik, Band 006, Universitätsverlag Karlsruhe, 2007. ISBN 978-3-86644-076-0. [Full text (CC BY-NC-ND 2.0 DE)](https://publikationen.bibliothek.kit.edu/1000006276)
 
 ## Citation and licence
 

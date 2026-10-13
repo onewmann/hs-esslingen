@@ -18,7 +18,7 @@ holds image content in every frame of a window (see `tests/matlab/test_testseque
 | `model` | 20 | (5, 5) px, constant |
 | `tyre` | 20 | (4, 4) px, constant |
 | `vehicle` | 30 | about (5, 5) px, single steps with vx and vy between 1.7 and 7.8 px (3.50 to 9.93 px long) |
-| `accelerating` | 30 | vy = 3 px, vx varies smoothly between 2 and 8 px |
+| `accelerating` | 30 | vy = 3 px; vx rises from 5.8 to 8 px, falls to 2 px and rises again to 5 px |
 
 Converted from `Testsequenzen1.mat` of the 2025 student project (variables
 `modelSequence`, `reifenSequence`, `fahrzeugSequence`, `simSequence`; values in

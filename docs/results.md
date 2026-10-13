@@ -23,7 +23,7 @@ Four sequences of 256 x 256 px from the 2025 student project
 previous one shifted down and to the right, with zero fill at the border, so
 they share no code with the estimator's simulator. Every window of 9
 consecutive frames was averaged into one pulsed image, cropped to the area
-without zero fill and estimated with L = 4. The reference is the phase
+without zero fill and estimated with K = 9 (L = 4). The reference is the phase
 correlation of consecutive frames (the shift between two images from the
 phase of their cross-power spectrum), averaged over the window.
 
@@ -31,7 +31,7 @@ phase of their cross-power spectrum), averaged over the window.
 |---|---|---:|---|---|
 | model | (5, 5) px, constant | 12 of 12 | 135.01 to 135.03 deg | 0.0035 px (0.05 %) |
 | tyre | (4, 4) px, constant | 12 of 12 | 134.93 to 135.02 deg | 0.0044 px (0.08 %) |
-| accelerating | vy = 3 px, vx changes smoothly from 2 to 8 px | 17 of 22 | 128.57 to 158.83 deg | 0.65 px (11.1 %) |
+| accelerating | vy = 3 px, vx rises from 5.8 to 8 px, falls to 2 px and rises again to 5 px | 17 of 22 | 128.57 to 158.83 deg | 0.65 px (11.1 %) |
 | vehicle | irregular steps of 3.50 to 9.93 px | 4 of 22 | 134.34 to 134.92 deg | 1.00 px (14.4 %) |
 
 ![Test sequences](figures/testsequences.png)
@@ -81,9 +81,14 @@ A single frame of the recordings holds one exposure, so nothing in it repeats,
 and every valid estimate on it is a false alarm. Part 3 of the threshold
 calibration estimated a grid of non-overlapping crops of every frame of `vid1`
 (a static room scene) and of `vid2` to `vid4` (the moving surface), 256 and
-512 px, with L = 1, 2, 4 and 10 in turn: 1360 crops. The bound is the
-one-sided 95 % Clopper-Pearson upper bound, an exact upper confidence limit
-for a rate estimated from k events in n trials. The left panel of the
+512 px, with K = 3, 5, 9 and 21 (L = 1, 2, 4 and 10) in turn: 1360 crops. The
+crops lie at the same 34 positions (28 of 256 px, 6 of 512 px) in each of the
+10 frames of a recording, so they are not independent trials. The bound in
+the table is the one-sided 95 % Clopper-Pearson upper bound, which assumes
+independent trials and is therefore too narrow here: a bootstrap over the 40
+frames puts the 95th percentile of the rate over all crops at 6.0 % instead of
+5.36 %. Four recordings do not give a general false-alarm rate for real
+images. The left panel of the
 [threshold figure](figures/threshold.png) shows their values of k (the
 size-scaled fit quality of [method.md](method.md#quality-threshold)) next to
 those of the simulated images without motion.
@@ -99,6 +104,9 @@ those of the simulated images without motion.
 | vid4 | 256 px | 17 of 280 | 8.97 % |
 | vid4 | 512 px | 11 of 60 | 28.52 % |
 | all | | 59 of 1360 | 5.36 % |
+
+The 59 valid crops lie at 40 of the 136 positions; the 11 of `vid4` at 512 px
+come from 6 positions, one of them valid in 4 of the 10 frames.
 
 The false alarms on the moving surface look like motion blur. The valid crops
 of `vid4` point at about 90 deg (median 90.02 deg, quartiles 89.95 to 90.10
@@ -165,6 +173,14 @@ section come from simulated images.
 | Wrong K given to the estimator (true 9) | 7, 8, 10, 11 | 53.1, 56.2, 56.2, 56.2 % | 34.4 % at each, speed scaled by 9/K |
 | Wrong flash count in the image (9 assumed) | 7, 8, 10, 11 | 53.1, 56.2, 59.4, 56.2 % | 34.4 to 37.5 %; with `exposures` set, none |
 
+With 32 images per level one image is 3.1 percentage points, and a share of
+12.5 % (4 of 32) has a 95 % confidence interval of 5.0 to 28.1 % (Wilson).
+Level 0 of the constant offset and of the defocus with the 32k e- sensor
+repeats the 32k e- level of the shot noise, with the same scenes and
+velocities and other noise seeds. The three give 2, 5 and 4 of 32 wrong but
+valid and 81.2, 78.1 and 84.4 % correct and valid, so differences of a few
+images between levels are within the scatter of the noise seeds.
+
 ![Model violations](figures/violations.png)
 
 Uneven flash intervals come from part 5 of the threshold calibration, which
@@ -201,7 +217,7 @@ texture and the camera texture of `data/surface_texture.png`.
 
 | Texture, flashes | Valid at every direction | Largest direction error | Largest speed error | The same from 1 px on |
 |---|---|---:|---:|---|
-| random, K = 9 | 0.4 to 64 px per flash | 0.70 deg | 0.46 % | 0.081 deg, 0.12 % |
+| random, K = 9 | 0.4 to 64 px per flash | 0.70 deg | 0.45 % | 0.081 deg, 0.12 % |
 | camera, K = 9 | 0.4 to 64 px per flash | 0.65 deg | 0.47 % | 0.087 deg, 0.17 % |
 | random, K = 41 | 0.1 to 12 px per flash | 0.78 deg | 0.22 % | 0.076 deg, 0.11 % |
 
@@ -254,11 +270,11 @@ chosen on separate images with other seeds.
 
 | Method | Input | Correct, random texture | Correct, camera texture |
 |---|---|---:|---:|
-| `fftvel` | one pulsed image | 80.2 % | 63.3 % |
-| corrected peak spacing | one pulsed image | 68.6 % | 56.2 % |
-| cepstrum | one pulsed image | 69.5 % | 59.8 % |
-| autocorrelation | one pulsed image | 72.1 % | 55.0 % |
-| phase correlation | two single exposures | 95.0 % | 87.9 % |
+| `fftvel` | one multi-flash image | 80.2 % | 63.3 % |
+| corrected peak spacing | one multi-flash image | 68.6 % | 56.2 % |
+| cepstrum | one multi-flash image | 69.5 % | 59.8 % |
+| autocorrelation | one multi-flash image | 72.1 % | 55.0 % |
+| phase correlation | two overlapping single exposures | 95.0 % | 87.9 % |
 
 | True speed (px per flash) | 1 to 2 | 2 to 4 | 4 to 8 | 8 to 16 | 16 to 32 |
 |---|---:|---:|---:|---:|---:|
@@ -270,9 +286,20 @@ chosen on separate images with other seeds.
 
 ![Baselines](figures/baselines.png)
 
-`fftvel` is correct more often than the single-image baselines without noise
-and at low noise. Below 2 px per flash it is correct in 28.0 % of the images,
-the single-image baselines in at most 1.8 %. With noise as strong as the signal or stronger,
+The methods run on the same images, so the exact McNemar test on the images
+where two methods disagree compares them. On the random texture `fftvel` is
+correct more often than each single-image baseline over all 420 images
+(p < 0.001), and at each noise level up to half the signal (p < 0.01). On the
+camera texture it is correct in 266 of 420 images and the cepstrum in 251, a
+difference that is not significant (41 against 26 images where only one of
+the two is correct, p = 0.09). The difference comes from the 60 images
+without noise, where `fftvel` is correct in 60 and the cepstrum and the
+corrected peak spacing in 43 each; on the 360 noisy images the cepstrum is
+correct in 208, `fftvel` in 206. At noise of a quarter and half the signal the
+lead of `fftvel` over the cepstrum on the camera texture is 4 against 0 and 5
+against 1 images (p = 0.13 and 0.22). Below 2 px per flash `fftvel` is correct
+in 28.0 % of the images, the single-image baselines in at most 1.8 %. With
+noise as strong as the signal or stronger,
 the autocorrelation matches or beats it on both textures. Only `fftvel` has a
 validity flag: it marked 80.5 % (random) and 60.5 % (camera texture) of the
 images valid, and 1.9 % and 0.7 % were valid but wrong. If two overlapping
@@ -301,12 +328,15 @@ exactly when $k \ge 9$.
 
 All 2268 simulated images without motion together gave 0 valid (upper bound
 0.13 %), with a largest k of 8.64. Three of the four valid `vid1` crops have
-35 % or more saturated pixels. The one valid crop of part 7 is a 128 px crop
-with L = 1; with the small amount of noise of part 1 added, the same crop
-gives k = 6.22.
+35 % or more saturated pixels. The bounds of the two real sets assume
+independent crops, but the crops come from only 10 frames per recording, so
+these bounds are too narrow
+(see [single camera frames](#single-camera-frames-a-real-null-test)). The one
+valid crop of part 7 is a 128 px crop with K = 3 (L = 1); with the small
+amount of noise of part 1 added, the same crop gives k = 6.22.
 
 Part 4 measures the cost in simulation, on 1344 moving images of the camera
-texture (random velocity and L, noise 0 to 1, 32 to 256 px), of which 756 were
+texture (random velocity, K from 3 to 21, noise 0 to 1, 32 to 256 px), of which 756 were
 correct. With the constant 9, 83.6 % of the correct estimates are valid: 52.7 %
 at 32 px, 79.5 % at 96 px, 89.3 % at 128 px and 98.5 % at 256 px. At 256 px the
 floor of 0.6 corresponds to k = 10.35, so any constant up to that value gives
@@ -337,7 +367,7 @@ python experiments/calibrate_threshold.py
 ## Run time
 
 [`experiments/timing.py`](../experiments/timing.py) times
-`estimate_velocity` with the defaults (L = 4, padding 2) on simulated square
+`estimate_velocity` with the defaults (K = 9, padding 2) on simulated square
 images. The first call runs in a fresh process and includes the set-up of the
 projection weights; the repeated call is what a loop over camera frames costs.
 Medians in seconds, on 4 CPUs; the import of `fftvel` with NumPy adds 0.08 to
