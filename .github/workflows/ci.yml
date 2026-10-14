@@ -13,10 +13,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.13"]
+        python-version: ["3.10", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -36,7 +36,7 @@ jobs:
   octave:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install GNU Octave
         run: |
           sudo apt-get update
@@ -53,11 +53,19 @@ jobs:
     # batch licensing token (see the documentation of matlab-actions/setup-matlab)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: matlab-actions/setup-matlab@v2
+      - uses: actions/checkout@v6
+      - uses: matlab-actions/setup-matlab@v3
         with:
           cache: true
       - name: Test (same suite as for Octave)
-        uses: matlab-actions/run-command@v2
+        uses: matlab-actions/run-command@v3
         with:
           command: cd tests/matlab; run_tests
+      - name: Demos
+        uses: matlab-actions/run-command@v3
+        with:
+          command: run('matlab/examples/demo_simulation.m'); run('matlab/examples/demo_testsequences.m'); drawnow
+      - name: Code analyser (no errors, live_basler.m included)
+        uses: matlab-actions/run-command@v3
+        with:
+          command: f = dir('matlab/**/*.m'); issues = codeIssues(fullfile({f.folder}, {f.name})); disp(issues.Issues(:, {'Severity', 'FullFilename', 'LineStart', 'Description'})); assert(~any(issues.Issues.Severity == 'error'), 'code analyser errors')
