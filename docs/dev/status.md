@@ -133,6 +133,12 @@ live_basler options `'ExposureUs'` and `'UpdateInterval'`, README reordered
 The repository name stays 2D-FFT-Code. 344 Python tests and 10 Octave test
 files pass.
 
+Reframe (14 October): the project is now presented around averaged camera
+frames (K frames at a fixed frame rate, averaged); the single multi-flash
+image is the extension. The README states openly that phase correlation of
+separate frames is more accurate and gives the sign. The owner's paragraph
+in "Who did what" describes the AI-assisted way of working.
+
 ## Next steps
 
 1. Done: the README section "Who did what" now says that the owner noticed
