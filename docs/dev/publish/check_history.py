@@ -1,6 +1,7 @@
 """Fail if any blob of the rewritten history still holds photo metadata, a local user path or a claim about 2025.
 
-Run inside the rewritten repository: python check_history.py
+Run inside the rewritten repository: python check_history.py. Exit status 0: clean, 3: a blob needs
+cleaning (listed on stderr); anything else means the check itself failed.
 """
 import struct
 import subprocess
@@ -28,11 +29,12 @@ for sha in blobs:
     low = data.lower()
     for needle, what in ((b"gpslatitude", "GPS position"), (b"\\users\\", "a Windows user folder"),
                          (b"without ai", "a claim about the time before the rework"),
-                         (b"my own work", "a claim about the time before the rework")):
+                         (b"my own work", "a claim about the time before the rework"),
+                         (b"rework only", "a claim about the time before the rework")):
         if needle in low:
             bad.append(f"{sha}: {what} ({needle.decode()})")
 cat.stdin.close()
 cat.wait()
 for b in bad:
     print(f"error: {b}", file=sys.stderr)
-sys.exit(1 if bad else 0)
+sys.exit(3 if bad else 0)

@@ -34,9 +34,9 @@ differs() {
 
 PY=
 for c in python3 python py; do                  # on Windows python3 can be a store stub that does not run
-  if "$c" -c 'import sys' >/dev/null 2>&1; then PY=$c; break; fi
+  if "$c" -c 'import sys; sys.exit(sys.version_info < (3, 7))' </dev/null >/dev/null 2>&1; then PY=$c; break; fi
 done
-[ -n "$PY" ] || fail "no Python found (python3, python or py)"
+[ -n "$PY" ] || fail "no Python 3.7 or newer found (python3, python or py)"
 cp "$HERE/replacements.txt" "$HERE/messages.txt" "$HERE/mailmap.txt" "$HERE/strip_metadata.py" \
   "$HERE/check_history.py" "$WORK/"
 git clone -q "$SRC" "$WORK/repo"
@@ -54,7 +54,7 @@ if ROOT=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null); then
 fi
 # the tagger takes the committer identity: fixed here, not whatever this machine has configured
 GIT_COMMITTER_NAME=$OWNER_NAME GIT_COMMITTER_EMAIL=$OWNER_EMAIL git tag -f -a "$TAG" 8f0aec4 \
-  -m "Student project scripts as uploaded. The AI-assisted rework starts after this commit." >/dev/null
+  -m "Student project scripts of 2025, unchanged apart from three edits: the template README removed, and the location data of one photo and a local folder path in one script taken out. The AI-assisted rework starts after this commit." >/dev/null
 for ref in $(git for-each-ref --format='%(refname)' refs/remotes refs/heads refs/tags); do
   case "$ref" in refs/heads/main|refs/tags/$TAG) ;; *) git update-ref -d "$ref" ;; esac
 done
@@ -70,7 +70,10 @@ git filter-repo --force \
 if git grep -i -q esslingen $(git rev-list --all); then
   fail "a file in the history still names the university"
 fi
-"$PY" ../check_history.py || fail "a blob in the history still needs cleaning (see above)"
+status=0
+"$PY" ../check_history.py || status=$?
+[ "$status" = 3 ] && fail "a blob in the history still needs cleaning (see above)"
+[ "$status" = 0 ] || fail "check_history.py did not run (exit status $status)"
 if { git log --all --format='%B%n%an %ae%n%cn %ce'; git for-each-ref refs/tags --format='%(contents)'; } \
     | grep -i -q -e esslingen -e 'docs/dev' -e 'co-authored-by: claude' -e 'claude-session' -e 'noreply@anthropic' \
       -e 'without ai' -e 'rework only'; then
@@ -80,6 +83,9 @@ fi
   || fail "expected exactly the branch main and the tag $TAG"
 [ "$(git for-each-ref refs/tags --format='%(objecttype) %(taggername) %(taggeremail)')" = "tag $OWNER_NAME <$OWNER_EMAIL>" ] \
   || fail "the tag $TAG is not annotated by $OWNER_NAME <$OWNER_EMAIL>"
+# old README versions name the tagged commit and its parent by their new hashes (replacements.txt)
+[ "$(git rev-parse --short=7 "$TAG^{commit}")" = e7c66e8 ] && [ "$(git rev-parse --short=7 "$TAG^{commit}^")" = 059b875 ] \
+  || fail "the first two commits no longer get the hashes e7c66e8 and 059b875 that replacements.txt writes"
 git merge-base --is-ancestor "$TAG" main || fail "the tag $TAG is not in the history of main"
 git cat-file -e "$TAG:2D-FFT" 2>/dev/null || fail "the README links $TAG/2D-FFT, which the tag does not hold"
 echo "clean history: $WORK/repo ($(git rev-list --count main) commits, tag $TAG)"

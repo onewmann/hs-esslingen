@@ -27,7 +27,7 @@ git filter-branch -f \
   --env-filter 'export GIT_AUTHOR_NAME="Oliver Neumann" GIT_AUTHOR_EMAIL="149961666+onewmann@users.noreply.github.com" GIT_COMMITTER_NAME="Oliver Neumann" GIT_COMMITTER_EMAIL="149961666+onewmann@users.noreply.github.com"' \
   --msg-filter 'grep -v -e "^Co-Authored-By: Claude" -e "^Claude-Session:"' \
   8f0aec4..HEAD
-git tag -a student-project-2025 8f0aec4 -m "Student project scripts as uploaded. The AI-assisted rework starts after this commit."
+git tag -a student-project-2025 8f0aec4 -m "Student project scripts of 2025. The AI-assisted rework starts after this commit."
 ```
 
 The tag `student-project-2025` (pointing to `8f0aec4`) exists only locally;
