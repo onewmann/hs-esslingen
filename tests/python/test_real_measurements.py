@@ -397,7 +397,7 @@ def test_average_set_speed_check_and_burst_in_flash_mode(rm, repo, tmp_path, cap
     assert ("1 of the valid windows off against the set motion agree with the mean step within 5 % and 2 deg: "
             "for them the set speed or angle, the gsd or the frame period is off, not the estimate") in out
     # labelled moving, but the frames do not move
-    assert stopped["valid"] == "0" and stopped["step_vs_set"] == ""
+    assert stopped["valid"] == "0" and float(stopped["step_vs_set"]) == pytest.approx(-1, abs=0.01)
     assert ("the set speed gives 6 px per frame, so the surface probably did not move at the set speed during "
             "this burst") in stopped["warnings"]
     assert ("Windows with even steps whose frames did not move at the set speed (mean step against set speed * "
@@ -406,6 +406,22 @@ def test_average_set_speed_check_and_burst_in_flash_mode(rm, repo, tmp_path, cap
     burst = [r for f, r in res.items() if f.startswith("moving_regular.npz#")]
     assert len(burst) == 9 and all("if it is a burst of frames to be averaged, set mode to average"
                                    in r["warnings"] for r in burst)
+
+
+def test_reference_is_blamed_only_when_the_step_disagrees_with_the_set_motion(rm):
+    """Estimate +6 % off the set speed and +4.5 % off the mean step, which is +1.4 % off: no one is blamed."""
+    base = dict(file="w.npz", line=2, static=0, valid=1, mode="average", quality=0.9, reason="", warnings="",
+                set_speed_mm_s=60.0, set_angle_deg=30.0, angle_err_deg=0.1, ref_angle_deg=30.05,
+                ref_angle_diff_deg=0.05, uneven_steps=0, expected_px=6.0, step_speed_px=6.086, speed_px=6.36)
+    close = dict(base, speed_err=0.06, step_vs_set=0.0143, ref_speed_diff=0.045)
+    far = dict(base, file="v.npz", speed_err=-0.2, speed_px=4.8, step_speed_px=4.8, step_vs_set=-0.2,
+               ref_speed_diff=0.0)
+    lines = []
+    out = rm.summary([close], log=lines.append)
+    assert "reference_off" not in out and not any("not the estimate" in ln for ln in lines)
+    lines = []
+    out = rm.summary([close, far], log=lines.append)
+    assert out["reference_off"] == 1 and out["not_at_set_speed"] == 1
 
 
 def test_old_synthetic_flash_rows_unchanged(rm, repo, tmp_path):

@@ -132,11 +132,17 @@ def test_options_are_checked(lc):
                  ["--mode", "flash", "--exposures", "1"],
                  ["--mode", "flash", "--flash-period", "0"],
                  ["--mode", "average", "--source", "rec.avi", "--save", "out"],          # a file is no camera
-                 ["--mode", "average", "--note", "axis 20 mm/s"],                       # --note needs --save
-                 ["--mode", "average", "--static"],                                     # --static needs --save
-                 ["--mode", "average", "--count", "0"]):
+                 ["--mode", "average", "--note", "axis 20 mm/s"]):                      # --note needs --save
         with pytest.raises(SystemExit):
             lc.main(argv)
+
+
+def test_count_and_static_options_are_checked(lc, capsys):
+    for argv, msg in ((["--mode", "average", "--static"], "--static needs --save"),
+                      (["--mode", "average", "--count", "0"], "--count must be at least 1")):
+        with pytest.raises(SystemExit) as exc:
+            lc._parse(argv)
+        assert exc.value.code == 2 and msg in capsys.readouterr().err
 
 
 def test_webcam_retries_and_host_clock(lc, monkeypatch, capsys):
@@ -450,7 +456,8 @@ def test_count_and_static_record_one_compressed_burst(lc, monkeypatch, tmp_path,
     out = tmp_path / "static"
     assert lc.main(["--mode", "average", "--source", "pylon", "--roi", "96", "--save", str(out), "--count", "1",
                     "--static", "--note", "patch 1"]) == 0
-    assert "saved 1 file to" in capsys.readouterr().out
+    text = capsys.readouterr().out
+    assert "saved 1 file to" in text and "In its meta.csv static is 1; fill in gsd_mm_per_px" in text
     assert sorted(p.name for p in out.iterdir()) == ["burst_0001.npz", "meta.csv"]
     with zipfile.ZipFile(out / "burst_0001.npz") as z:
         assert all(i.compress_type == zipfile.ZIP_DEFLATED for i in z.infolist())

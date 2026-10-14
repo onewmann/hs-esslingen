@@ -236,10 +236,13 @@ records one static burst per patch
 ([first recording](../../docs/acquisition.md#first-recording-step-by-step)).
 In MATLAB, press Stop after the burst.
 
-A burst in which a frame was lost is neither estimated nor saved; Python
-prints `burst skipped` for it and `grab failed` for each failed grab. Count
-these lines and give the number in the report, since every recorded burst
-counts ([reporting](#reporting-the-result)).
+In Python, a burst in which a grab failed is neither estimated nor saved;
+the script prints `burst skipped` for it and `grab failed` for each failed
+grab. Count these lines and give the number in the report, since every
+recorded burst counts ([reporting](#reporting-the-result)). MATLAB saves such
+a window anyway and shows "skipped" in the figure title. A frame that the
+camera itself drops is saved in both languages; `real_measurements.py` marks
+such windows with `uneven_steps` 1.
 
 In Python, `--roi` only sets the analysed square of the live estimate; the
 saved files hold the frames as the camera delivers them, and
@@ -322,18 +325,18 @@ It fills the reference columns as the reference frames do in flash mode:
 `ref_speed_mm_s` is the mean step in mm/s, `ref_speed_diff` and
 `ref_angle_diff_deg` compare the estimate with it, and the summary prints
 their median, 95th percentile and maximum over the valid windows with even
-steps, and how many of these are off by more than `--tol-speed` or
+steps (for the speed, of the absolute value, with the signed median as the
+bias), and how many of these are off by more than `--tol-speed` or
 `--tol-angle`. This comparison depends neither on the axis nor on the GSD.
 
 With a set speed, `step_vs_set` is the mean step divided by the set speed in
-px per frame (`expected_px`), minus 1. The summary counts the windows with
-even steps whose `step_vs_set` lies beyond `--tol-speed`, or whose frames do
-not move although the set speed says they should (such a window also gets a
-warning): the axis did not run at the set speed during these bursts, for
+px per frame (`expected_px`), minus 1, and about -1 if the frames do not
+move (such a window also gets a warning). The summary counts the windows with
+even steps whose `step_vs_set` lies beyond `--tol-speed`: the axis did not run at the set speed during these bursts, for
 example while it paused or reversed. A valid window that is off against the
-set motion but agrees with the mean step points to the reference (set speed
-or angle, GSD or frame period), not to the estimate; the summary names their
-number. Phase correlation
+set motion, agrees with the mean step, and whose mean step is off against the
+set motion in the same way points to the reference (set speed or angle, GSD or
+frame period), not to the estimate; the summary names their number. Phase correlation
 gives a signed direction (dy points down, so the direction is atan2(-dy,
 dx)), while the estimate gives one modulo 180 deg; the difference is taken
 with `fftvel.angle_difference`.
@@ -423,12 +426,12 @@ Text/CSV (delimiter comma); a double click puts each row into one cell.
 | `frame_period_s` | average mode: as in `meta.csv` |
 | `measured_period_s`, `period_source` | average mode: frame period measured from the timestamps in the file, and which period the speeds in mm/s use (`frame_period_s`, `flash_period_s`, `frame_rate` or `timestamps`) |
 | `step_dx_px`, `step_dy_px`, `step_speed_px` | average mode: mean step between consecutive frames by phase correlation, in px per frame, and its length; the `ref_` columns compare the estimate with it |
-| `step_vs_set` | average mode: `step_speed_px / expected_px - 1`, the mean step against the set speed (empty without a set speed, or with steps below 0.25 px) |
+| `step_vs_set` | average mode: `step_speed_px / expected_px - 1`, the mean step against the set speed; about -1 if the frames do not move (empty without a set speed, or when both the steps and the set speed are below 0.25 px per frame) |
 | `step_spread`, `step_angle_spread_deg`, `uneven_steps` | average mode: spread of the step lengths (relative to their median) and of their directions, and 1 if the steps or the frame intervals are uneven (see [Step check](#step-check)) |
 | `ref_dx_px`, `ref_dy_px`, `ref_peak`, `ref_angle_deg` | flash mode: phase correlation of the reference frames (average mode: the mean step) |
 | `ref_speed_px`, `ref_speed_mm_s` | reference speed in px per step and mm/s |
 | `ref_speed_diff`, `ref_angle_diff_deg` | `speed_px / ref_speed_px - 1` and estimated minus reference direction |
-| `warnings` | exposure too short, set speed outside the measurable range, saturation, JPEG, large reference displacement, a stack of frames read in flash mode; in average mode also uneven steps or frame intervals, frames that do not move although the set speed says they should, a duty above 0.25, a measured period that differs from the one used, windows that share frames |
+| `warnings` | exposure too short, set speed outside the measurable range, saturation, JPEG, large reference displacement, a stack read in flash mode that looks like a burst (as many frames as `exposures`, or timestamps in the file); in average mode also uneven steps or frame intervals, frames that do not move although the set speed says they should, a duty above 0.25, a measured period that differs from the one used, windows that share frames |
 | `error` | why the row was skipped (`row skipped: ...`, a problem in `meta.csv`) or the file could not be read or estimated |
 
 ## Reporting the result

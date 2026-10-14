@@ -128,10 +128,10 @@ The surface needs a texture that does not repeat. A texture that repeats every
 160 px or less in the analysed square gave wrong results marked valid in 50 to
 100 % of the simulated images, and a static edge, mask or glint in the square
 can do the same (assumptions 1 and 9 in
-[method.md](method.md#assumptions)). Suitable are a print of random noise,
-for example [`data/surface_texture.png`](../data/surface_texture.png) printed
-so that its grains span a few pixels in the image, matte paper or cardboard
-with a fine irregular texture, or sandpaper. Not suitable are woven fabric, a
+[method.md](method.md#assumptions)). Suitable are a matte print of random noise
+(for example Gaussian noise made with numpy, smoothed so that one grain spans
+a few pixels in the image and stretched to the full grey range), matte paper
+or cardboard with a fine irregular texture, or sandpaper. Not suitable are woven fabric, a
 grid, a checkerboard or any other regular pattern, and glossy surfaces with
 reflections. Keep sheet edges, clamps, tape, screw heads and dust spots out of
 the analysed square during the whole burst, and make the sheet longer than the
@@ -263,11 +263,14 @@ success criteria below before looking at any estimate.
    --static --note "patch 7"`; in MATLAB, Stop after one burst). With none of
    30 valid, the bound above is 9.5 %.
 8. Fill in `gsd_mm_per_px`, `set_speed_mm_s` and `set_angle_deg` in `meta.csv`
-   and run `real_measurements.py` with `--figure`.
+   and run `real_measurements.py` with `--figure`. Then comment out the rows
+   with `uneven_steps` 1 in `meta.csv` with `#`, give the reason in `note`, and
+   run it again.
 
-Exclusion rule: the main numbers leave out windows with `uneven_steps` 1 (a
-dropped frame or a change of speed, which does not depend on the estimate).
-All windows are reported as well.
+Exclusion rule: the main numbers, from the second run, leave out windows with
+`uneven_steps` 1 (a dropped frame or a change of speed, which does not depend
+on the estimate). The first run, with all windows, is reported as well.
+Windows that the summary names as not moving at the set speed stay in.
 
 Success criteria, against two references:
 

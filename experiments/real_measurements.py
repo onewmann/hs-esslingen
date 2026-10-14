@@ -841,8 +841,8 @@ def _step_check(task, e, res, warnings, gsd, T, uneven_times):
     if med >= STEP_MIN:
         res.update(ref_angle_diff_deg=angle_difference(e.angle_deg, ref_angle),
                    ref_speed_diff=e.speed / mean_len - 1 if mean_len > 0 else None)
-        if expected:
-            res["step_vs_set"] = mean_len / expected - 1
+    if expected and (med >= STEP_MIN or expected >= STEP_MIN):   # about -1 if the frames do not move
+        res["step_vs_set"] = mean_len / expected - 1
     if gsd is not None and T is not None:
         res["ref_speed_mm_s"] = mean_len * gsd / T
     n = task["frames"].shape[0]
@@ -1032,6 +1032,23 @@ def summary(results, commented=(), tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, wor
     return out
 
 
+def _step_agrees(r, tol_speed, tol_angle) -> bool:
+    """The estimate agrees with the mean step between the frames, in speed and direction."""
+    return (r.get("ref_speed_diff") is not None and abs(r["ref_speed_diff"]) <= tol_speed
+            and r.get("ref_angle_diff_deg") is not None and abs(r["ref_angle_diff_deg"]) <= tol_angle)
+
+
+def _step_off_too(r, tol_speed, tol_angle) -> bool:
+    """Every part in which the estimate is off against the set motion is off for the mean step as well."""
+    if r.get("speed_err") is not None and abs(r["speed_err"]) > tol_speed:
+        if r.get("step_vs_set") is None or abs(r["step_vs_set"]) <= tol_speed:
+            return False
+    if r.get("angle_err_deg") is not None and abs(r["angle_err_deg"]) > tol_angle:
+        if r.get("ref_angle_deg") is None or abs(angle_difference(r["ref_angle_deg"], r["set_angle_deg"])) <= tol_angle:
+            return False
+    return True
+
+
 def _summary_average(ok, valid, out, worst, log, tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE):
     """Lines of the summary about windows in average mode (none if there are none)."""
     avg = [r for r in ok if r.get("mode") == "average"]
@@ -1072,9 +1089,11 @@ def _summary_average(ok, valid, out, worst, log, tol_speed=TOL_SPEED, tol_angle=
         if sp.size:
             a = 100 * np.abs(sp)
             out["step_speed_median"] = 100 * float(np.median(sp))
-            out.update(step_speed_p95=float(np.percentile(a, 95)), step_speed_max=float(a.max()))
-            log(f"  speed est/step - 1: median {out['step_speed_median']:+.2g} %, |est/step - 1| 95th "
-                f"percentile {out['step_speed_p95']:.2g} %, max {a.max():.2g} %" + (" *" if a.size < 20 else ""))
+            out.update(step_speed_abs_median=float(np.median(a)), step_speed_p95=float(np.percentile(a, 95)),
+                       step_speed_max=float(a.max()))
+            log(f"  speed |est/step - 1|: median {out['step_speed_abs_median']:.2g} %, 95th percentile "
+                f"{out['step_speed_p95']:.2g} %, max {a.max():.2g} %; signed median {out['step_speed_median']:+.2g} %"
+                + (" *" if a.size < 20 else ""))
         off = [r for r in steps if abs(r["ref_angle_diff_deg"]) > tol_angle
                or (r.get("ref_speed_diff") is not None and abs(r["ref_speed_diff"]) > tol_speed)]
         out.update(step_off=len(off), step_off_bound=upper_bound(len(off), len(steps)))
@@ -1083,16 +1102,14 @@ def _summary_average(ok, valid, out, worst, log, tol_speed=TOL_SPEED, tol_angle=
     moved = [r for r in ok if r.get("mode") == "average" and not r["static"] and r.get("expected_px")
              and not r.get("uneven_steps")]          # a dropped frame lengthens the mean step on its own
     if moved:
-        astray = [r for r in moved if (r.get("step_vs_set") is not None and abs(r["step_vs_set"]) > tol_speed)
-                  or (r.get("step_vs_set") is None and r["expected_px"] >= 1
-                      and r.get("step_speed_px") is not None and r["step_speed_px"] < STEP_MIN)]
+        astray = [r for r in moved if r.get("step_vs_set") is not None and abs(r["step_vs_set"]) > tol_speed]
         out["not_at_set_speed"] = len(astray)
         log(f"  Windows with even steps whose frames did not move at the set speed (mean step against set "
             f"speed * frame period / gsd, beyond {100 * tol_speed:g} %, or no motion): {len(astray)} of "
             f"{len(moved)} (column step_vs_set)")
     blamed = [r for r in valid if r.get("mode") == "average" and _off(r, tol_speed, tol_angle)
-              and r.get("ref_speed_diff") is not None and abs(r["ref_speed_diff"]) <= tol_speed
-              and abs(r["ref_angle_diff_deg"]) <= tol_angle and not r.get("uneven_steps")]
+              and not r.get("uneven_steps") and _step_agrees(r, tol_speed, tol_angle)
+              and _step_off_too(r, tol_speed, tol_angle)]
     if blamed:
         out["reference_off"] = len(blamed)
         log(f"  {len(blamed)} of the valid windows off against the set motion agree with the mean step within "
@@ -1206,7 +1223,18 @@ def plot(results, path: Path, tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, label=""
            f"{100 * tol_speed:g} % / {tol_angle:g} deg")
     if hidden:
         sub += f"; {len(hidden)} not valid outside the axes"
-    against = "set motion" if pts or ang or not steps else "the mean step between frames"
+    stepped = not pts and steps                 # the speed panels show the estimate against the mean step
+    if stepped:
+        dropped = sum(1 for r in moving if r.get("mode") == "average" and r.get("ref_speed_diff") is not None
+                      and r.get("uneven_steps"))
+        if dropped:
+            sub += f"; {dropped} with uneven steps not in the speed panels"
+    if not stepped:
+        against = "set motion"
+    elif ang:
+        against = "the mean step (speed) and the set direction (angle)"
+    else:
+        against = "the mean step between frames"
     common.title(fig, f"Real measurements: estimate against {against}", sub)
     path.parent.mkdir(parents=True, exist_ok=True)
     common.FIGURES = path.parent

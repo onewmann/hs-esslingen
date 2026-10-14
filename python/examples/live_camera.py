@@ -708,9 +708,10 @@ def main(argv=None):
     if header:
         print("no estimate" + (f" (average mode needs {K} frames)" if is_file and a.mode == "average" else ""))
     if rec is not None and rec.saved:
-        print(f"saved {rec.saved} file{'s' if rec.saved > 1 else ''} to {rec.folder}. Fill in gsd_mm_per_px, "
-              f"set_speed_mm_s, set_angle_deg and static in its meta.csv, then run "
-              f"python experiments/real_measurements.py {rec.folder / 'meta.csv'}")
+        todo = ("static is 1; fill in gsd_mm_per_px (optional for static bursts)" if rec.static else
+                "fill in gsd_mm_per_px, set_speed_mm_s, set_angle_deg and static")
+        print(f"saved {rec.saved} file{'s' if rec.saved > 1 else ''} to {rec.folder}. In its meta.csv {todo}, "
+              f"then run python experiments/real_measurements.py {rec.folder / 'meta.csv'}")
     if a.show:
         plt.ioff()
         plt.show()          # keeps the plot open after a file ends or after Ctrl+C
