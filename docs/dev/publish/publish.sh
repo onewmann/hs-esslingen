@@ -9,6 +9,10 @@
 # The rewrite drops docs/dev and the 2025 GitLab template README from every
 # commit, replaces the remaining mentions of the university, sets every author
 # and committer to Oliver Neumann and removes the AI trailers from the messages.
+# It also removes the location data (EXIF, XMP) of the 2025 photo, a Windows
+# user folder in one 2025 script and the early README sentences about the
+# time before the rework (replacements.txt, strip_metadata.py), and checks
+# every blob for them afterwards (check_history.py, needs Python).
 # It stops if the local repository that holds this script has uncommitted
 # changes (outside docs/dev) or another HEAD than the commit it publishes;
 # ALLOW_DIFF=1 turns that into a warning.
@@ -28,7 +32,13 @@ differs() {
   if [ "${ALLOW_DIFF:-0}" = 1 ]; then echo "warning: $*" >&2; else fail "$* (ALLOW_DIFF=1 to go on)"; fi
 }
 
-cp "$HERE/replacements.txt" "$HERE/messages.txt" "$HERE/mailmap.txt" "$WORK/"
+PY=
+for c in python3 python py; do                  # on Windows python3 can be a store stub that does not run
+  if "$c" -c 'import sys' >/dev/null 2>&1; then PY=$c; break; fi
+done
+[ -n "$PY" ] || fail "no Python found (python3, python or py)"
+cp "$HERE/replacements.txt" "$HERE/messages.txt" "$HERE/mailmap.txt" "$HERE/strip_metadata.py" \
+  "$HERE/check_history.py" "$WORK/"
 git clone -q "$SRC" "$WORK/repo"
 cd "$WORK/repo"
 git checkout -q -B main "origin/$BRANCH"
@@ -54,13 +64,16 @@ git filter-repo --force \
   --invert-paths --path docs/dev --path 2D-FFT/README.md \
   --replace-text ../replacements.txt \
   --replace-message ../messages.txt \
-  --mailmap ../mailmap.txt
+  --mailmap ../mailmap.txt \
+  --blob-callback "$(cat ../strip_metadata.py)"
 
 if git grep -i -q esslingen $(git rev-list --all); then
   fail "a file in the history still names the university"
 fi
+"$PY" ../check_history.py || fail "a blob in the history still needs cleaning (see above)"
 if { git log --all --format='%B%n%an %ae%n%cn %ce'; git for-each-ref refs/tags --format='%(contents)'; } \
-    | grep -i -q -e esslingen -e 'docs/dev' -e 'co-authored-by: claude' -e 'claude-session' -e 'noreply@anthropic'; then
+    | grep -i -q -e esslingen -e 'docs/dev' -e 'co-authored-by: claude' -e 'claude-session' -e 'noreply@anthropic' \
+      -e 'without ai' -e 'rework only'; then
   fail "a commit or tag message or identity still needs cleaning"
 fi
 [ "$(git for-each-ref --format='%(refname)' refs/heads refs/tags | tr '\n' ' ')" = "refs/heads/main refs/tags/$TAG " ] \

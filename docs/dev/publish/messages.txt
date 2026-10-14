@@ -2,3 +2,4 @@ regex:(?m)^Co-Authored-By: Claude[^\n]*\n?==>
 regex:(?m)^Claude-Session:[^\n]*\n?==>
  See docs/dev/status.md.==>
 Written by the current step and still under review: shared==>Shared
+Say that AI assistance was used for the rework only==>Say for which part of the work AI assistance was used

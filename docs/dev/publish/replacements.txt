@@ -4,3 +4,8 @@ onewmann/hs-esslingen==>onewmann/2D-FFT-Code
  at Hochschule Esslingen==>
 Hochschule Esslingen==>the university
 hs-esslingen==>2D-FFT-Code
+The student project (2025) is my own work without AI: the MATLAB scripts,==>The student project (2025): the MATLAB scripts,
+AI assistance (Claude by Anthropic) was used only for the rework in 2026:==>AI assistance (Claude by Anthropic) was used for the rework in 2026:
+**Without AI (2025).** The student project:==>**2025.** The student project:
+are my own work. The code, tests, benchmark and documentation of this revision==>are kept unchanged there. The code, tests, benchmark and documentation of this revision
+C:\Users\onzen\OneDrive\Dokumente\2D-FFT_Studienprojekt\==>
