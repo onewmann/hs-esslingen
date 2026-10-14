@@ -1,6 +1,6 @@
 # Status and how to resume
 
-Saved on 11 October 2026, updated on 13 October 2026. This folder (`docs/dev/`) is a working note for
+Saved on 11 October 2026, updated on 14 October 2026. This folder (`docs/dev/`) is a working note for
 the rework and should be removed before the repository is published as
 2D-FFT-Code. The plan this work follows is in
 [restructure_plan.md](restructure_plan.md).
@@ -11,7 +11,7 @@ Work happens on branch `claude/pensive-gates-pzcxla` of `onewmann/hs-esslingen`.
 
 There are two versions of the same history:
 
-- On GitHub, the first eight commits after `8f0aec4` (`c3f77ab` to `ebe9cb6`)
+- On GitHub, the first seven commits after `8f0aec4` (`c3f77ab` to `ebe9cb6`)
   still name "Claude" as author and carry `Co-Authored-By`/`Claude-Session`
   lines. Replacing them needs a force push, which the session's permission
   check refused. Every later commit on GitHub is authored by Oliver Neumann.
@@ -59,8 +59,8 @@ documented:
   simulated defocused images still pass.
 - MATLAB live script uses host times from `getdata`, not camera timestamps
   (chunk data, R2024a+, not implemented).
-- Nothing has run in real MATLAB or on camera hardware yet. The Python
-  camera code was checked with the pylon emulator.
+- Nothing has run on camera hardware yet. The Python camera code was checked
+  with the pylon emulator. (MATLAB: green in CI since run 12, see 14 October.)
 - Host timing for webcams: alternating intervals pass when checked against
   the nominal period.
 
@@ -139,61 +139,128 @@ image is the extension. The README states openly that phase correlation of
 separate frames is more accurate and gives the sign. The owner's paragraph
 in "Who did what" describes the AI-assisted way of working.
 
+Audit and fixes (14 October, afternoon). A verified sweep (four auditors,
+one skeptic each, a completeness critic) listed what was still open before
+publishing. Done in this session:
+
+- CI was red since run 17 only because the Octave demo step lacked a font;
+  fixed. Run 24 is green in all five jobs: Python 3.10, 3.13 and 3.14,
+  Octave (tests and demos) and MATLAB (tests, demos and the code analyser
+  over all .m files, live_basler.m included). The actions use Node.js 24.
+- Docs no longer say that the code has not run in MATLAB. `vid1` is now
+  described as a room scene filmed with a moving camera (it is not static;
+  only single frames of it are used, so no number changed). README: "also
+  analyses" for multi-flash images, a status sentence in the intro, a header
+  for the status table, caveats on whole-pixel test sequences, on the null
+  images the threshold constant was checked on, and on averaging inside the
+  camera.
+- real_measurements.py: warning for a frame burst read in flash mode,
+  statistics against the mean step (median, p95, max, number off with
+  bound), column `step_vs_set`, a warning for a stopped axis labelled moving,
+  valid windows that agree with the step but not with the set motion are
+  blamed on the reference, and a figure against the mean step without a set
+  speed. live_camera.py: `--count`, `--static`, compressed files, a message
+  for skipped bursts. docs/acquisition.md: test surface rules and "First
+  recording, step by step" with counts, exclusion rule and success criteria.
+  Package metadata has project URLs.
+- publish.sh also removes the GPS data of the 2025 photo, the Windows user
+  folder in one 2025 script and the early README sentences about the time
+  before the rework, and checks every blob for them (check_history.py).
+  Dry run on 14 October from the local branch: 43 commits, all checks pass,
+  final tree equal to the branch minus docs/dev, photo pixels unchanged.
+- 367 Python tests and 10 Octave test files pass.
+
 ## Next steps
 
-1. Done: the README section "Who did what" now says that the owner noticed
-   errors in the 2025 results and rebuilt the project with Claude. Be ready
-   to name a concrete error in an interview.
-2. Record the test without a flash (`data/measurements/README.md`, section
-   "Testing without a flash") and later multi-flash images; evaluate them
-   with `experiments/real_measurements.py`; update Status and Results.
-3. Publishing:
-   - Create the empty repository `onewmann/2D-FFT-Code` on GitHub.
-   - Run `bash docs/dev/publish/publish.sh` (Git Bash on Windows, needs
-     `pip install git-filter-repo`). It clones the working branch, removes
-     `docs/dev/` and the 2025 GitLab template README from every commit,
-     replaces the remaining mentions of the university, sets every author
-     to Oliver Neumann, removes the AI trailers and checks the result.
-     Tested on 13 October from both the local and the GitHub branch: same
-     final tree, 29 commits, nothing left to clean.
-   - Then `bash docs/dev/publish/publish.sh --push`, or add the new
-     repository to a Claude session and let it push.
-   - Set About ("Surface velocity from a single multi-flash image. 2-D FFT
-     and Radon transform, Python and MATLAB/Octave"), topics
-     (velocity-measurement, machine-vision, fft, radon-transform, python,
-     matlab, octave), `docs/figures/hero.png` as social preview, set
-     `date-released` in CITATION.cff to the release day, tag v0.1.0 and make
-     a release. Check that the MATLAB CI job is green, then update the
-     MATLAB row of the README Status table.
-   - Afterwards add a root README to hs-esslingen pointing to the new
-     repository and archive hs-esslingen read-only.
+1. Record the test without a flash: follow docs/acquisition.md, section
+   "First recording, step by step", and data/measurements/README.md, section
+   "Averaged frames (mode average)". Confirm the success criteria there
+   (90 % valid, 5 % / 2 deg, none of the static bursts valid) before the
+   session. Evaluate with experiments/real_measurements.py; then Claude
+   updates README Status, acquisition.md and results.md.
+2. Publishing:
+   - Create the empty public repository `onewmann/2D-FFT-Code` on GitHub (no
+     README, licence or .gitignore).
+   - In Git Bash: `pip install git-filter-repo`, clone hs-esslingen, check out
+     `claude/pensive-gates-pzcxla`, run `bash docs/dev/publish/publish.sh`. It
+     must end with "clean history: ... (N commits, tag student-project-2025)";
+     N was 43 on 14 October and grows with every later commit outside
+     docs/dev. Then `bash docs/dev/publish/publish.sh --push`.
+   - Check that all five CI jobs are green on 2D-FFT-Code, that the badge
+     shows passing, and that the tag link in README "Who did what" opens.
+   - Settings of 2D-FFT-Code: About "Surface velocity from averaged camera
+     frames or a single multi-flash image. 2-D FFT and Radon transform, Python
+     and MATLAB/Octave."; topics velocity-measurement, machine-vision,
+     frame-averaging, image-processing, fft, radon-transform, python, matlab,
+     octave; social preview `docs/dev/publish/social_preview.png` (1280 x
+     640, in the clone used for publishing); Wiki and Projects off.
+   - Release: on release day set `date-released` in CITATION.cff, tag v0.1.0
+     and write release notes that state the status honestly (simulation and
+     synthetic sequences; real recordings pending).
+   - Then make hs-esslingen private (Settings > General > Danger Zone >
+     Change visibility), after `git clone --mirror` as a backup. No README
+     pointing to the new repository. Its MATLAB CI job will fail once it is
+     private; that does not matter any more. Running publish.sh later then
+     needs your GitHub login or `SRC=<local clone>`.
+3. Check your public GitHub profile (bio, company, location, pinned
+   repositories) for the university's name.
+4. Future commits on 2D-FFT-Code: author and committer Oliver Neumann with
+   the noreply address, no Co-Authored-By or Claude-Session lines, no
+   `claude/` branch names on the public repository. Cloud sessions add these
+   lines by default; say so at the start of each session (or in a CLAUDE.md,
+   which would be public). For local Claude Code, `"attribution": {"commit":
+   "", "pr": ""}` in ~/.claude/settings.json turns them off.
 
 ## Decisions
 
 | | Decision |
 |---|---|
 | D1 data | May be published: data produced by the owner's code (test sequences) and the videos vid1 to vid4 |
-| D2 history | Cleaned at publishing (no university name, owner as author, no AI trailers); `docs/dev/publish/publish.sh` does it |
-| D3 old branch | Keep the branch in hs-esslingen and archive the repository (recommended; not yet confirmed) |
-| D4 attribution | No Claude author and no AI trailers; the README section "How this was built" is the disclosure |
-| D5 real experiment | The owner records real multi-flash images in the coming days (`data/real/README.md` describes the format) |
-| D6 Python | 3.10 and later (done) |
+| D2 history | Cleaned at publishing (no university name, owner as author, no AI trailers, no photo metadata or user folder); `docs/dev/publish/publish.sh` does it |
+| D3 old repository | hs-esslingen is made private after publishing (14 October), no pointer README |
+| D4 attribution | No Claude author and no AI trailers; the README section "Who did what" is the disclosure. "Claude wrote most of the new code" stays: the owner wrote and developed parts together with AI |
+| D5 real experiment | Frame bursts at a fixed frame rate first (docs/acquisition.md, "First recording, step by step"), multi-flash images later; format in data/measurements/README.md |
+| D6 Python | 3.10 and later; CI on 3.10, 3.13 and 3.14 |
 | D7 names | Hochschule Esslingen is not named anywhere. Universität Karlsruhe (TH) stays in the citation of Jan Horn's thesis |
+| D8 AI before the rework | No statement about the 2025 scripts either way; the early README sentences "my own work without AI" are removed from the published history |
 
 Note on D7: the history still contains `2D-FFT/README.md` (a GitLab template
 with a gitlab.hs-esslingen.de link) at the tag, and the archive repository
-is called `hs-esslingen`. Renaming that repository on GitHub would remove
-the name from links; GitHub redirects the old URL.
+is called `hs-esslingen`; publish.sh removes the first, D3 handles the second.
 
 ## The owner's part
 
-- Record and evaluate real multi-flash images (`experiments/real_measurements.py`).
-  Give the exact number of flashes and, unless the flashes are very short,
-  the duty. Record the stopped surface too; it must come out not valid.
-- Derive the speed template, the window autocorrelation and the threshold on
-  paper and rewrite `docs/method.md` in your own words.
-- Read the related work before anything is cited.
-- After publishing, check that the MATLAB CI job is green.
+- Record and evaluate the frame bursts (next step 1), later multi-flash
+  images. Record the stopped surface too; it must come out not valid.
+- Check that the project terms allow publishing the 2025 scripts and
+  recordings under MIT and CC BY 4.0, and that whoever is in the foreground of
+  `vid1` (a dark shape close to the camera, no face) agrees, if it is a
+  person other than you.
+- Interview preparation:
+  - one concrete 2025 error with numbers (docs/history.md): the fixed
+    `findpeaks` prominence of 0.05 on summed Radon projections gave 32 to
+    78 px per step whatever the true speed (median error 733 % in the Python
+    port, coarse), and `imresize(I, [256 256])` of a 1936 x 1216 frame moved
+    45 deg to 57.9 deg;
+  - why averaging K frames gives the multi-flash image, why the sign of the
+    motion is missing (phase correlation of two frames gives it), and why
+    phase correlation is more accurate when the frames exist;
+  - the validity threshold: k is a calibrated score, not a significance
+    level, and it has not been checked on real bursts yet;
+  - which parts you wrote or shaped yourself, why all published commits
+    carry your name (D4), and two or three cases where you or a review
+    rejected generated output (for example 7f870e8, the reframe 5ab74ef);
+  - a walk through `estimate_velocity` and `fit_speed` in
+    python/src/fftvel/core.py.
+- Derive the image model, the speed template, the window autocorrelation and
+  the threshold on paper, and rewrite those sections of docs/method.md in
+  your own words.
+- Read the relevant chapters of Horn's thesis and add section or page numbers
+  to the [thesis] tags in README and method.md; move anything the thesis
+  already has from [rework] to [thesis].
+- Optional: run the 2025 MATLAB chain (finaltest1.m, lines 92 to 126) on the
+  36 before/after images in MATLAB with the Image Processing and Signal
+  Processing toolboxes, to confirm the port behind the 733 %.
 
 ## Resume in a new session
 
@@ -207,3 +274,4 @@ cd tests/matlab && octave --no-gui --eval run_tests
 ```
 
 Then ask Claude to read `docs/dev/status.md` and continue with the next steps.
+Say at the start that commits must have no Claude author or AI trailers.
