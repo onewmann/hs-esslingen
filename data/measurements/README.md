@@ -46,10 +46,14 @@ It writes `results.csv` next to `meta.csv` (or to `--out FILE`) and prints a
 summary: the share of moving images marked valid, the median and 95th
 percentile of the speed and angle errors of the valid ones, the number of
 valid images that are off by more than 5 % or 2 deg, the number of static
-images marked valid (it should be 0) with a Clopper-Pearson upper bound, the
-windows with uneven steps in average mode, and the worst images. `--figure
+images marked valid (it should be 0) with a Clopper-Pearson upper bound, and
+the worst images. In average mode it adds the windows with uneven steps, the
+comparison of the valid windows with the mean step between their frames
+(median, 95th percentile and maximum, and the number off by more than the
+tolerance) and the windows that did not move at the set speed. `--figure
 PNG` plots estimated against set speed, the speed errors and the angle
-errors. Other options: `--roi N` (default side of the analysed square, 512),
+errors; without a set speed or angle, it plots the estimate against the mean
+step. Other options: `--roi N` (default side of the analysed square, 512),
 `--clip-outliers` (against glints), `--tol-speed` and `--tol-angle` (what
 counts as off, default 0.05 and 2 deg), `--worst N`, `--jobs N` (worker
 processes; a 512 px square takes several seconds).
@@ -207,7 +211,10 @@ live_basler('Mode', 'average', 'Exposures', 9, 'FrameRate', 80, 'ExposureUs', 20
 ```
 
 `--exposure-us` and `'ExposureUs'` are the exposure time in µs; the folder is
-one session.
+one session. Python needs pypylon for Basler cameras
+(`python -m pip install pypylon`). In MATLAB the figure has a Start/Stop
+button: recording starts with Start, Stop pauses it, and closing the figure
+releases the camera.
 
 Every burst of K frames that the script estimates is saved, as
 `burst_0001.npz` (Python) or `burst_0001.mat` (MATLAB), numbered on from the
@@ -223,7 +230,31 @@ German Excel expects them. Fill in `gsd_mm_per_px`, `set_speed_mm_s`,
 `set_angle_deg` and `static` before running the script. Record windows of
 the stopped surface with the same settings as well and give them `static`
 1 (a separate run with `--note "axis stopped"` makes them easy to find);
-they must come out not valid.
+they must come out not valid. In Python, `--static` writes the 1 for you, and
+`--count N` stops after N bursts: `--count 1 --static --note "patch 7"`
+records one static burst per patch
+([first recording](../../docs/acquisition.md#first-recording-step-by-step)).
+In MATLAB, press Stop after the burst.
+
+A burst in which a frame was lost is neither estimated nor saved; Python
+prints `burst skipped` for it and `grab failed` for each failed grab. Count
+these lines and give the number in the report, since every recorded burst
+counts ([reporting](#reporting-the-result)).
+
+In Python, `--roi` only sets the analysed square of the live estimate; the
+saved files hold the frames as the camera delivers them, and
+`real_measurements.py` uses its own `--roi`. A smaller live `--roi` makes the
+estimate faster, so bursts are saved more often. To make the files smaller,
+set a camera ROI (Width, Height and the offsets in pylon Viewer); `live_basler`
+crops to its `'ROI'` itself. A full-sensor burst of 9 frames of 1936 x 1216 px
+in Mono8 is 21 MB before compression (Python saves compressed `.npz` files),
+a 512 x 512 px burst 2.4 MB.
+
+Decide before committing a session what goes into the repository and gets
+published: all bursts, or only `meta.csv`, `results.csv`, the figure and a
+few bursts, with the rest stored elsewhere. Committed data fall under the
+data licence ([data/README.md](../README.md#licence-of-the-data)). Folder names, file names and
+notes are published with them.
 
 Python takes the timestamps from the camera clock when the camera sends
 them. MATLAB `getdata` gives times taken on the host when a frame arrives,
@@ -290,7 +321,19 @@ frame from the same frames, independent of the estimator:
 It fills the reference columns as the reference frames do in flash mode:
 `ref_speed_mm_s` is the mean step in mm/s, `ref_speed_diff` and
 `ref_angle_diff_deg` compare the estimate with it, and the summary prints
-their medians over the valid windows with even steps. Phase correlation
+their median, 95th percentile and maximum over the valid windows with even
+steps, and how many of these are off by more than `--tol-speed` or
+`--tol-angle`. This comparison depends neither on the axis nor on the GSD.
+
+With a set speed, `step_vs_set` is the mean step divided by the set speed in
+px per frame (`expected_px`), minus 1. The summary counts the windows with
+even steps whose `step_vs_set` lies beyond `--tol-speed`, or whose frames do
+not move although the set speed says they should (such a window also gets a
+warning): the axis did not run at the set speed during these bursts, for
+example while it paused or reversed. A valid window that is off against the
+set motion but agrees with the mean step points to the reference (set speed
+or angle, GSD or frame period), not to the estimate; the summary names their
+number. Phase correlation
 gives a signed direction (dy points down, so the direction is atan2(-dy,
 dx)), while the estimate gives one modulo 180 deg; the difference is taken
 with `fftvel.angle_difference`.
@@ -380,11 +423,12 @@ Text/CSV (delimiter comma); a double click puts each row into one cell.
 | `frame_period_s` | average mode: as in `meta.csv` |
 | `measured_period_s`, `period_source` | average mode: frame period measured from the timestamps in the file, and which period the speeds in mm/s use (`frame_period_s`, `flash_period_s`, `frame_rate` or `timestamps`) |
 | `step_dx_px`, `step_dy_px`, `step_speed_px` | average mode: mean step between consecutive frames by phase correlation, in px per frame, and its length; the `ref_` columns compare the estimate with it |
+| `step_vs_set` | average mode: `step_speed_px / expected_px - 1`, the mean step against the set speed (empty without a set speed, or with steps below 0.25 px) |
 | `step_spread`, `step_angle_spread_deg`, `uneven_steps` | average mode: spread of the step lengths (relative to their median) and of their directions, and 1 if the steps or the frame intervals are uneven (see [Step check](#step-check)) |
 | `ref_dx_px`, `ref_dy_px`, `ref_peak`, `ref_angle_deg` | flash mode: phase correlation of the reference frames (average mode: the mean step) |
 | `ref_speed_px`, `ref_speed_mm_s` | reference speed in px per step and mm/s |
 | `ref_speed_diff`, `ref_angle_diff_deg` | `speed_px / ref_speed_px - 1` and estimated minus reference direction |
-| `warnings` | exposure too short, set speed outside the measurable range, saturation, JPEG, large reference displacement; in average mode also uneven steps or frame intervals, a duty above 0.25, a measured period that differs from the one used, windows that share frames |
+| `warnings` | exposure too short, set speed outside the measurable range, saturation, JPEG, large reference displacement, a stack of frames read in flash mode; in average mode also uneven steps or frame intervals, frames that do not move although the set speed says they should, a duty above 0.25, a measured period that differs from the one used, windows that share frames |
 | `error` | why the row was skipped (`row skipped: ...`, a problem in `meta.csv`) or the file could not be read or estimated |
 
 ## Reporting the result
@@ -402,6 +446,9 @@ Text/CSV (delimiter comma); a double click puts each row into one cell.
   static images marked valid, each with its upper bound. The bound assumes
   independent images, so count static images of one surface patch as one
   ([static images](../../docs/acquisition.md#static-images)).
+* In average mode, also give the comparison with the mean step between the
+  frames. It tests the estimator alone, while the comparison with the set
+  speed also contains the errors of the axis, the GSD and the timing.
 * State the uncertainty of the reference: the set speed against the actual
   speed of the axis (encoder), the GSD and the frame interval or flash
   period. Their relative errors add to the speed error in mm/s; a smaller

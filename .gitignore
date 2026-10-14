@@ -14,3 +14,9 @@ octave-workspace
 
 # output of experiments/run.py --quick
 experiments/results_quick/
+
+# output of experiments/real_measurements.py on the examples (README commands);
+# results of your own sessions are committed on purpose, if at all
+/results.csv
+data/measurements/synthetic_*/results.csv
+data/measurements/synthetic_*/results.png

@@ -4,6 +4,7 @@ import csv
 import importlib.util
 import sys
 import types
+import zipfile
 
 import numpy as np
 import pytest
@@ -131,7 +132,9 @@ def test_options_are_checked(lc):
                  ["--mode", "flash", "--exposures", "1"],
                  ["--mode", "flash", "--flash-period", "0"],
                  ["--mode", "average", "--source", "rec.avi", "--save", "out"],          # a file is no camera
-                 ["--mode", "average", "--note", "axis 20 mm/s"]):                      # --note needs --save
+                 ["--mode", "average", "--note", "axis 20 mm/s"],                       # --note needs --save
+                 ["--mode", "average", "--static"],                                     # --static needs --save
+                 ["--mode", "average", "--count", "0"]):
         with pytest.raises(SystemExit):
             lc.main(argv)
 
@@ -438,6 +441,23 @@ def test_save_average_bursts_and_evaluate(lc, rm, monkeypatch, tmp_path, capsys)
     assert float(r["speed_px"]) == pytest.approx(np.hypot(*v), rel=0.01)
     assert float(r["measured_period_s"]) == pytest.approx(0.01) and float(r["duty"]) == pytest.approx(0.005)
     assert float(r["step_dx_px"]) == pytest.approx(v[0], abs=0.02)
+
+
+def test_count_and_static_record_one_compressed_burst(lc, monkeypatch, tmp_path, capsys):
+    frames = [_uint8(simulate_pulsed_image(96, (0.0, 0.0), 4, rng=7)) for _ in range(9)]
+    cam = _Camera(frames, ts=_stop_after(27, lambda k: 10_000_000 * k), ExposureTime=_Node(50.0))
+    _fake_pylon(monkeypatch, cam)
+    out = tmp_path / "static"
+    assert lc.main(["--mode", "average", "--source", "pylon", "--roi", "96", "--save", str(out), "--count", "1",
+                    "--static", "--note", "patch 1"]) == 0
+    assert "saved 1 file to" in capsys.readouterr().out
+    assert sorted(p.name for p in out.iterdir()) == ["burst_0001.npz", "meta.csv"]
+    with zipfile.ZipFile(out / "burst_0001.npz") as z:
+        assert all(i.compress_type == zipfile.ZIP_DEFLATED for i in z.infolist())
+    with np.load(out / "burst_0001.npz") as z:
+        assert np.array_equal(z["frames"], np.stack(frames, axis=2))
+    row = _meta(out / "meta.csv")[0]
+    assert row["static"] == "1" and row["note"] == "patch 1" and row["mode"] == "average"
 
 
 def test_save_flash_frames_with_host_clock(lc, rm, monkeypatch, tmp_path, capsys):

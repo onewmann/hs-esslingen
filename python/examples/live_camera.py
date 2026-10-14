@@ -46,14 +46,17 @@ s), clock ('camera' or 'host'), and exposure_s and frame_rate when known. A
 line for each file is appended to DIR/meta.csv (written with a header first
 if it does not exist), with the mode, the number of flashes or frames, the
 exposure and the periods known here filled in, and --note in the note
-column; gsd_mm_per_px, set_speed_mm_s, set_angle_deg and static are left
-for you to fill in before experiments/real_measurements.py evaluates the
+column; gsd_mm_per_px, set_speed_mm_s, set_angle_deg and static (unless
+--static) are left for you to fill in before experiments/real_measurements.py evaluates the
 files (data/measurements/README.md). An existing meta.csv keeps its header
 and separator; with semicolons (German Excel) the numbers get decimal
 commas. If meta.csv cannot be written (open in Excel), the line is printed
-instead.
+instead. Files are compressed (numpy.savez_compressed). --static writes 1 in
+the static column (stopped surface).
 
---show opens a live plot. Ctrl+C stops.
+--count N stops after N estimates (with --save: N saved bursts or frames);
+--count 1 --static records one burst of the stopped surface, for example at
+each patch of the static images. --show opens a live plot. Ctrl+C stops.
 """
 
 from __future__ import annotations
@@ -226,6 +229,7 @@ def pylon_bursts(n: int, frame_rate: Optional[float] = None, exposure_us: Option
                     res.Release()
             if len(frames) < n:
                 bad += 1
+                print(f"burst skipped (not estimated or saved): {len(frames)} of {n} frames grabbed")
                 if bad >= MAX_FAILED:
                     raise SystemExit(f"{MAX_FAILED} bursts in a row lost frames, so no window of {n} "
                                      f"consecutive frames was complete. Lower the frame rate or the ROI, "
@@ -394,10 +398,11 @@ class Recorder:
     """Writes bursts or frames to a folder as .npz files, each with a line in meta.csv (see --save)."""
 
     def __init__(self, folder, mode: str, K: int, flash_period: Optional[float] = None,
-                 duty: Optional[float] = None, note: str = ""):
+                 duty: Optional[float] = None, note: str = "", static: bool = False):
         self.folder = Path(folder)
         self.folder.mkdir(parents=True, exist_ok=True)
         self.mode, self.K, self.flash_period, self.duty, self.note = mode, K, flash_period, duty, note
+        self.static = static
         self.stem = "burst" if mode == "average" else "frame"
         numbers = [re.fullmatch(rf"{self.stem}_(\d+)\.npz", p.name) for p in self.folder.iterdir()]
         self.count = max([int(m.group(1)) for m in numbers if m] + [0])
@@ -416,7 +421,7 @@ class Recorder:
             data["exposure_s"] = float(exposure)
         if frame_rate:
             data["frame_rate"] = float(frame_rate)
-        np.savez(self.folder / name, **data)
+        np.savez_compressed(self.folder / name, **data)
         self.saved += 1
         self.last = name
         self._meta_line(self._meta_row(name, exposure, frame_rate, clock))
@@ -436,6 +441,8 @@ class Recorder:
             row["duty"] = f"{self.duty:g}"
         if exposure > 0:
             row["exposure_s"] = f"{exposure:.6g}"
+        if self.static:
+            row["static"] = "1"
         return row
 
     def _meta_line(self, row: dict) -> None:
@@ -579,6 +586,10 @@ def _parse(argv):
                    "(flash mode) to DIR as .npz, with a line for each in DIR/meta.csv; one folder per "
                    "session, such as data/measurements/2026-10-20_average")
     p.add_argument("--note", default="", help="with --save: text for the note column of meta.csv")
+    p.add_argument("--static", action="store_true", help="with --save: 1 in the static column of meta.csv "
+                   "(stopped surface)")
+    p.add_argument("--count", type=int, metavar="N", help="stop after N estimates (with --save: N saved "
+                   "bursts or frames)")
     a = p.parse_args(argv)
     if a.L < 1:
         p.error("--L must be at least 1")
@@ -604,6 +615,10 @@ def _parse(argv):
         p.error("--save is for live cameras (pylon or a webcam index); a video file is already a recording")
     if a.note and a.save is None:
         p.error("--note needs --save")
+    if a.static and a.save is None:
+        p.error("--static needs --save")
+    if a.count is not None and a.count < 1:
+        p.error("--count must be at least 1")
     if a.save is not None and Path(a.save).exists() and not Path(a.save).is_dir():
         p.error(f"--save {a.save}: not a folder")
     return a
@@ -618,7 +633,7 @@ def main(argv=None):
         raise SystemExit("an image sequence has no frame times (OpenCV assumes 25 fps); give --fps")
     rec = None
     if a.save is not None:
-        rec = Recorder(a.save, a.mode, K, a.flash_period, a.duty, a.note)
+        rec = Recorder(a.save, a.mode, K, a.flash_period, a.duty, a.note, a.static)
         print(f"saving every {'burst' if a.mode == 'average' else 'estimated frame'} to {rec.folder} "
               f"({rec.stem}_{rec.count + 1:04d}.npz, ...), with a line for each in meta.csv there")
 
@@ -662,6 +677,7 @@ def main(argv=None):
 
     tlabel = "t nom (s)" if is_file else "t (s)"
     header = f"{tlabel:>9} {'dir (deg)':>9} {unit:>9} {'px/s':>8} {'quality':>7}  state"
+    done = 0
     try:
         for r in results:
             if header:                  # printed after the camera has reported its settings
@@ -681,6 +697,9 @@ def main(argv=None):
                 ax.relim()
                 ax.autoscale_view()
                 plt.pause(0.001)
+            done += 1
+            if a.count is not None and done >= a.count:
+                break
     except KeyboardInterrupt:
         pass
     finally:

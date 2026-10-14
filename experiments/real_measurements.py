@@ -96,7 +96,7 @@ FIELDS = ("file", "line", "valid", "reason", "speed_mm_s", "set_speed_mm_s", "sp
           "flash_period_s", "duty", "gsd_mm_per_px", "exposure_s", "ref_frame_a", "ref_frame_b", "ref_dt_s",
           "ref_dx_px", "ref_dy_px", "ref_peak", "ref_angle_deg", "ref_angle_diff_deg", "ref_speed_px",
           "ref_speed_diff", "ref_speed_mm_s", "mode", "frames", "first_frame", "frame_period_s",
-          "measured_period_s", "period_source", "step_dx_px", "step_dy_px", "step_speed_px", "step_spread",
+          "measured_period_s", "period_source", "step_dx_px", "step_dy_px", "step_speed_px", "step_vs_set", "step_spread",
           "step_angle_spread_deg", "uneven_steps", "warnings", "error", "note")
 DEFAULT_ROI = 512
 TOL_SPEED = 0.05        # an estimate counts as correct within 5 % of the set speed ...
@@ -218,7 +218,8 @@ def _check_row(raw: dict, folder: Path, comma: bool, default_roi: int):
     average = mode == "average"
     row["exposures"] = number("exposures", lowest=2, integer=True)
     if raw.get("exposures", "") == "" and not average:
-        bad.append("exposures is empty; give the number of flashes in the image")
+        bad.append("exposures is empty; give the number of flashes in the image, or set mode to average "
+                   "for a burst of frames")
     row["flash_period_s"] = number("flash_period_s", above=0)
     row["duty"] = number("duty", lowest=0, below=1, default=0.0)
     row["duty_given"] = raw.get("duty", "") != ""
@@ -512,12 +513,13 @@ def build_tasks(rows, clip_outliers: bool = False):
         except ValueError as err:
             failed.append(dict(_meta_columns(row, row["file"]), error=str(err)))
             continue
+        burst = _burst_warning(row, len(images))
         for label, img in images:
             name = row["file"] + (label if row["frame"] is None else "")
             h, w = img.shape
             side = min(h, w) if row["roi"] == 0 else min(row["roi"], h, w)
             task = dict(row=row, name=name, image=central(img, side).copy(), clip=clip_outliers,
-                        warnings=_image_warnings(row) + ([colour] if colour else []))
+                        warnings=_image_warnings(row) + ([colour] if colour else []) + ([burst] if burst else []))
             key = (str(row["path"].resolve()), label or "#1")
             if key in seen:
                 task["warnings"].append(f"the same image as in line {seen[key]}, so it counts twice in "
@@ -574,6 +576,21 @@ def average_task(row, clip_outliers: bool = False):
             task["clock"] = "host"              # MATLAB getdata gives times taken on the host
     task["exposure_s"] = extras.get("exposure_s")
     return task
+
+
+def _burst_warning(row, n):
+    """Warning for a flash-mode row whose file looks like a burst of frames to be averaged, else None.
+
+    A stack of K frames, or one with timestamps (as the live scripts save
+    bursts), is most likely a burst for mode average; in flash mode each of
+    its frames is estimated as a multi-flash image and comes out not valid.
+    """
+    if row["frame"] is not None or n < 2:
+        return None
+    if n != row["exposures"] and "t" not in _extras(str(row["path"])):
+        return None
+    return (f"the file holds {n} frames, and in mode flash each is estimated as one multi-flash image; "
+            f"if it is a burst of frames to be averaged, set mode to average")
 
 
 def _image_warnings(row):
@@ -820,9 +837,12 @@ def _step_check(task, e, res, warnings, gsd, T, uneven_times):
     ref_angle = float(np.rad2deg(np.arctan2(-mdy, mdx)) % 180)
     res.update(step_dx_px=mdx, step_dy_px=mdy, step_speed_px=mean_len, ref_dx_px=mdx, ref_dy_px=mdy,
                ref_peak=float(peak.min()), ref_angle_deg=ref_angle, ref_speed_px=mean_len)
+    expected = res.get("expected_px")
     if med >= STEP_MIN:
         res.update(ref_angle_diff_deg=angle_difference(e.angle_deg, ref_angle),
                    ref_speed_diff=e.speed / mean_len - 1 if mean_len > 0 else None)
+        if expected:
+            res["step_vs_set"] = mean_len / expected - 1
     if gsd is not None and T is not None:
         res["ref_speed_mm_s"] = mean_len * gsd / T
     n = task["frames"].shape[0]
@@ -845,8 +865,12 @@ def _step_check(task, e, res, warnings, gsd, T, uneven_times):
         if task["row"]["static"]:
             warnings.append(f"the frames move by {mean_len:.3g} px per frame on average, but static is 1")
     elif not task["row"]["static"]:
-        warnings.append(f"the steps between consecutive frames are {med:.3g} px (median), too short for the "
-                        f"step check (from {STEP_MIN:g} px)")
+        text = (f"the steps between consecutive frames are {med:.3g} px (median), too short for the step "
+                f"check (from {STEP_MIN:g} px)")
+        if expected and expected >= 1:
+            text += (f"; the set speed gives {expected:.3g} px per frame, so the surface probably did not "
+                     f"move at the set speed during this burst")
+        warnings.append(text)
     flags = [f for f in (uneven_steps, uneven_times) if f is not None]
     res["uneven_steps"] = int(any(flags)) if flags else None
 
@@ -971,7 +995,7 @@ def summary(results, commented=(), tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, wor
             out["ref_speed_median"] = 100 * float(np.median(s))
             text += f", speed est/ref - 1 median {out['ref_speed_median']:+.2g} %"
         log(text)
-    _summary_average(ok, valid, out, worst, log)
+    _summary_average(ok, valid, out, worst, log, tol_speed, tol_angle)
     if few:
         log("  * fewer than 20 values: the 95th percentile lies between the largest ones")
     bad = sorted(checked, key=lambda r: -_badness(r, tol_speed, tol_angle))[:worst]
@@ -1008,7 +1032,7 @@ def summary(results, commented=(), tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, wor
     return out
 
 
-def _summary_average(ok, valid, out, worst, log):
+def _summary_average(ok, valid, out, worst, log, tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE):
     """Lines of the summary about windows in average mode (none if there are none)."""
     avg = [r for r in ok if r.get("mode") == "average"]
     if not avg:
@@ -1040,13 +1064,40 @@ def _summary_average(ok, valid, out, worst, log):
         d = np.array([abs(r["ref_angle_diff_deg"]) for r in steps])
         sp = np.array([r["ref_speed_diff"] for r in steps if r.get("ref_speed_diff") is not None])
         out["step_angle_median"] = float(np.median(d))
-        text = (f"Mean step between consecutive frames, phase correlation ({len(steps)} valid "
-                f"window{'s' if len(steps) > 1 else ''} with even steps): angle difference median "
-                f"{np.median(d):.2g} deg")
+        out.update(step_n=len(steps), step_angle_p95=float(np.percentile(d, 95)), step_angle_max=float(d.max()))
+        log(f"Estimate against the mean step between consecutive frames, phase correlation ({len(steps)} valid "
+            f"window{'s' if len(steps) > 1 else ''} with even steps; independent of the set speed and the gsd):")
+        log(f"  angle difference: median {np.median(d):.2g} deg, 95th percentile "
+            f"{out['step_angle_p95']:.2g} deg, max {d.max():.2g} deg" + (" *" if d.size < 20 else ""))
         if sp.size:
+            a = 100 * np.abs(sp)
             out["step_speed_median"] = 100 * float(np.median(sp))
-            text += f", speed est/step - 1 median {out['step_speed_median']:+.2g} %"
-        log(text)
+            out.update(step_speed_p95=float(np.percentile(a, 95)), step_speed_max=float(a.max()))
+            log(f"  speed est/step - 1: median {out['step_speed_median']:+.2g} %, |est/step - 1| 95th "
+                f"percentile {out['step_speed_p95']:.2g} %, max {a.max():.2g} %" + (" *" if a.size < 20 else ""))
+        off = [r for r in steps if abs(r["ref_angle_diff_deg"]) > tol_angle
+               or (r.get("ref_speed_diff") is not None and abs(r["ref_speed_diff"]) > tol_speed)]
+        out.update(step_off=len(off), step_off_bound=upper_bound(len(off), len(steps)))
+        log(f"  off by more than {100 * tol_speed:g} % or {tol_angle:g} deg: {len(off)} of {len(steps)} "
+            f"({100 * CONFIDENCE:.0f} % upper bound of the rate: {100 * out['step_off_bound']:.1f} %)")
+    moved = [r for r in ok if r.get("mode") == "average" and not r["static"] and r.get("expected_px")
+             and not r.get("uneven_steps")]          # a dropped frame lengthens the mean step on its own
+    if moved:
+        astray = [r for r in moved if (r.get("step_vs_set") is not None and abs(r["step_vs_set"]) > tol_speed)
+                  or (r.get("step_vs_set") is None and r["expected_px"] >= 1
+                      and r.get("step_speed_px") is not None and r["step_speed_px"] < STEP_MIN)]
+        out["not_at_set_speed"] = len(astray)
+        log(f"  Windows with even steps whose frames did not move at the set speed (mean step against set "
+            f"speed * frame period / gsd, beyond {100 * tol_speed:g} %, or no motion): {len(astray)} of "
+            f"{len(moved)} (column step_vs_set)")
+    blamed = [r for r in valid if r.get("mode") == "average" and _off(r, tol_speed, tol_angle)
+              and r.get("ref_speed_diff") is not None and abs(r["ref_speed_diff"]) <= tol_speed
+              and abs(r["ref_angle_diff_deg"]) <= tol_angle and not r.get("uneven_steps")]
+    if blamed:
+        out["reference_off"] = len(blamed)
+        log(f"  {len(blamed)} of the valid windows off against the set motion agree with the mean step within "
+            f"{100 * tol_speed:g} % and {tol_angle:g} deg: for them the set speed or angle, the gsd or the frame "
+            f"period is off, not the estimate")
 
 
 # Figure
@@ -1067,7 +1118,31 @@ def plot(results, path: Path, tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, label=""
     fig, (ax1, ax2, ax3) = common.figure(3, 13.5)
     hidden = set()
     pts = [r for r in moving if r.get("speed_err") is not None]
-    if pts:
+    steps = [r for r in moving if r.get("mode") == "average" and r.get("ref_speed_diff") is not None
+             and not r.get("uneven_steps")]
+    labels = (("set speed (mm/s)", "estimated speed (mm/s)"), ("set speed (mm/s)", "speed error (%)"))
+    if not pts and steps:                       # no set speed: the estimate against the mean step
+        ref = np.array([r["step_speed_px"] for r in steps])
+        est = np.array([r["speed_px"] for r in steps])
+        err = 100 * np.array([r["ref_speed_diff"] for r in steps])
+        valid = np.array([bool(r["valid"]) for r in steps])
+        top = 1.15 * max(ref.max(), est[valid].max() if valid.any() else 0)
+        x = np.array([0, top])
+        ax1.fill_between(x, x * (1 - tol_speed), x * (1 + tol_speed), color=AQUA, alpha=0.2, lw=0)
+        ax1.plot(x, x, color=INK2, lw=1)
+        _scatter(ax1, ref, est, valid)
+        ax1.set_xlim(0, top)
+        ax1.set_ylim(0, top)
+        lim = _limit(err[valid], 100 * tol_speed, 100)
+        ax2.axhspan(-100 * tol_speed, 100 * tol_speed, color=AQUA, alpha=0.2, lw=0)
+        ax2.axhline(0, color=INK2, lw=1)
+        _scatter(ax2, ref, err, valid)
+        ax2.set_xlim(0, top)
+        ax2.set_ylim(-lim, lim)
+        hidden |= {r["file"] for r, e, y in zip(steps, err, est) if abs(e) > lim or y > top}
+        labels = (("mean step, phase correlation (px/frame)", "estimated speed (px/frame)"),
+                  ("mean step, phase correlation (px/frame)", "speed against the step (%)"))
+    elif pts:
         set_v = np.array([r["set_speed_mm_s"] for r in pts])
         est_v = np.array([r["speed_mm_s"] for r in pts])
         err = 100 * np.array([r["speed_err"] for r in pts])
@@ -1093,9 +1168,9 @@ def plot(results, path: Path, tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, label=""
         for ax in (ax1, ax2):
             ax.text(0.5, 0.5, f"no set speed with gsd and {period}", transform=ax.transAxes,
                     ha="center", color=INK2)
-    common.style(ax1, "set speed (mm/s)", "estimated speed (mm/s)")
-    common.style(ax2, "set speed (mm/s)", "speed error (%)")
-    if pts:
+    common.style(ax1, *labels[0])
+    common.style(ax2, *labels[1])
+    if pts or steps:
         ax1.legend(frameon=False, fontsize=8, labelcolor=INK2, loc="upper left")
 
     ang = [r for r in moving if r.get("angle_err_deg") is not None]
@@ -1109,16 +1184,30 @@ def plot(results, path: Path, tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, label=""
         ax3.set_xlim(0, 180)
         ax3.set_ylim(-lim, lim)
         hidden |= {r["file"] for r, e in zip(ang, err) if abs(e) > lim}
+    elif steps:                                 # no set angle: the estimate against the direction of the mean step
+        err = np.array([r["ref_angle_diff_deg"] for r in steps])
+        valid = np.array([bool(r["valid"]) for r in steps])
+        lim = _limit(err[valid], tol_angle, 90)
+        ax3.axhspan(-tol_angle, tol_angle, color=AQUA, alpha=0.2, lw=0)
+        ax3.axhline(0, color=INK2, lw=1)
+        _scatter(ax3, [r["ref_angle_deg"] for r in steps], err, valid)
+        ax3.set_xlim(0, 180)
+        ax3.set_ylim(-lim, lim)
+        hidden |= {r["file"] for r, e in zip(steps, err) if abs(e) > lim}
     else:
         ax3.text(0.5, 0.5, "no set angle", transform=ax3.transAxes, ha="center", color=INK2)
-    common.style(ax3, "set direction (deg, mod 180)", "angle error (deg)")
+    if ang or not steps:
+        common.style(ax3, "set direction (deg, mod 180)", "angle error (deg)")
+    else:
+        common.style(ax3, "direction of the mean step (deg, mod 180)", "angle against the step (deg)")
     nv = sum(r["valid"] for r in moving)
     sub = (f"{label}{nv} of {len(moving)} moving images valid, {sum(r['valid'] for r in static)} of "
            f"{len(static)} static ones (should be 0); filled = valid, open = not valid, band = "
            f"{100 * tol_speed:g} % / {tol_angle:g} deg")
     if hidden:
         sub += f"; {len(hidden)} not valid outside the axes"
-    common.title(fig, "Real measurements: estimate against set motion", sub)
+    against = "set motion" if pts or ang or not steps else "the mean step between frames"
+    common.title(fig, f"Real measurements: estimate against {against}", sub)
     path.parent.mkdir(parents=True, exist_ok=True)
     common.FIGURES = path.parent
     common.save(fig, path.name)

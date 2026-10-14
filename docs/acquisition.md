@@ -122,6 +122,22 @@ must be at most $\Delta t/4$ = 3.1 ms; 2 ms gives duty 0.16 and a blur of
 100 mm/s the same 5 px per frame need $\Delta t$ = 2.5 ms, 400 Hz, and an
 exposure of at most 0.6 ms; that frame rate usually needs a small camera ROI.
 
+### Test surface
+
+The surface needs a texture that does not repeat. A texture that repeats every
+160 px or less in the analysed square gave wrong results marked valid in 50 to
+100 % of the simulated images, and a static edge, mask or glint in the square
+can do the same (assumptions 1 and 9 in
+[method.md](method.md#assumptions)). Suitable are a print of random noise,
+for example [`data/surface_texture.png`](../data/surface_texture.png) printed
+so that its grains span a few pixels in the image, matte paper or cardboard
+with a fine irregular texture, or sandpaper. Not suitable are woven fabric, a
+grid, a checkerboard or any other regular pattern, and glossy surfaces with
+reflections. Keep sheet edges, clamps, tape, screw heads and dust spots out of
+the analysed square during the whole burst, and make the sheet longer than the
+move plus the field of view. Static bursts of the surface must come out not
+valid ([static images](#static-images)).
+
 ### Reference speed
 
 To check an estimate, the surface has to move at a known, constant speed and
@@ -216,6 +232,59 @@ $1 - 0.05^{1/N}$: 26 % for N = 10, 9.5 % for N = 30, 4.9 % for N = 60, 3.0 %
 for N = 100. N is the number of distinct patches or set-ups, not of frames.
 The summary of `real_measurements.py` prints this bound and counts every
 static image it is given as independent.
+
+### First recording, step by step
+
+A plan for a first session with frame bursts. Fix the exclusion rule and the
+success criteria below before looking at any estimate.
+
+1. Camera: Mono8, ExposureAuto and GainAuto off, a fixed gain, DC LED light,
+   focus at the working distance ([camera settings](#camera-settings)).
+2. GSD: on a full-sensor image with the same lens, focus and working distance,
+   measure it along x and y with marks far apart
+   ([GSD](#ground-sample-distance-and-physical-units)). Then set a centred
+   camera ROI of 512 x 512 px. Inside that ROI, marks are at most about 500 px
+   apart, which gives the GSD only to about 0.3 %.
+3. Direction: measure `set_angle_deg` once by phase correlation of two images
+   of the stopped surface before and after a move
+   ([angle convention](../data/measurements/README.md#angle-convention)).
+4. Speeds: two or three set speeds that give about 4, 6 and 10 px per frame,
+   with $`\Delta t = v_\text{px}\,\mathrm{GSD}/v`$ and an exposure of at most
+   $\Delta t/4$ ([frame rate](#choosing-the-frame-rate)). Check that the frame
+   rate the camera reports equals the set one. On a 3D printer, check that its
+   maximum feed rate allows the speed.
+5. Dry run: 3 moving and 3 static bursts, then `real_measurements.py`. Expect
+   the frame period from the timestamps to equal 1 / frame rate, no uneven
+   steps and no saturated pixels.
+6. Moving bursts: at least 20 per speed, in the middle of long moves, with one
+   note per speed (`--save DIR --note "20 mm/s"`).
+7. Static bursts: at least 30, each at a different patch, with the surface
+   moved by at least one field of view in between (`--save DIR --count 1
+   --static --note "patch 7"`; in MATLAB, Stop after one burst). With none of
+   30 valid, the bound above is 9.5 %.
+8. Fill in `gsd_mm_per_px`, `set_speed_mm_s` and `set_angle_deg` in `meta.csv`
+   and run `real_measurements.py` with `--figure`.
+
+Exclusion rule: the main numbers leave out windows with `uneven_steps` 1 (a
+dropped frame or a change of speed, which does not depend on the estimate).
+All windows are reported as well.
+
+Success criteria, against two references:
+
+* The estimator against the mean step between frames, which depends neither
+  on the axis nor on the GSD: median, 95th percentile and maximum of
+  $|v_\text{est}/v_\text{step} - 1|$ and of the angle difference, and the
+  number of valid windows off by more than 5 % or 2 deg. The summary prints
+  these.
+* The whole chain against the set speed: at least 90 % of the moving windows
+  within the measurable range valid, and no valid window off by more than 5 %
+  or 2 deg. Windows that the summary names as not moving at the set speed
+  (column `step_vs_set`) point to the axis, not to the estimator.
+* None of the static bursts valid.
+
+If the GSD comes from moving the same axis by a known distance, a scale error
+of the axis cancels in the speed in mm/s: the comparison with the set speed
+then tests the estimator, the timing and the GSD reading, but not the axis.
 
 ## Focus, saturation and error budget
 
@@ -469,6 +538,8 @@ For frame bursts:
 * Continuous light without flicker, for example LEDs on a DC supply.
 * A constant speed during each burst and a known reference speed
   ([reference speed](#reference-speed)).
+* A random, non-repeating texture with no static edges in the analysed square
+  ([test surface](#test-surface)).
 * The number of averaged frames in the column `frames`.
 
 For multi-flash images:

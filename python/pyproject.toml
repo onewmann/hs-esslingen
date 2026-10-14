@@ -12,6 +12,25 @@ license-files = ["LICENSE"]
 authors = [{name = "Oliver Neumann"}]
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.21"]
+keywords = ["frame averaging", "multi-flash", "velocimetry", "speed over ground", "velocity measurement",
+            "machine vision", "FFT", "Radon transform"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+
+[project.urls]
+Homepage = "https://github.com/onewmann/2D-FFT-Code"
+Documentation = "https://github.com/onewmann/2D-FFT-Code#readme"
+Issues = "https://github.com/onewmann/2D-FFT-Code/issues"
 
 [project.scripts]
 fftvel = "fftvel.__main__:main"

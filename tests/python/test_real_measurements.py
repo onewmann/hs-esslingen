@@ -365,10 +365,47 @@ def test_run_on_synthetic_average(repo, tmp_path):
     assert "Frame period from the timestamps (frame_period_s empty) for 2 windows" in out
     assert "Static images marked valid: 0 of 1" in out
     # the step comparison leaves out the window with uneven steps, whose mean step is 12.5 % too long
-    assert ("Mean step between consecutive frames, phase correlation (1 valid window with even steps): angle "
-            "difference median") in out
+    assert ("Estimate against the mean step between consecutive frames, phase correlation (1 valid window with "
+            "even steps; independent of the set speed and the gsd):") in out
+    assert "  off by more than 5 % or 2 deg: 0 of 1 (95 % upper bound of the rate: 95.0 %)" in out
+    # the dropped frame lengthens the mean step, but uneven windows are left out of the set-speed check
+    assert ("Windows with even steps whose frames did not move at the set speed (mean step against set speed * "
+            "frame period / gsd, beyond 5 %, or no motion): 0 of 1 (column step_vs_set)") in out
+    assert abs(float(reg["step_vs_set"])) < 0.005
     assert abs(float(drop["ref_speed_diff"]) + 1 / 9) < 0.01
     assert "moving_dropped.npz: 60 mm/s (6.000 px/frame, frame period 5 ms from the timestamps)" in out
+
+
+def test_average_set_speed_check_and_burst_in_flash_mode(rm, repo, tmp_path, capsys):
+    """A wrong set speed is blamed on the reference, a stopped axis is named, and a burst without mode is flagged."""
+    src = repo / "data" / "measurements" / "synthetic_average"
+    for name in ("moving_regular.npz", "static.npz"):
+        shutil.copy(src / name, tmp_path / name)
+    head = ["file", "mode", "frames", "frame_period_s", "exposure_s", "gsd_mm_per_px", "set_speed_mm_s",
+            "set_angle_deg", "static", "exposures"]
+    meta = write_meta(tmp_path / "meta.csv", head,
+                      ["moving_regular.npz", "average", "9", "0.005", "0.0005", "0.05", "75", "30", "0", ""],
+                      ["static.npz", "average", "9", "0.005", "0.0005", "0.05", "60", "30", "0", ""],
+                      ["moving_regular.npz", "", "", "", "", "0.05", "60", "30", "0", "9"])
+    assert rm.main([str(meta)]) == 0
+    out = capsys.readouterr().out
+    res = read_results(tmp_path / "results.csv")
+    wrong, stopped = res["moving_regular.npz"], res["static.npz"]
+    # set 75 mm/s, moved 60: the estimate agrees with the mean step, so the set speed is blamed
+    assert wrong["valid"] == "1" and float(wrong["speed_err"]) == pytest.approx(-0.2, abs=0.005)
+    assert float(wrong["step_vs_set"]) == pytest.approx(-0.2, abs=0.005)
+    assert ("1 of the valid windows off against the set motion agree with the mean step within 5 % and 2 deg: "
+            "for them the set speed or angle, the gsd or the frame period is off, not the estimate") in out
+    # labelled moving, but the frames do not move
+    assert stopped["valid"] == "0" and stopped["step_vs_set"] == ""
+    assert ("the set speed gives 6 px per frame, so the surface probably did not move at the set speed during "
+            "this burst") in stopped["warnings"]
+    assert ("Windows with even steps whose frames did not move at the set speed (mean step against set speed * "
+            "frame period / gsd, beyond 5 %, or no motion): 2 of 2 (column step_vs_set)") in out
+    # the same burst without mode: nine multi-flash images, each with a hint to set mode to average
+    burst = [r for f, r in res.items() if f.startswith("moving_regular.npz#")]
+    assert len(burst) == 9 and all("if it is a burst of frames to be averaged, set mode to average"
+                                   in r["warnings"] for r in burst)
 
 
 def test_old_synthetic_flash_rows_unchanged(rm, repo, tmp_path):
@@ -576,4 +613,5 @@ def test_average_row_problems(rm, tmp_path):
     rows, _, problems, _ = rm.read_meta(meta)
     assert problems == [] and rows[0]["exposures"] is None
     meta = write_meta(tmp_path / "meta3.csv", ["file", "mode"], ["s.npy", "flash"])
-    assert rm.read_meta(meta)[2] == ["line 2: exposures is empty; give the number of flashes in the image"]
+    assert rm.read_meta(meta)[2] == ["line 2: exposures is empty; give the number of flashes in the image, or set "
+                                     "mode to average for a burst of frames"]
