@@ -27,7 +27,7 @@ The estimator works in simulation and on synthetic frame sequences; it has not y
 
 The method comes from Jan Horn's doctoral thesis of 2006 ([reference](#reference)): the pulsed-exposure model, the log spectrum and Radon transform, the ripple profile WR for the direction, the speed from the spacing of the repeated structures and the quality measure GEBA. The 2025 scripts call the ripple profile Welligkeitsprofil and expand GEBA as Güte der Einzelbild-Analyse (quality of the single-image analysis).
 
-In a student project in 2025 I implemented the method in MATLAB. Those scripts are kept at the tag [`student-project-2025`](https://github.com/onewmann/2D-FFT-Code/tree/student-project-2025/2D-FFT), unchanged apart from the repository template README.
+In a student project in 2025 I implemented the method in MATLAB. Those scripts are kept at the tag [`student-project-2025`](https://github.com/onewmann/2D-FFT-Code/tree/student-project-2025/2D-FFT), unchanged apart from three edits: the repository template README was removed, and the location data of one photo and a folder path of my computer in one script were taken out ([details](docs/history.md#what-the-tag-holds)).
 
 The rework, in 2026, is everything after that tag, done with the assistance of AI (Claude by Anthropic): first a code review of the 2025 scripts, then the code in `python/` and `matlab/`, the tests, the experiments, the figures and this documentation. In this README "rework" means that code, and the label [rework] marks what it added to the method of the thesis. [docs/history.md](docs/history.md) lists what the review found and compares the 2025 code with the rework.
 
