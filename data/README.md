@@ -41,7 +41,7 @@ columns x 1 colour channel x frames).
 
 | File | Content |
 |---|---|
-| `vid1.mat` | static room scene, no motion (the mean brightness rises from about 110 to 136 over the 10 frames) |
+| `vid1.mat` | room scene, camera moved by hand: the view tilts and shifts between frames, and the mean brightness rises from about 110 to 136 over the 10 frames. Used only as single frames |
 | `vid2.mat` | moving textured surface, steps of 2.9 to 8.2 px between frames |
 | `vid3.mat` | moving textured surface, steps of 4.5 to 18.0 px between frames |
 | `vid4.mat` | moving textured surface, steps of 1.6 to 6.0 px between frames |

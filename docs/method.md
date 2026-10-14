@@ -12,8 +12,7 @@ comes from. Two tags mark the origin:
 
 The code is [`python/src/fftvel/core.py`](../python/src/fftvel/core.py) and
 [`matlab/+fftvel/estimate_velocity.m`](../matlab/+fftvel/estimate_velocity.m),
-which compute the same numbers (checked in GNU Octave; the MATLAB CI job has
-not run yet). What the method achieves is in
+which compute the same numbers (checked in GNU Octave and in MATLAB). What the method achieves is in
 [results.md](results.md), what an acquisition needs in
 [acquisition.md](acquisition.md).
 
@@ -214,10 +213,9 @@ largest $k$ was 8.41 and the 99th percentile 7.47. On all 2268 simulated
 images without motion, held-out textures included, the largest $k$ was 8.64,
 and none was valid. These sets also served to check the constant, so the
 held-out real images are the better guide to real false alarms: of 252 crops
-of the static room scene `vid1`, 4 were valid. These crops come from the 10
-frames of one scene, so they are not independent trials and say little about
-other scenes. The cost of the threshold is
-that some correct estimates on small images are rejected: with 9, 52.7 % of
+of single frames of the room scene `vid1`, 4 were valid. These crops come from
+the 10 frames of one scene, so they are not independent trials and say little
+about other scenes. The cost of the threshold is that some correct estimates on small images are rejected: with 9, 52.7 % of
 the correct estimates at 32 px are valid and 98.5 % at 256 px, in simulation.
 
 | Square (px) | m | Threshold | Largest k without motion | Largest quality without motion |
@@ -398,8 +396,8 @@ and `tests/python/test_docs_constants.py` checks this table against the file
 | `GREY_WEIGHTS` | 0.2989, 0.587, 0.114 | R, G, B weights of the conversion of colour images to grey (those of MATLAB rgb2gray). |
 
 [rework] With these constants the Python and the MATLAB/Octave package give
-the same results to $10^{-9}$ on shared parity cases (checked in GNU Octave;
-the MATLAB CI job has not run yet), which
+the same results to $10^{-9}$ on shared parity cases (checked in GNU Octave
+and in MATLAB), which
 [CONTRIBUTING.md](../CONTRIBUTING.md#parity-cases) describes together with how
 the cases are regenerated. A change to the algorithm therefore changes both
 packages together.

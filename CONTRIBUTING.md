@@ -86,7 +86,7 @@ implementation on 20 input images and writes three files:
   options of each case;
 * `fixed_inputs.mat`: images without motion at 32 and 64 px, a static
   repeating tile, and the hot-pixel image, the image of 8 exposures at
-  0.6 px per flash and the texture that the Python option and
+  0.6 px per step and the texture that the Python option and
   phase-correlation tests draw. They are stored because MATLAB and Octave
   draw different random numbers from the same seed and some draws fail these
   checks; the MATLAB tests load them instead of drawing them.
@@ -170,7 +170,6 @@ toolboxes. Five constructs do not work in Octave 8.4 (checked):
   pairs (`'Duty', 0.02`).
 
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
-the Python suite on Python 3.10 and 3.13 together with a small subset of the
-studies, the MATLAB/Octave suite and the demos in GNU Octave, and the same
-suite in MATLAB. The MATLAB job runs for the first time once the repository is
-on GitHub.
+the Python suite on Python 3.10, 3.13 and 3.14 together with a small subset of
+the studies, and the MATLAB/Octave suite and the demos in GNU Octave and in
+MATLAB. MATLAB needs no licence in CI on a public repository.

@@ -240,7 +240,7 @@ mean signal made 28.1 % of the images wrong but valid, and 96.9 % from three
 times the mean on. `clip_outliers` (`--clip-outliers`) removed the effect
 there: all images were correct and valid. A sharp static edge of 1.5 times the
 mean signal gave 12.5 % wrong but valid results. Of the 12 valid single-frame
-crops of the static room scene `vid1`, 7 lie in crops with at least 10 %
+crops of the room scene `vid1`, 7 lie in crops with at least 10 %
 saturated pixels.
 
 Set the exposure, the light or the flash energy so that no pixel saturates;

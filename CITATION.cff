@@ -7,11 +7,11 @@ title: "Surface velocity from averaged camera frames"
 abstract: >-
   Direction and speed of a moving textured surface from the mean of K camera
   frames taken at a fixed frame rate, using the 2-D FFT and the Radon
-  transform. The same code measures a single multi-flash image, in which a
+  transform. The same code also analyses a single multi-flash image, in which a
   strobe flashing K times during one exposure gives the same image; that is
   the setting of the doctoral thesis the method comes from. Python package
-  fftvel and MATLAB/Octave package +fftvel; parity tests in Python and GNU
-  Octave check that both give the same results to 1e-9. Tested in simulation
+  fftvel and MATLAB/Octave package +fftvel; parity tests in Python, GNU
+  Octave and MATLAB check that both give the same results to 1e-9. Tested in simulation
   and on synthetic image sequences; the only real frame recordings so far have
   uneven steps and are rejected, and no real multi-flash image has been
   analysed yet.

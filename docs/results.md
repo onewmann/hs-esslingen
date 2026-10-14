@@ -89,8 +89,9 @@ python experiments/recordings_2025.py
 A single frame of the recordings holds one exposure, so nothing in it repeats,
 and every valid estimate on it is a false alarm. Part 3 of the threshold
 calibration estimated a grid of non-overlapping crops of every frame of `vid1`
-(a static room scene) and of `vid2` to `vid4` (the moving surface), 256 and
-512 px, with K = 3, 5, 9 and 21 (L = 1, 2, 4 and 10) in turn: 1360 crops. The
+(a room scene filmed with a moving camera) and of `vid2` to `vid4` (the moving
+surface), 256 and 512 px, with K = 3, 5, 9 and 21 (L = 1, 2, 4 and 10) in turn:
+1360 crops. The
 crops lie at the same 34 positions (28 of 256 px, 6 of 512 px) in each of the
 10 frames of a recording, so they are not independent trials. The bound in
 the table is the one-sided 95 % Clopper-Pearson upper bound, which assumes
@@ -104,8 +105,8 @@ those of the simulated images without motion.
 
 | Recording | Square | Valid | 95 % upper bound |
 |---|---:|---:|---:|
-| vid1 (static room) | 256 px | 10 of 280 | 5.98 % |
-| vid1 (static room) | 512 px | 2 of 60 | 10.12 % |
+| vid1 (room scene) | 256 px | 10 of 280 | 5.98 % |
+| vid1 (room scene) | 512 px | 2 of 60 | 10.12 % |
 | vid2 | 256 px | 0 of 280 | 1.06 % |
 | vid2 | 512 px | 0 of 60 | 4.87 % |
 | vid3 | 256 px | 15 of 280 | 8.13 % |
@@ -342,7 +343,7 @@ exactly when $k \ge 9$.
 |---|---:|---:|---:|---:|
 | 1. calibration: white noise, static random and camera texture, 32 to 256 px, simulated | 1008 | 0 | 0.30 % | 8.41 |
 | 2. held out, simulated: new seeds, other correlation lengths, power-law spectra | 1260 | 0 | 0.24 % | 8.64 |
-| 2. held out, real: crops of the static room scene `vid1` | 252 | 4 | 3.60 % | 22.15 |
+| 2. held out, real: single-frame crops of the room scene `vid1` | 252 | 4 | 3.60 % | 22.15 |
 | 3. single camera frames (see above) | 1360 | 59 | 5.36 % | 25.25 |
 | 7. crops of the camera texture without added noise | 588 | 1 | 0.80 % | 10.19 |
 

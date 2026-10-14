@@ -1,12 +1,13 @@
 # Surface velocity from averaged camera frames
 
-2-D FFT and Radon transform, Python and MATLAB/Octave. The same code measures a single multi-flash image.
+2-D FFT and Radon transform, Python and MATLAB/Octave. The same code also analyses a single multi-flash image.
 
 [![tests](https://github.com/onewmann/2D-FFT-Code/actions/workflows/ci.yml/badge.svg)](https://github.com/onewmann/2D-FFT-Code/actions/workflows/ci.yml)
 
 A camera takes K frames (9 by default) at a fixed frame rate while a textured surface moves past it, and the mean of these frames shows the surface K times, shifted by the same step each time.
 In the 2-D spectrum of the mean image the shifts become evenly spaced straight lines: their angle gives the direction of motion, their spacing the distance moved per frame.
 A strobe that flashes K times during one exposure gives the same image in a single frame, which is the setting of the thesis the method comes from: contactless measurement of a vehicle's speed over ground.
+The estimator works in simulation and on synthetic frame sequences; it has not yet been tested on a real recording with a known speed.
 
 ![One frame of a real surface texture, the mean of 9 frames of the same surface moving, and the log spectrum of that mean](docs/figures/hero.png)
 
@@ -14,13 +15,13 @@ A strobe that flashes K times during one exposure gives the same image in a sing
 
 ## Status
 
-| | |
+| Area | State |
 |---|---|
-| Simulation and synthetic sequences | Works. In simulation (256 px, 9 frames with short exposures, no noise) the direction is within 0.70 deg and the speed within 0.47 % from 0.4 to 64 px per frame. On the two synthetic test sequences with constant motion all 24 windows of 9 averaged frames are valid. |
+| Simulation and synthetic sequences | Works. In simulation (256 px, 9 frames with short exposures, no noise) the direction is within 0.70 deg and the speed within 0.47 % from 0.4 to 64 px per frame. On the two synthetic test sequences with constant motion (whole-pixel steps) all 24 windows of 9 averaged frames are valid. |
 | Real camera, averaged frames | The 2025 Basler recordings are the only real frames so far. Their steps between frames are uneven, by a factor of 2.8 to 4.0 within a recording, and the estimator rejects all 6 of their 9-frame windows, as it should. New recordings at a fixed frame rate are in preparation. |
 | Real multi-flash images | None yet. |
 | Camera scripts | Experimental. Neither live script has run on camera hardware; the Python one was checked with the pylon camera emulator. |
-| Tests | CI with Python 3.10 and 3.13 and GNU Octave. A MATLAB job exists and runs for the first time once the repository is on GitHub; until then the code has not run in MATLAB. |
+| Tests | CI on every push: the Python tests on Python 3.10, 3.13 and 3.14, and the MATLAB/Octave tests, parity cases included, in GNU Octave and in MATLAB. Both jobs also run the two demos. |
 
 ## Who did what
 
@@ -67,9 +68,9 @@ The mean of the frames discards their order. If you have the separate frames and
 Averaging the frames is still useful, for four reasons:
 
 * It tests the multi-exposure method of the thesis with an ordinary camera under continuous light. The mean of K frames taken at equal steps with short exposures is the same image as K short flashes in one exposure, so the estimator meets a real lens, texture and sensor without a flash controller.
-* One averaged image carries all K frames. A camera or frame grabber that sums or averages the frames before the transfer sends one image instead of K, which cuts the data to transfer and store by up to a factor of K (a sum needs a few more bits per pixel than one frame).
-* The estimator checks its own result. An estimate is valid only if the fit quality reaches a threshold calibrated on images without motion, the speed lies inside the measurable range and the spectrum is not isotropic. None of 2268 simulated images without motion was valid; on single real camera frames, which hold no repeated copies, 59 of 1360 crops were, and 41 of the 47 on the moving surface look like motion blur ([results.md](docs/results.md#single-camera-frames-a-real-null-test)). Phase correlation as used here has no calibrated check of this kind. Because the frames are kept, phase correlation of consecutive frames also checks that the steps are equal and gives an independent reference for every window, and `experiments/real_measurements.py` reports both next to the estimate.
-* The same code measures a single multi-flash image, where separate frames cannot be tracked at all.
+* One averaged image carries all K frames. A camera or frame grabber that sums or averages the frames before the transfer sends one image instead of K, which cuts the data to transfer and store by up to a factor of K (a sum needs a few more bits per pixel than one frame). The separate frames are then lost, and with them the step check described next.
+* The estimator checks its own result. An estimate is valid only if the fit quality reaches a threshold calibrated on images without motion, the speed lies inside the measurable range and the spectrum is not isotropic. None of 2268 simulated images without motion was valid, but these are the images the threshold constant was checked on; on single real camera frames, which hold no repeated copies, 59 of 1360 crops were, and 41 of the 47 on the moving surface look like motion blur ([results.md](docs/results.md#single-camera-frames-a-real-null-test)). Phase correlation as used here has no calibrated check of this kind. Because the frames are kept, phase correlation of consecutive frames also checks that the steps are equal and gives an independent reference for every window, and `experiments/real_measurements.py` reports both next to the estimate.
+* The same code also analyses a single multi-flash image, where separate frames cannot be tracked at all.
 
 A camera that takes separate frames measures motion against the frame interval, 10 ms at 100 frames per second. A multi-flash image measures it against the flash period, which a controller can set in microseconds. Take a vehicle at 30 m/s, a ground sample distance (the length on the surface that one pixel covers) of 0.2 mm/px and a 256 px field, 51.2 mm wide. At 100 frames per second two consecutive frames are 300 mm apart and share no content, so neither phase correlation nor the mean of the frames measures the motion; frames 20 px apart would need 7500 frames per second. Flashes 133 µs apart give 20 px per flash inside one exposure, well within the 0.4 to 64 px per step tested for a 256 px square. This is the setting of the thesis. No real multi-flash image has been recorded for this repository yet.
 
@@ -96,7 +97,7 @@ Ordered by how independent the data are of the estimator's own model. All number
 
 | Study | Data | Result |
 |---|---|---|
-| [Synthetic test sequences](docs/results.md#synthetic-test-sequences) | 4 sequences from the 2025 student project, made without `fftvel`; windows of 9 frames averaged | Constant motion: 24 of 24 windows valid, 134.93 to 135.03 deg (true 135), speed within 0.005 px. Changing speed: 17 of 22 valid, errors up to 11.1 %. Irregular steps: 4 of 22 valid, errors up to 14.4 % |
+| [Synthetic test sequences](docs/results.md#synthetic-test-sequences) | 4 sequences from the 2025 student project, made without `fftvel`; windows of 9 frames averaged | Constant motion (whole-pixel steps): 24 of 24 windows valid, 134.93 to 135.03 deg (true 135), speed within 0.005 px. Changing speed: 17 of 22 valid, errors up to 11.1 %. Irregular steps: 4 of 22 valid, errors up to 14.4 % |
 | [2025 recordings](docs/results.md#the-2025-recordings) | 3 Basler frame sequences of a moving surface, two 9-frame averages each | Steps vary by a factor of 2.8 to 4.0 within a recording; all 6 windows rejected (quality 0.23 to 0.40, threshold 0.6) |
 | [Single camera frames](docs/results.md#single-camera-frames-a-real-null-test) | 1360 crops of single frames of the 2025 recordings: one exposure each, so nothing repeats | 59 valid, all false alarms; 41 of the 47 on the moving surface look like motion blur |
 | [Accuracy](docs/results.md#accuracy-and-noise-in-simulation) | in simulation: 256 px, 9 frames with short exposures, no noise, random and camera texture | Within 0.70 deg and 0.47 % from 0.4 to 64 px per frame; 0 of 24 valid at 0.3 px per frame, below the range |
@@ -132,7 +133,7 @@ These causes are flagged as not valid in most cases.
 | Flicker, frames of unequal brightness | not simulated as such; random energy differences between the exposures, with a standard deviation of 20 and 40 %, gave 93.8 and 84.4 % correct and valid and none wrong but valid. Periodic flicker from mains lamps may behave differently | continuous light without flicker, for example LEDs on a DC supply ([camera settings](docs/acquisition.md#camera-settings)) |
 | Motion below the measurable range, about 3.35/K px per frame | 0 of 24 valid at 0.3 px per frame with 9 frames | a lower frame rate or more frames ([frame rate](docs/acquisition.md#choosing-the-frame-rate)) |
 | Heavy noise | camera texture with noise as strong as the signal: 50.0 % correct, 50.0 % valid; over all noise levels 11 of 592 valid estimates wrong | more light, more pixels per frame ([frame rate](docs/acquisition.md#choosing-the-frame-rate)) |
-| No texture or no motion | 0 of 120 images without motion valid, and 0 of 2268 simulated ones in the threshold calibration; real crops of a static room scene: 4 of 252 valid | keep saturated areas out of the image ([glints](docs/acquisition.md#saturation-and-glints)) |
+| No texture or no motion | 0 of 120 images without motion valid, and 0 of 2268 simulated ones in the threshold calibration; real single-frame crops of a room scene (`vid1`): 4 of 252 valid | keep saturated areas out of the image ([glints](docs/acquisition.md#saturation-and-glints)) |
 | Defocus | the isotropy check rejects the ring pattern of a static defocused surface; with sensor noise, correct and valid falls from 84.4 % in focus to 40.6 % at a blur radius of 2 px | focus at the working distance ([focus](docs/acquisition.md#focus)) |
 
 ### Multi-flash images
@@ -143,7 +144,7 @@ In a single multi-flash image the duty, the count K and the intervals concern th
 |---|---|---|
 | Long flashes, `duty` not set | flashes of 0.25 and 0.5 of the period: 12.5 % and 18.8 % wrong but valid, as for long exposures above | short flashes, or `duty` / `--duty` ([duty](docs/acquisition.md#flash-duration-and-duty)) |
 | Wrong flash count | an image with 7, 8, 10 or 11 flashes estimated as 9: 34.4 to 37.5 % wrong but valid | the exact K with `exposures` / `--exposures`; count the pulses once with a photodiode ([flash count](docs/acquisition.md#the-exact-flash-count)) |
-| Continuous light, or motion blur at slow speed | real single frames of the moving surface: 47 of 1020 crops valid, 41 of them blur-like. Continuous light for 3/4 of the signal: 34.4 % wrong but valid | dark enclosure or band-pass filter, control images with one flash; `reject_blur`, which costs correct results below about 2.2 px per flash ([ambient light](docs/acquisition.md#ambient-light)) |
+| Continuous light, or motion blur at slow speed | real single frames of the moving surface: 47 of 1020 crops valid, 41 of them blur-like. Continuous light for 3/4 of the signal: 34.4 % wrong but valid | dark enclosure or band-pass filter, control images with one flash; `reject_blur`, which costs correct results below about 2.2 px per step ([ambient light](docs/acquisition.md#ambient-light)) |
 | Uneven flash intervals, flash jitter | a missing flash or alternating intervals as for frames above; random jitter of 10 % of the period: 9.4 % wrong but valid | flashes from a hardware timer, period checked with a photodiode ([flash count](docs/acquisition.md#the-exact-flash-count)) |
 
 The direction is known only modulo 180 deg: one image cannot tell $\mathbf v$ from $-\mathbf v$. With averaged frames the sign comes from phase correlation of consecutive frames, which `real_measurements.py` reports as the mean step (`step_dx_px`, `step_dy_px`).
@@ -250,7 +251,7 @@ With MATLAB, from the repository root:
 matlab -batch "cd tests/matlab; run_tests"
 ```
 
-The tests check the implementation: known motion in simulation and on the test sequences, rejection of images without motion, every option and its argument checks, and parity, which means that the Python and MATLAB/Octave packages give the same results to 1e-9 on 20 shared cases (so far checked in GNU Octave). They do not show that the model holds for a given camera; that takes real recordings, frame bursts at a fixed frame rate or multi-flash images. Because the two languages are compared case by case, Python and MATLAB change together; [CONTRIBUTING.md](CONTRIBUTING.md) lists the steps.
+The tests check the implementation: known motion in simulation and on the test sequences, rejection of images without motion, every option and its argument checks, and parity, which means that the Python and MATLAB/Octave packages give the same results to 1e-9 on 20 shared cases (checked in GNU Octave and in MATLAB). They do not show that the model holds for a given camera; that takes real recordings, frame bursts at a fixed frame rate or multi-flash images. Because the two languages are compared case by case, Python and MATLAB change together; [CONTRIBUTING.md](CONTRIBUTING.md) lists the steps.
 
 ```
 python/src/fftvel/   Python package; python -m fftvel is the command line, fftvel.io reads files, phasecorr.py holds phase_correlation

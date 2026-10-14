@@ -6,8 +6,8 @@ speed of a moving textured surface from the mean of K camera frames taken at
 a fixed frame rate, or from one multi-flash image, with the 2-D FFT and the
 Radon transform. It gives the same results as the
 MATLAB/Octave package `+fftvel` in [`../matlab`](../matlab), to 1e-9 on the
-shared cases of `tests/parity`, so far checked in GNU Octave; the code has not
-run in MATLAB yet. The main README describes the method, the
+shared cases of `tests/parity`, checked in GNU Octave and in MATLAB. The main
+README describes the method, the
 results, where it fails and who did what.
 
 ## Install

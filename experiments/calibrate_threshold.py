@@ -17,9 +17,9 @@ quality alone passes ``tanh(c/sqrt(m - 5))`` exactly when ``k >= c``. Parts:
    static crops of data/surface_texture.png with a little noise, 12 seeds
    each); the largest k and its 99th percentile.
 2. held_out: new seeds, and textures the calibration did not see (other
-   correlation lengths, power-law spectra, crops of the static room scene
-   vid1.mat); the count of valid estimates with a Clopper-Pearson bound.
-3. real: single frames of vid1 (static) and of vid2 to vid4 (moving surface,
+   correlation lengths, power-law spectra, single-frame crops of the room
+   scene vid1.mat); the count of valid estimates with a Clopper-Pearson bound.
+3. real: single frames of vid1 (room scene) and of vid2 to vid4 (moving surface,
    but one exposure per frame, so nothing repeats), crops of 256 and 512 px.
 4. power: moving images of the camera texture with random velocity and L
    at noise 0, 0.25, 0.5 and 1; the share of correct estimates that pass
@@ -783,7 +783,7 @@ def summary(res):
               f"{_spread([r['est_speed'] * (2 * int(r['L']) + 1) for r in val], ' px')}; direction "
               f"{_spread([r['est_angle'] for r in val], ' deg')}; L {sorted({int(r['L']) for r in val})}; "
               f"frames {sorted(int(r['frame']) for r in val)}")
-        if video == "vid1":                # the static scene: every valid crop
+        if video == "vid1":                # the room scene: every valid crop
             for r in val:
                 print(f"      n = {int(r['n'])} L = {int(r['L']):2d} {r['where']}: speed {r['est_speed']:.2f} px, "
                       f"K * speed {r['est_speed'] * (2 * int(r['L']) + 1):.1f} px, {r['est_angle']:.1f} deg, "

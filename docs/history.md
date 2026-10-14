@@ -86,8 +86,8 @@ $\log(1+|B|)$, MATLAB's `radon`, the maximum of WR for the direction, and
 `findpeaks` with the fixed prominence for the speed.
 [`experiments/history/before_after.py`](../experiments/history/before_after.py)
 runs it and the rework on the same 36 simulated pulsed images (random
-texture, 9 flashes, 256 x 256 px, no noise, speeds of 1, 2, 4, 8, 16 and 32 px
-per flash in 6 directions).
+texture, 9 exposures, 256 x 256 px, no noise, speeds of 1, 2, 4, 8, 16 and 32
+px per step in 6 directions).
 
 | | 2025 code | Rework |
 |---|---|---|
