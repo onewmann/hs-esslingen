@@ -3,21 +3,22 @@ function est = estimate_velocity(bp, varargin)
 %   EST = fftvel.estimate_velocity(BP) estimates direction and speed of the
 %   motion recorded in the pulsed-exposure image BP. BP is the sum or mean
 %   of K exposures taken at equal time steps while the texture moves by v
-%   per step: K strobe flashes within one camera frame (a multi-flash
-%   image), or the average of K consecutive video frames (see
-%   fftvel.pulsed_from_stack).
+%   per step: the average of K consecutive camera frames (see
+%   fftvel.pulsed_from_stack), or K strobe flashes within one camera frame
+%   (a multi-flash image).
 %
 %   EST = fftvel.estimate_velocity(BP, 'Name', Value, ...) sets options:
 %     'Exposures'     number of exposures K >= 2, even or odd: the
-%                     flashes in one multi-flash image, or the averaged
-%                     frames. Overrides L (default [] = 2L+1, 9 with the
+%                     averaged frames, or the flashes in one multi-flash
+%                     image. Overrides L (default [] = 2L+1, 9 with the
 %                     default L). For slow motion a wrong count scales the
 %                     speed by K_true/K without lowering the quality.
 %     'L'             half-count of Horn's thesis, K = 2L+1, used when
 %                     'Exposures' is not given (default 4)
-%     'Duty'          duration of one exposure (flash pulse, or camera
-%                     exposure time) divided by the time step, in [0, 1)
-%                     (default 0 = short flashes). The motion blur within
+%     'Duty'          duration of one exposure (camera exposure time, or
+%                     flash pulse) divided by the time step (frame
+%                     interval, or flash period), in [0, 1) (default 0 =
+%                     short exposures). The motion blur within
 %                     each exposure, Duty*|v| pixels, must either be given
 %                     here or stay well below about 3 px.
 %     'ROI'           side in pixels of the central square that is analysed,
@@ -35,10 +36,10 @@ function est = estimate_velocity(bp, varargin)
 %                     (default false)
 %     'RejectBlur'    also require EST.blur_like to be false for EST.valid
 %                     (default false), against single exposures of a moving
-%                     surface (motion blur, no flashes). Most multi-flash
-%                     images of slow motion (below about 2.2 px per step)
-%                     with noise are blur-like too, so this rejects most
-%                     valid results there.
+%                     surface (motion blur, one exposure instead of K).
+%                     Most images of K exposures of slow motion (below
+%                     about 2.2 px per step) with noise are blur-like too,
+%                     so this rejects most valid results there.
 %     'Diagnostics'   also return intermediate results in EST.diag
 %                     (default false)
 %   All option values are checked; text such as '4' is an error.
@@ -74,19 +75,19 @@ function est = estimate_velocity(bp, varargin)
 %     n             side of the analysed central square in pixels
 %     npad          FFT length
 %     quality_blur  quality of the same fit along angle_deg with a single
-%                   continuous exposure (motion blur of a free length, no
-%                   flashes) in place of the K flashes
+%                   continuous exposure (motion blur of a free length) in
+%                   place of the K exposures
 %     blur_length   blur length in pixels of that fit; a blur of d px
-%                   looks like K flashes about d/K apart
+%                   looks like K exposures about d/K apart
 %     blur_like     true if the blur model fits better (quality_blur >
 %                   quality) and the speed is below npad/max(profile_j),
 %                   about 2.2 px per step, so that the repeated lines of
-%                   the flashes (npad/speed bins apart), which alone tell
-%                   flashes from a blur, lie beyond the fitted profile.
+%                   the K exposures (npad/speed bins apart), which alone
+%                   tell them from a blur, lie beyond the fitted profile.
 %                   Most single exposures of a moving surface are
-%                   blur-like, but below that speed so are most
-%                   multi-flash images with noise: there the flag says
-%                   that the image cannot tell flashes from a blur, not
+%                   blur-like, but below that speed so are most images of
+%                   K exposures with noise: there the flag says that the
+%                   image cannot tell the K exposures from a blur, not
 %                   that it is a blur. Only RejectBlur makes it count for
 %                   valid
 %     saturated     share of the analysed pixels at the maximum of the
@@ -119,12 +120,12 @@ function est = estimate_velocity(bp, varargin)
 %   and the blur check were added in this implementation.
 %
 %   Example:
-%     bp = fftvel.simulate_pulsed_image(256, [5 -3], 4);   % L = 4, so K = 2L+1 = 9 flashes
+%     bp = fftvel.simulate_pulsed_image(256, [5 -3], 4);   % L = 4, so K = 2L+1 = 9 exposures
 %     est = fftvel.estimate_velocity(bp, 'Exposures', 9);
-%     fprintf('%.1f deg, %.2f px per flash\n', est.angle_deg, est.speed)
-%     % about 31.0 deg, 5.83 px per flash
+%     fprintf('%.1f deg, %.2f px per step\n', est.angle_deg, est.speed)
+%     % about 31.0 deg, 5.83 px per step
 %     if est.valid
-%         p = fftvel.to_physical(est, 0.04, 1e-3);   % 0.04 mm/px, 1 ms between flashes
+%         p = fftvel.to_physical(est, 0.04, 1e-3);   % 0.04 mm/px, 1 ms per step
 %     end
 %
 %   Non-square images are cropped to the central square. They are never

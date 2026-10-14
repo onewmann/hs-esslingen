@@ -1,4 +1,4 @@
-"""Velocity estimation from a single multi-flash (pulsed-exposure) image.
+"""Velocity estimation from one pulsed-exposure image: the mean of K frames, or a multi-flash image.
 
 The model, the ripple profile WR and the quality measure GEBA follow Chapter 3
 of J. Horn's doctoral thesis (Universitaet Karlsruhe (TH), 2006; full reference
@@ -126,19 +126,19 @@ class Estimate:
     n : side of the analysed central square in pixels.
     npad : FFT length.
     quality_blur : quality of the same fit along ``angle_deg`` with a single
-        continuous exposure (motion blur of a free length, no flashes) in
-        place of the ``K`` flashes.
+        continuous exposure (motion blur of a free length) in place of the
+        ``K`` exposures.
     blur_length : blur length in pixels of that fit; a blur of ``d`` px
-        looks like ``K`` flashes about ``d/K`` apart.
+        looks like ``K`` exposures about ``d/K`` apart.
     blur_like : True if the blur model fits better (``quality_blur >
         quality``) and the speed is below ``npad/max(profile_j)``, about
-        2.2 px per step, so that the repeated lines of the flashes
-        (``npad/speed`` bins apart), which alone tell flashes from a blur,
-        lie beyond the fitted profile. Most single exposures of a moving
-        surface are blur-like, but below that speed so are most multi-flash
-        images with noise: there the flag says that the image cannot tell
-        flashes from a blur, not that it is a blur. Only ``reject_blur``
-        makes it count for ``valid``.
+        2.2 px per step, so that the repeated lines of the ``K`` exposures
+        (``npad/speed`` bins apart), which alone tell them from a blur, lie
+        beyond the fitted profile. Most single exposures of a moving surface
+        are blur-like, but below that speed so are most images of ``K``
+        exposures with noise: there the flag says that the image cannot tell
+        the ``K`` exposures from a blur, not that it is a blur. Only
+        ``reject_blur`` makes it count for ``valid``.
     saturated : share of the analysed pixels at the maximum of the square,
         before any processing (:func:`saturated_share`): for an integer
         image whose maximum is the largest value of its type, the share at
@@ -281,8 +281,11 @@ def crop_square(img: np.ndarray, n: Optional[int] = None) -> np.ndarray:
 
 def pulsed_from_stack(frames, *, L: Optional[int] = None, exposures: Optional[int] = None,
                       axis: int = -1):
-    """Pulsed-exposure image from a stack of single exposures (video frames).
+    """Pulsed-exposure image from a burst of camera frames: their mean.
 
+    The frames must be taken at a fixed frame rate while the surface moves
+    at constant speed, so that the steps between them are equal; the mean
+    is then the image that ``K`` short flashes in one exposure would give.
     Takes the frames along ``axis`` (default: the last axis) and drops all
     other axes of length 1, so a MATLAB ``getdata`` stack (rows x cols x 1 x
     frames) works as it is. Returns ``(bp, K)``: the mean of the first ``K``
@@ -528,7 +531,7 @@ def box_template(jpos: np.ndarray, d: np.ndarray, npad: int, n: int, angle_deg: 
     """Expected log spectrum along the motion for one continuous exposure, one column per blur length.
 
     A single exposure during which the texture moves by ``d`` px along
-    ``angle_deg`` (motion blur, no flashes) multiplies the spectrum by
+    ``angle_deg`` (motion blur, one exposure instead of ``K``) multiplies the spectrum by
     ``sinc(j*d/npad)**2``. As in :func:`dirichlet_template` the window is
     included exactly: the blur is sampled every ``h = 0.5`` px, so that::
 
@@ -613,9 +616,9 @@ def fit_blur(g: np.ndarray, jpos: np.ndarray, npad: int, n: int, angle_deg: floa
     """Length of a continuous motion blur that explains the profile along ``angle_deg``.
 
     The same fit as :func:`fit_speed` with :func:`box_template` (one long
-    exposure, no flashes) in place of the Dirichlet model. A blur of ``d``
-    px has the main lobe of ``K`` flashes ``d/K`` apart; only the periodic
-    side lines of the flashes tell them apart. The grid of blur lengths is
+    exposure instead of ``K``) in place of the Dirichlet model. A blur of
+    ``d`` px has the main lobe of ``K`` exposures ``d/K`` apart; only the
+    periodic side lines of the ``K`` exposures tell them apart. The grid of blur lengths is
     ``K`` times the speed grid of :func:`fit_speed` (it does not depend on
     ``K``), from ``1.5*npad/max(jpos)/4`` up to ``npad/4``, where the zeros
     of the sinc are four bins apart. Returns ``(length, quality, fit)``
@@ -661,21 +664,22 @@ def estimate_velocity(bp, *, L: int = DEFAULT_L, exposures: Optional[int] = None
     ----------
     bp : 2-D array
         Sum or mean of ``K`` exposures taken at equal time steps while the
-        texture moves by ``v`` per step: ``K`` strobe flashes within one
-        camera frame (a multi-flash image), or the mean of ``K`` consecutive
-        video frames (see :func:`pulsed_from_stack`). Non-square images are
-        cropped to the central square, never resized.
+        texture moves by ``v`` per step: the mean of ``K`` consecutive
+        camera frames (see :func:`pulsed_from_stack`), or ``K`` strobe
+        flashes within one camera frame (a multi-flash image). Non-square
+        images are cropped to the central square, never resized.
     L : int
         Half-count of Horn's thesis, ``K = 2L+1``, used when ``exposures``
         is not given; default 4 (9 exposures).
     exposures : int, optional
-        Number of exposures ``K >= 2``, even or odd: the flashes in one
-        multi-flash image, or the averaged frames. Overrides ``L``; default
+        Number of exposures ``K >= 2``, even or odd: the averaged frames,
+        or the flashes in one multi-flash image. Overrides ``L``; default
         ``2L+1``. For slow motion a wrong count scales the speed by
         ``K_true/K`` without lowering the quality.
     duty : float
-        Duration of one exposure (flash pulse, or camera exposure time)
-        divided by the time step, in ``[0, 1)``; default 0 (short flashes).
+        Duration of one exposure (camera exposure time, or flash pulse)
+        divided by the time step (frame interval, or flash period), in
+        ``[0, 1)``; default 0 (short exposures).
         The motion blur within each exposure, ``duty*|v|`` pixels, must
         either be given here or stay well below about 3 px.
     roi : int, optional
@@ -694,10 +698,10 @@ def estimate_velocity(bp, *, L: int = DEFAULT_L, exposures: Optional[int] = None
         0.6. Small images need more (see ``Estimate.threshold``).
     reject_blur : bool
         Also require ``Estimate.blur_like`` to be False for ``valid``,
-        against single exposures of a moving surface (motion blur, no
-        flashes). Most multi-flash images of slow motion (below about
-        2.2 px per step) with noise are blur-like too, so this rejects most
-        valid results there. Default False.
+        against single exposures of a moving surface (motion blur, one
+        exposure instead of ``K``). Most images of ``K`` exposures of slow
+        motion (below about 2.2 px per step) with noise are blur-like too,
+        so this rejects most valid results there. Default False.
     diagnostics : bool
         Keep intermediate results in ``Estimate.diag`` (needed for plotting).
         Default False.
@@ -710,10 +714,10 @@ def estimate_velocity(bp, *, L: int = DEFAULT_L, exposures: Optional[int] = None
     Examples
     --------
     >>> from fftvel import simulate_pulsed_image
-    >>> bp = simulate_pulsed_image(256, (5, -3), 4, rng=0)    # L = 4, so K = 2L+1 = 9 flashes
+    >>> bp = simulate_pulsed_image(256, (5, -3), 4, rng=0)    # L = 4, so K = 2L+1 = 9 exposures
     >>> est = estimate_velocity(bp, exposures=9)
-    >>> print(f"{est.angle_deg:.1f} deg, {est.speed:.2f} px per flash, valid {est.valid}")
-    31.0 deg, 5.83 px per flash, valid True
+    >>> print(f"{est.angle_deg:.1f} deg, {est.speed:.2f} px per step, valid {est.valid}")
+    31.0 deg, 5.83 px per step, valid True
     """
     L = _check_option(L, "L", "positive")
     K = 2 * L + 1 if exposures is None else _check_option(exposures, "exposures", "exposures")
@@ -827,8 +831,8 @@ def to_physical(est, gsd: float, period: float) -> PhysicalVelocity:
     ``gsd`` is the ground sample distance, the length on the moving surface
     that one pixel covers (for example mm per px, measured from an image of
     a ruler or a checkerboard in the plane of the surface). ``period`` is the
-    time step in seconds: the time between two flashes for a multi-flash
-    image, or between two frames for averaged frames. Then::
+    time step in seconds: the time between two frames for averaged frames,
+    or between two flashes for a multi-flash image. Then::
 
         speed = est.speed * gsd / period
 

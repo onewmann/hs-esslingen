@@ -10,8 +10,8 @@ function p = to_physical(est, gsd, period)
 %   ground sample distance, the length on the moving surface that one
 %   pixel covers (for example mm per px, measured from an image of a ruler
 %   or a checkerboard in the plane of the surface). PERIOD is the time
-%   step in seconds: the time between two flashes for a multi-flash image,
-%   or between two frames for averaged frames. The result is in the length
+%   step in seconds: the time between two frames for averaged frames, or
+%   between two flashes for a multi-flash image. The result is in the length
 %   unit of GSD per second (mm/s for GSD in mm per px). Both must be
 %   finite and greater than 0.
 %
@@ -21,7 +21,7 @@ function p = to_physical(est, gsd, period)
 %
 %   Example:
 %     est = fftvel.estimate_velocity(bp, 'Exposures', 9);
-%     p = fftvel.to_physical(est, 0.04, 1e-3);    % 0.04 mm/px, 1 ms flash period
+%     p = fftvel.to_physical(est, 0.04, 1e-3);    % 0.04 mm/px, 1 ms between frames
 %     fprintf('%.1f mm/s\n', p.speed);
 %
 %   See also fftvel.estimate_velocity.

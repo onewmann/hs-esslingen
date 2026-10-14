@@ -2,16 +2,16 @@
 
 Two ways to get a pulsed image from a camera:
 
-* Flash mode: a strobe fires ``K`` times (``exposures``, or ``2L+1``)
-  during one exposure, so every frame is already a multi-flash (pulsed)
-  image. :func:`estimate_frame` estimates one such frame. The speed is in
-  pixels per flash step.
 * Average mode: under continuous light, ``K`` consecutive frames are
   averaged (:class:`FrameWindow`, :func:`estimate_window`,
   :func:`estimate_stream`). The model needs equal time steps between them,
   so every window is checked against its timestamps (:func:`frame_step`)
   and flagged when the spread of the frame intervals exceeds ``tol`` times
   their median. The speed is in pixels per frame.
+* Flash mode: a strobe fires ``K`` times (``exposures``, or ``2L+1``)
+  during one exposure, so every frame is already a multi-flash (pulsed)
+  image. :func:`estimate_frame` estimates one such frame. The speed is in
+  pixels per flash step.
 """
 
 from __future__ import annotations

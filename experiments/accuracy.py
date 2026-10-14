@@ -55,7 +55,7 @@ def plot(rows):
         ax.set_yscale("log")
         common.plain_log_ticks(ax, "x")
         common.plain_log_ticks(ax, "y")
-        common.style(ax, "true speed (px per flash)", ylab)
+        common.style(ax, "true speed (px per step)", ylab)
     ax1.legend(frameon=False, fontsize=9, labelcolor=INK2, loc="upper right")
     ndir = len({r["angle"] for r in rows})
     common.title(fig, "Accuracy over the speed range",

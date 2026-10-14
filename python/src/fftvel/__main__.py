@@ -24,22 +24,23 @@ from .simulate import simulate_pulsed_image
 
 MAX_TRAVEL = 4          # fftvel simulate: (K - 1) * max(|vx|, |vy|) at most this times --n (texture size)
 DESCRIPTION = """\
-Surface velocity from a single multi-flash image (2-D FFT and Radon
-transform). "simulate" estimates a simulated image whose motion is known,
-"estimate" an image file or a frame stack. The result is written to stdout
-as JSON, notes on what was read and used to stderr.
+Surface velocity from averaged camera frames (2-D FFT and Radon transform);
+the same code measures a single multi-flash image. "estimate" reads a frame
+stack (--stack, the mean of K frames) or an image file and estimates it,
+"simulate" estimates a simulated image whose motion is known. The result is
+written to stdout as JSON, notes on what was read and used to stderr.
 """
 EXAMPLES = """\
 examples:
-  %(prog)s estimate image.png --exposures 9
-  %(prog)s estimate image.png --exposures 9 --gsd 0.05 --period 0.001
   %(prog)s estimate frames.npy --stack --exposures 9
+  %(prog)s estimate frames.npy --stack --exposures 9 --gsd 0.05 --period 0.0125
+  %(prog)s estimate image.png --exposures 9
   %(prog)s simulate --exposures 9 --vx 5 --vy -3 --plot estimate.png
 """
 SIMULATE = """\
-Simulate a multi-flash image of a random texture that moves by (--vx, --vy)
-px per flash, estimate it and write the result as JSON to stdout. The true
-direction and speed are written to stderr.
+Simulate the mean of K exposures (frames, or flashes) of a random texture
+that moves by (--vx, --vy) px per step, estimate it and write the result as
+JSON to stdout. The true direction and speed are written to stderr.
 """
 SIMULATE_EXAMPLES = """\
 examples:
@@ -47,24 +48,27 @@ examples:
   %(prog)s --exposures 9 --vx 0.5 --vy 0 --noise 0.2 --plot estimate.png
 """
 ESTIMATE = """\
-Estimate direction and speed from a multi-flash image, or from a stack of
-frames averaged into one image (--stack). A single image needs the number
-of flashes, --exposures K (or --L L for K = 2L+1): a wrong count scales the
-speed by K_true/K, and the result can still be marked valid.
+Estimate direction and speed from a stack of frames averaged into one image
+(--stack), or from a multi-flash image. --stack averages the first K frames
+(--exposures K, default all frames if their number is odd). A single image
+needs the number of flashes, --exposures K (or --L L for K = 2L+1): a wrong
+count scales the speed by K_true/K, and the result can still be marked
+valid.
 
 Files: PNG, TIFF, BMP, JPEG and other images (Pillow; colour becomes grey,
 several pages a stack), .npy, .npz and .mat (v7.3 needs h5py). Use a
 lossless format for measurements: the 8 x 8 px blocks of JPEG can give
 wrong results that are marked valid. What was read and used is reported on
-stderr, the result as JSON on stdout, with the speed in px per flash (px
-per frame for --stack).
+stderr, the result as JSON on stdout, with the speed in px per frame for
+--stack and px per flash for a multi-flash image.
 """
 ESTIMATE_EXAMPLES = """\
 examples:
+  %(prog)s data/measurements/synthetic_average/moving_regular.npz --stack --exposures 9 --duty 0.1 --gsd 0.05 --period 0.005
+  %(prog)s burst_0001.npz --stack
+  %(prog)s data/recordings/vid2.mat --stack --exposures 9
   %(prog)s image.png --exposures 9
   %(prog)s data/measurements/synthetic_flash/flash_b.png --exposures 8 --duty 0.2 --gsd 0.05 --period 0.0005
-  %(prog)s data/recordings/vid2.mat --stack --exposures 9
-  %(prog)s burst_0001.npz --stack
 """
 
 
@@ -166,9 +170,13 @@ def _pulsed_image(a: np.ndarray, stack: bool, L: int | None = None, exposures: i
     return bp, K
 
 
-def _warnings(est) -> None:
+def _warnings(est, stack: bool = False) -> None:
     """Warn on stderr about saturated pixels (more than SAT_WARN) and valid but blur-like results."""
-    if est.valid and est.blur_like:
+    if est.valid and est.blur_like and stack:
+        _note(f"warning: one continuous exposure blurred over {est.blur_length:.3g} px fits better than "
+              f"{est.exposures} separate frames. Below about 2.2 px per frame this is common with noise too, "
+              f"so it only means that the image cannot tell the two apart")
+    elif est.valid and est.blur_like:
         _note(f"warning: one continuous exposure blurred over {est.blur_length:.3g} px (no flashes) fits better "
               f"than the flashes. Below about 2.2 px per flash this is common for multi-flash images with noise "
               f"too, so it only means that the image cannot tell the two apart; if light other than the flashes "
@@ -235,16 +243,17 @@ def _parser():
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True, metavar="{simulate,estimate}")
 
-    s = sub.add_parser("simulate", help="simulate a multi-flash image with known motion and estimate it",
+    s = sub.add_parser("simulate", help="simulate the mean of K frames (or flashes) with known motion and estimate it",
                        description=SIMULATE, epilog=SIMULATE_EXAMPLES, formatter_class=_Formatter)
     s.add_argument("--exposures", type=int, metavar="K",
-                   help="number K >= 2 of flashes in the image (even or odd); instead of --L")
+                   help="number K >= 2 of exposures, frames or flashes, in the image (even or odd); instead "
+                        "of --L")
     s.add_argument("--L", type=int,
                    help=f"half-count of the thesis, K = 2L+1 (default {DEFAULT_L}, so K = {2 * DEFAULT_L + 1})")
     s.add_argument("--vx", type=float, default=3.0,
-                   help="velocity along x (the columns, to the right) in px per flash")
+                   help="velocity along x (the columns, to the right) in px per step (frame or flash)")
     s.add_argument("--vy", type=float, default=-2.0,
-                   help="velocity along y (the rows, pointing down) in px per flash")
+                   help="velocity along y (the rows, pointing down) in px per step (frame or flash)")
     s.add_argument("--n", type=int, default=256, help="side of the square image in px")
     s.add_argument("--noise", type=float, default=0.0,
                    help="standard deviation of white noise added to the image, relative to the standard "
@@ -252,16 +261,17 @@ def _parser():
     s.add_argument("--seed", type=int, default=0, help="seed of the random texture and of the noise")
     s.add_argument("--plot", metavar="PNG", help="save the diagnostic figure as PNG")
 
-    e = sub.add_parser("estimate", help="estimate the motion in an image or frame stack file",
+    e = sub.add_parser("estimate", help="estimate the motion in a frame stack or image file",
                        description=ESTIMATE, epilog=ESTIMATE_EXAMPLES, formatter_class=_Formatter)
-    e.add_argument("file", help="image, .npy, .npz or .mat file")
+    e.add_argument("file", help=".npz, .npy, .mat or image file")
     e.add_argument("--exposures", type=int, metavar="K",
-                   help="number K >= 2 of flashes in the image (even or odd), or of frames to average "
-                        "with --stack. A single image needs --exposures or --L; for --stack the default is "
+                   help="number K >= 2 of frames to average with --stack, or of flashes in a single image "
+                        "(even or odd). A single image needs --exposures or --L; for --stack the default is "
                         "all frames")
     e.add_argument("--L", type=int, help="half-count of the thesis, K = 2L+1; instead of --exposures")
     e.add_argument("--duty", type=float, default=0.0,
-                   help="flash (or exposure) duration divided by the time step, in [0, 1)")
+                   help="exposure time divided by the frame interval (--stack), or flash duration divided "
+                        "by the flash period, in [0, 1)")
     e.add_argument("--roi", type=int, default=512,
                    help="side of the analysed central square in px, 0 for the largest square; the run "
                         "time grows with its square")
@@ -278,7 +288,7 @@ def _parser():
                         "unit (for example mm per px). With --period the JSON also holds speed_per_s, "
                         "vx_per_s and vy_per_s in that unit per second (mm/s for mm per px)")
     e.add_argument("--period", type=float, metavar="S",
-                   help="time step in seconds: between two flashes, or between two frames for --stack. "
+                   help="time step in seconds: between two frames for --stack, or between two flashes. "
                         "Goes with --gsd")
     e.add_argument("--var", help="array to read in a .mat or .npz file (needed if it holds several arrays "
                                  "and none is the only image, or with --stack the only stack; in a .npz "
@@ -310,8 +320,8 @@ def main(argv=None) -> int:
         L, K = _simulated_count(a.L, a.exposures)
         travel = (K - 1) * max(abs(a.vx), abs(a.vy))
         if travel > MAX_TRAVEL * a.n:
-            s.error(f"with {K} flashes the texture would move by {travel:.4g} px, more than {MAX_TRAVEL} times "
-                    f"--n ({MAX_TRAVEL * a.n} px); lower --vx and --vy, or the flash count")
+            s.error(f"with {K} exposures the texture would move by {travel:.4g} px, more than {MAX_TRAVEL} times "
+                    f"--n ({MAX_TRAVEL * a.n} px); lower --vx and --vy, or the number of exposures")
     else:
         if not 0 <= a.duty < 1:
             e.error("--duty must be in [0, 1)")
@@ -331,7 +341,7 @@ def main(argv=None) -> int:
     if a.cmd == "simulate":
         bp = simulate_pulsed_image(a.n, (a.vx, a.vy), L, exposures=K, noise=a.noise, rng=a.seed)
         true_angle = float(np.rad2deg(np.arctan2(-a.vy, a.vx)) % 180)
-        _note(f"true: angle {true_angle:.2f} deg, speed {np.hypot(a.vx, a.vy):.3f} px per flash")
+        _note(f"true: angle {true_angle:.2f} deg, speed {np.hypot(a.vx, a.vy):.3f} px per step")
         est = estimate_velocity(bp, L=L, exposures=K, diagnostics=bool(a.plot))
     else:
         bp, K = _pulsed_image(_read(a.file, a.var, a.stack), a.stack, a.L, a.exposures, a.frames_axis)
@@ -347,7 +357,7 @@ def main(argv=None) -> int:
                                     roi=roi, clip_outliers=a.clip_outliers)
         except ValueError as err:
             raise SystemExit(f"{a.file}: {err}") from None
-    _warnings(est)
+    _warnings(est, stack=a.cmd == "estimate" and a.stack)
     out = _summary(est)
     if a.cmd == "estimate" and a.gsd is not None:
         _note(f"units: speed_per_s = speed * gsd / period, gsd {a.gsd:g} (length unit) per px, "

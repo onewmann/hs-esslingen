@@ -450,7 +450,7 @@ def plot(rows):
     axes[0].legend(frameon=False, fontsize=8.5, labelcolor=INK2, loc="lower left")
     per = len([r for r in rows if r["method"] == "fftvel" and r["texture"] == "random" and r["noise"] == 0])
     common.title(fig, "fftvel against simple single-image baselines",
-                 f"images of the noise study, {per} per texture and noise level, 1 to 32 px per flash; "
+                 f"images of the noise study, {per} per texture and noise level, 1 to 32 px per step; "
                  f"correct = within 2 deg and 5 %; validity not applied")
     common.save(fig, "baselines.png")
 

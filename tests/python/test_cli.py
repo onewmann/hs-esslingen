@@ -122,7 +122,7 @@ def test_simulate_writes_only_json_to_stdout(capsys, tmp_path):
     png = tmp_path / "fig.png"
     r, err = run(["simulate", "--vx", "4", "--vy", "1", "--plot", png], capsys)    # stdout is all JSON
     assert abs(r["speed"] - 4.1231) < 0.05 and r["exposures"] == 9 and r["L"] == 4
-    assert "true: angle 165.96 deg, speed 4.123 px per flash" in err
+    assert "true: angle 165.96 deg, speed 4.123 px per step" in err
     assert png.stat().st_size > 10_000
 
 
@@ -549,6 +549,9 @@ def test_blur_warning(shot, tmp_path, capsys):
     np.save(tmp_path / "blur.npy", blur)
     r, err = run(["estimate", tmp_path / "blur.npy", "--L", "4"], capsys)
     assert r["valid"] and r["blur_like"] and "fits better than the flashes" in err
+    np.save(tmp_path / "blur_stack.npy", np.repeat(blur[:, :, None], 9, axis=2))   # mean = the blurred image
+    r, err = run(["estimate", tmp_path / "blur_stack.npy", "--stack"], capsys)
+    assert r["valid"] and r["blur_like"] and "fits better than 9 separate frames" in err and "flash" not in err
     np.save(tmp_path / "flashes.npy", shot[0])
     r, err = run(["estimate", tmp_path / "flashes.npy", "--L", "4"], capsys)
     assert r["valid"] and not r["blur_like"] and "fits better" not in err

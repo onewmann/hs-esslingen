@@ -136,7 +136,7 @@ CSV = ["violations.csv"]
 L = 4                        # the estimator's default; true K = 2L+1 = 9
 TRUE_K = 2 * L + 1
 REACH = 224                  # px of scene beyond the window on each side (largest shift about 200 px)
-SPEEDS = (0.5, 30.0)         # px per flash step, log-uniform
+SPEEDS = (0.5, 30.0)         # px per step, log-uniform
 PER_LEVEL, PER_LEVEL_QUICK = 32, 4
 SEED = 7100                  # first entry of every seed of this study
 SCENE_KEY = 100              # seed key of the scene, distinct from the factor codes
@@ -777,7 +777,7 @@ def plot(rows):
     per = len([r for r in rows if r["factor"] == "edge" and r["level"] == 0 and r["variant"] == "default"])
     grid_title(fig, "When the image breaks the model: correct and wrong valid estimates",
                f"independent forward model, one violation at a time, {per} images per level (camera and random "
-               f"texture), 0.5 to 30 px per flash, 9 flashes, 256 px; correct = within 2 deg and 5 %")
+               f"texture), 0.5 to 30 px per step, K = 9, 256 px; correct = within 2 deg and 5 %")
     for ax in axes[:len(FACTORS)]:
         ax.axhline(0, color=GRID, lw=0.8, zorder=0)
     common.save(fig, "violations.png")

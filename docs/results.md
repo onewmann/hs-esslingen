@@ -3,10 +3,17 @@
 This page collects all studies, ordered by how independent they are of the
 estimator's own model. The first ones use data that `fftvel` did not generate;
 the later ones use images from models, and the closer such a model is to the
-one the estimator fits, the less a good result proves. No real multi-flash
-image has been analysed yet: those recordings are being prepared, and
+one the estimator fits, the less a good result proves. The only real
+recordings analysed so far are the 2025 Basler frame sequences, whose uneven
+steps the estimator rejects. New frame recordings at a fixed frame rate are in
+preparation, no real multi-flash image has been recorded yet, and
 [`data/measurements/README.md`](../data/measurements/README.md) describes the
-format they will be evaluated in.
+format both will be evaluated in.
+
+The simulated images hold $K$ instantaneous exposures at equal steps, which is
+the mean of $K$ frames with short exposures and equally one exposure with $K$
+short flashes. Speeds are given in px per step: per frame for averaged frames,
+per flash for a multi-flash image.
 
 Every number comes from the CSV files in
 [`experiments/results/`](../experiments/results), written by a full run of
@@ -25,7 +32,8 @@ they share no code with the estimator's simulator. Every window of 9
 consecutive frames was averaged into one pulsed image, cropped to the area
 without zero fill and estimated with K = 9 (L = 4). The reference is the phase
 correlation of consecutive frames (the shift between two images from the
-phase of their cross-power spectrum), averaged over the window.
+phase of their cross-power spectrum), averaged over the window. This is the
+averaged-frame mode on frames made outside `fftvel`.
 
 | Sequence | Motion per frame | Windows valid | Direction of the valid ones | Largest speed error of the valid ones |
 |---|---|---:|---|---|
@@ -52,8 +60,8 @@ python experiments/testsequences.py
 
 Three recordings of the 2025 project (`data/recordings/vid2.mat` to `vid4.mat`)
 show a moving textured surface: 10 frames each from a Basler camera, Mono8,
-1936 x 1216 px. They are frame sequences, so the only way to use them is to
-average frames into a pulsed image, which needs equal steps between the frames.
+1936 x 1216 px. They are frame sequences, so they are used as averaged
+frames, which needs equal steps between the frames.
 The study measured the steps by phase correlation of consecutive frames
 (central 1024 x 1024 px) and estimated two 9-frame averages per recording.
 
@@ -69,7 +77,8 @@ The steps vary by a factor of 2.8 to 4.0 within each recording and their
 directions spread over 29 to 41 deg, so the averages do not follow the model.
 All six windows are rejected; for the 1024 px square the threshold is 0.6.
 This shows that the validity check refuses data that break the model. It says
-nothing about the accuracy on real multi-flash images.
+nothing about the accuracy on real frames with equal steps or on multi-flash
+images; new recordings at a fixed frame rate are in preparation.
 
 ```bash
 python experiments/recordings_2025.py
@@ -110,9 +119,9 @@ come from 6 positions, one of them valid in 4 of the 10 frames.
 
 The false alarms on the moving surface look like motion blur. The valid crops
 of `vid4` point at about 90 deg (median 90.02 deg, quartiles 89.95 to 90.10
-deg), with a median speed of 0.52 px per assumed flash step and K times the
+deg), with a median speed of 0.52 px per assumed step and K times the
 speed at a median of 4.67 px (quartiles 4.56 to 4.76 px): one exposure blurred
-over about 4.7 px looks like K flashes 4.7/K px apart. All 28 valid crops of
+over about 4.7 px looks like K exposures 4.7/K px apart. All 28 valid crops of
 `vid4` and 13 of the 19 of `vid3` are blur-like in the sense of the blur check
 of [method.md](method.md#blur-check-optional), so `reject_blur` would have
 rejected them. The recordings carry no exposure time, so the blur length cannot
@@ -120,7 +129,7 @@ be checked against the frame-to-frame motion. On `vid1`, 7 of the 12 valid
 crops lie in the 68 crops with at least 10 % saturated pixels.
 
 A simulated control (part 6) reproduces the mechanism: single exposures of the
-camera texture moving by d px during the exposure, without flashes.
+camera texture moving by d px during one exposure, instead of K exposures.
 
 | Blur d | 1 px | 2 px | 3 px | 4 px | 6 px | 8 px | 12 px |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -128,10 +137,12 @@ camera texture moving by d px during the exposure, without flashes.
 | blur-like among the valid | 0 | 0 | 1 | 9 | 15 | 14 | 11 |
 
 From 4 px on, the valid ones give K times the speed at a median of 1.01 to
-1.08 times d. A blur of a few pixels from continuous light or vibration is the
-main risk found so far on real images; [acquisition.md](acquisition.md#ambient-light)
-says how to avoid it. This test
-measures false alarms on real camera data; it does not measure accuracy.
+1.08 times d. For a multi-flash image, a blur of a few pixels from continuous
+light or vibration during the exposure is the main risk found so far on real
+images; [acquisition.md](acquisition.md#ambient-light) says how to avoid it.
+With averaged frames each frame is blurred only over its own exposure, which
+the duty describes. This test measures false alarms on real camera data; it
+does not measure accuracy.
 
 ```bash
 python experiments/calibrate_threshold.py      # parts 1 to 7, including these two
@@ -150,8 +161,12 @@ In the ideal case it agrees with the simulator to $7.8\cdot10^{-14}$ % in
 speed and $2.8\cdot10^{-14}$ deg in direction; a cubic spline shift instead of
 the Fourier shift moved the estimate by up to 1.36 % and 0.56 deg. Each factor
 breaks one assumption at a time, with 32 images per level (16 per texture),
-speeds from 0.5 to 30 px per flash, 9 flashes and 256 px. All numbers in this
-section come from simulated images.
+speeds from 0.5 to 30 px per step, 9 flashes and 256 px. All numbers in this
+section come from simulated images. The model renders flashes. For averaged
+frames the duty rows stand for the exposure time over the frame interval, the
+energy jitter for frames of unequal brightness, for example from flicker, and
+the timing jitter for uneven frame times; the rows on continuous light apply
+to multi-flash images only.
 
 | Factor | Levels | Correct and valid, first to last level | Wrong but valid |
 |---|---|---|---|
@@ -183,8 +198,10 @@ images between levels are within the scatter of the noise seeds.
 
 ![Model violations](figures/violations.png)
 
-Uneven flash intervals come from part 5 of the threshold calibration, which
-renders the flashes at chosen times with the same kind of Fourier shift.
+Uneven intervals come from part 5 of the threshold calibration, which
+renders the flashes at chosen times with the same kind of Fourier shift. The
+same images stand for an averaged window of frames taken at uneven times, and
+one flash missing for a dropped frame.
 
 | Flash intervals | Images | Correct | Valid | Valid but wrong | At twice the speed |
 |---|---:|---:|---:|---:|---:|
@@ -192,7 +209,7 @@ renders the flashes at chosen times with the same kind of Fourier shift.
 | one flash missing | 240 | 128 | 129 | 22 | 0 (median speed 1.09 times too high) |
 
 The study shows which violations give wrong results that are still marked
-valid: an unknown flash duration, flash jitter from 10 % of the period, half
+valid: an unknown flash or exposure duration, flash jitter from 10 % of the period, half
 or more of the light from a continuous source over a longer exposure, strong
 static edges, periodic textures, glints, a wrong flash count and uneven
 intervals. The score at half the estimated speed did not separate the
@@ -209,7 +226,8 @@ python experiments/model_violations.py
 
 These images come from `fftvel.simulate_pulsed_image`, which moves a fixed
 window over a larger texture with exact Fourier shifts and instantaneous,
-equally spaced flashes: the same model the estimator fits. They verify the
+equally spaced exposures (frames with short exposures, or flashes): the same
+model the estimator fits. They verify the
 implementation and its behaviour under noise, in simulation.
 
 Accuracy: 256 x 256 px, no noise, 12 directions from 0 to 165 deg, a random
@@ -217,18 +235,18 @@ texture and the camera texture of `data/surface_texture.png`.
 
 | Texture, flashes | Valid at every direction | Largest direction error | Largest speed error | The same from 1 px on |
 |---|---|---:|---:|---|
-| random, K = 9 | 0.4 to 64 px per flash | 0.70 deg | 0.45 % | 0.081 deg, 0.12 % |
-| camera, K = 9 | 0.4 to 64 px per flash | 0.65 deg | 0.47 % | 0.087 deg, 0.17 % |
-| random, K = 41 | 0.1 to 12 px per flash | 0.78 deg | 0.22 % | 0.076 deg, 0.11 % |
+| random, K = 9 | 0.4 to 64 px per step | 0.70 deg | 0.45 % | 0.081 deg, 0.12 % |
+| camera, K = 9 | 0.4 to 64 px per step | 0.65 deg | 0.47 % | 0.087 deg, 0.17 % |
+| random, K = 41 | 0.1 to 12 px per step | 0.78 deg | 0.22 % | 0.076 deg, 0.11 % |
 
 The median errors are below 0.012 deg and 0.03 % in all three series. At
-0.3 px per flash with K = 9, below the lower end of 0.37 px, all 24 images came
+0.3 px per step with K = 9, below the lower end of 0.37 px, all 24 images came
 out not valid.
 
 ![Accuracy over the speed range](figures/accuracy.png)
 
 Noise: 60 images per texture and noise level, with random velocities (speed
-log-uniform from 1 to 32 px per flash, any direction), K = 9, 256 px and white
+log-uniform from 1 to 32 px per step, any direction), K = 9, 256 px and white
 noise whose standard deviation is the given multiple of the image's.
 
 | Noise / signal | Random texture: correct, valid | Camera texture: correct, valid | Valid but wrong (both) |
@@ -265,18 +283,20 @@ spectrum, which turns repeated copies into peaks at their offset), the
 strongest side peak of the autocorrelation, and the speed from the spacing of
 the main lines in the `fftvel` profile, the 2025 approach with its faults
 removed. Phase correlation between two consecutive single exposures needs two
-frames and serves as an upper reference. The parameters of the baselines were
+frames and serves as an upper reference. With averaged frames the separate
+frames exist, so it is available; for a multi-flash image it needs two extra
+single-flash frames. The parameters of the baselines were
 chosen on separate images with other seeds.
 
 | Method | Input | Correct, random texture | Correct, camera texture |
 |---|---|---:|---:|
-| `fftvel` | one multi-flash image | 80.2 % | 63.3 % |
-| corrected peak spacing | one multi-flash image | 68.6 % | 56.2 % |
-| cepstrum | one multi-flash image | 69.5 % | 59.8 % |
-| autocorrelation | one multi-flash image | 72.1 % | 55.0 % |
+| `fftvel` | one image of 9 exposures | 80.2 % | 63.3 % |
+| corrected peak spacing | one image of 9 exposures | 68.6 % | 56.2 % |
+| cepstrum | one image of 9 exposures | 69.5 % | 59.8 % |
+| autocorrelation | one image of 9 exposures | 72.1 % | 55.0 % |
 | phase correlation | two overlapping single exposures | 95.0 % | 87.9 % |
 
-| True speed (px per flash) | 1 to 2 | 2 to 4 | 4 to 8 | 8 to 16 | 16 to 32 |
+| True speed (px per step) | 1 to 2 | 2 to 4 | 4 to 8 | 8 to 16 | 16 to 32 |
 |---|---:|---:|---:|---:|---:|
 | `fftvel` | 28.0 % | 56.1 % | 82.0 % | 94.2 % | 98.1 % |
 | corrected peak spacing | 0.0 % | 43.9 % | 76.2 % | 93.6 % | 97.5 % |
@@ -297,14 +317,14 @@ without noise, where `fftvel` is correct in 60 and the cepstrum and the
 corrected peak spacing in 43 each; on the 360 noisy images the cepstrum is
 correct in 208, `fftvel` in 206. At noise of a quarter and half the signal the
 lead of `fftvel` over the cepstrum on the camera texture is 4 against 0 and 5
-against 1 images (p = 0.13 and 0.22). Below 2 px per flash `fftvel` is correct
+against 1 images (p = 0.13 and 0.22). Below 2 px per step `fftvel` is correct
 in 28.0 % of the images, the single-image baselines in at most 1.8 %. With
 noise as strong as the signal or stronger,
 the autocorrelation matches or beats it on both textures. Only `fftvel` has a
 validity flag: it marked 80.5 % (random) and 60.5 % (camera texture) of the
 images valid, and 1.9 % and 0.7 % were valid but wrong. If two overlapping
-single exposures are available, phase correlation is more accurate and also
-gives the sign of the motion.
+single frames are available, as they are with averaged frames, phase
+correlation is more accurate and also gives the sign of the motion.
 
 ```bash
 python experiments/baselines.py
@@ -357,8 +377,8 @@ without motion better than GEBA (area under the ROC curve 0.988 against
 the two would cut those false alarms from 59 to 6 at the cost of 6.6
 percentage points of correct estimates; the estimator does not do this. The
 constant was checked on the same simulated sets that give 0 false alarms, so
-the rate on real multi-flash images is unknown until such images have been
-recorded.
+the rate on real frames averaged at equal steps and on real multi-flash images
+is unknown until such recordings exist.
 
 ```bash
 python experiments/calibrate_threshold.py

@@ -61,7 +61,7 @@ def plot(rows):
     ax.set_ylim(lim)
     common.plain_log_ticks(ax, "x")
     common.plain_log_ticks(ax, "y")
-    common.style(ax, "true speed (px per flash)", "estimated speed (px per flash)")
+    common.style(ax, "true speed (px per step)", "estimated speed (px per step)")
     ax.legend(frameon=False, fontsize=9, labelcolor=INK2, loc="lower right")
     common.title(fig, "Speed estimate of the 2025 code and the rework",
                  f"same {len(rows)} simulated multi-flash images (9 flashes, 256 x 256 px)")

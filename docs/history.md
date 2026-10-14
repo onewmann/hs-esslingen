@@ -52,7 +52,9 @@ between all of them. Phase correlation of consecutive frames of the three
 recordings of the moving surface gives steps of 2.94 to 8.19 px (`vid2`), 4.53
 to 17.99 px (`vid3`) and 1.60 to 6.01 px (`vid4`), with directions spread over
 29 to 41 deg within a recording. All six 9-frame averages are rejected by the
-rework ([results.md](results.md#the-2025-recordings)).
+rework ([results.md](results.md#the-2025-recordings)). Averaged frames are
+also the main mode of the rework; new recordings at a fixed frame rate are in
+preparation.
 
 ![Frame-to-frame motion in the 2025 recordings](figures/recordings.png)
 
@@ -90,7 +92,7 @@ per flash in 6 directions).
 | | 2025 code | Rework |
 |---|---|---|
 | Direction within 2 deg | 31 of 36 | 36 of 36 (largest error 0.049 deg) |
-| Speeds reported | 32.1 to 78.1 px per flash, whatever the true speed | within 0.13 % of the true speed |
+| Speeds reported | 32.1 to 78.1 px per step, whatever the true speed | within 0.13 % of the true speed |
 | Median speed error | several hundred % (733 % in this port, see below) | 0.018 % |
 | Marked valid | (no validity check) | 36 of 36 |
 
@@ -112,7 +114,7 @@ exactly `MinPeakDistance` apart, which MATLAB's `findpeaks` removes, and
 `before_after.py` scales the mean image from its minimum to its maximum,
 while the GUI stretches each frame between its 1 and 99 % percentiles
 (`stretchlim`). With either or both of these changed, the median comes out at
-624 to 708 %; the reported speeds stay between 32.1 and 78.1 px per flash, and
+624 to 708 %; the reported speeds stay between 32.1 and 78.1 px per step, and
 31 of 36 directions stay within 2 deg.
 
 ```bash

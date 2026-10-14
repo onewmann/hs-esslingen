@@ -2,36 +2,37 @@ function live_basler(varargin)
 %LIVE_BASLER  Live velocity estimate from a Basler camera (MATLAB only).
 %   From the repository root:
 %     addpath('matlab', 'matlab/examples')
-%     live_basler('Mode', 'flash', 'Exposures', 9, 'FlashPeriod', 5e-4, 'Duty', 0.04)
 %     live_basler('Mode', 'average', 'Exposures', 9, 'FrameRate', 80, ...
 %         'ExposureUs', 2000, 'SaveDir', 'data/measurements/2026-10-20_average', ...
 %         'Note', 'axis 20 mm/s')
+%     live_basler('Mode', 'flash', 'Exposures', 9, 'FlashPeriod', 5e-4, 'Duty', 0.04)
 %   The figure has a Start/Stop button; close the figure to release the
 %   camera.
 %
 %   LIVE_BASLER('Mode', MODE, 'Name', Value, ...) streams from a GenTL
 %   camera and estimates direction and speed of the moving surface. MODE
 %   must be given:
+%     'average'  continuous light: the newest K consecutive frames
+%                ('Exposures') at a fixed frame rate are averaged into a
+%                pulsed image (do not use this for multi-flash frames). The
+%                speed is in px per frame and px/s.
 %     'flash'    every camera frame is one multi-flash image: a strobe
-%                fires K times ('Exposures') during one exposure. The
-%                newest frame is estimated on its own. The speed is in px
-%                per flash step, and in px/s if 'FlashPeriod' is given.
-%     'average'  continuous light: the newest K consecutive frames are
-%                averaged into a pulsed image (do not use this for
-%                multi-flash frames). The speed is in px per frame and px/s.
+%                fires K times during one exposure. The newest frame is
+%                estimated on its own. The speed is in px per flash step,
+%                and in px/s if 'FlashPeriod' is given.
 %   Needs the Image Acquisition Toolbox with the GenICam/GenTL support
 %   package (Octave has no camera interface; use the Python version
 %   python/examples/live_camera.py there).
 %
 %   Options:
-%     'Mode'            'flash' or 'average' (required)
-%     'Exposures'       number K >= 2 of flashes or frames, overrides L
+%     'Mode'            'average' or 'flash' (required)
+%     'Exposures'       number K >= 2 of frames or flashes, overrides L
 %                       ([] = 2L+1)
 %     'L'               half-count of Horn's thesis, K = 2L+1, used when
 %                       'Exposures' is not given (4)
-%     'Duty'            flash mode: flash pulse length / flash period
-%                       ([] = 0). Average mode: exposure time / frame step
-%                       ([] = read the exposure time from the camera)
+%     'Duty'            average mode: exposure time / frame step ([] =
+%                       read the exposure time from the camera). Flash
+%                       mode: flash pulse length / flash period ([] = 0)
 %     'FlashPeriod'     flash mode: time between flashes in s, for px/s ([])
 %     'ExposureUs'      exposure time in us, switches auto exposure off ([]
 %                       keeps the camera setting)
@@ -65,8 +66,8 @@ function live_basler(varargin)
 %   Exposure (average mode): each frame is blurred over its exposure time.
 %   The script passes Duty = exposure / frame step to the estimator and
 %   warns when it lies between 0.4 and 0.6, where the speed fit depends
-%   strongly on the exact value, or above 0.9. Keep the exposure below
-%   at most a quarter of the frame step.
+%   strongly on the exact value, or above 0.9. Keep the exposure at most
+%   a quarter of the frame step.
 %
 %   Saturation: the script warns once when more than 1 % of the analysed
 %   pixels are saturated (EST.saturated), because glints and saturated

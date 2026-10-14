@@ -1,4 +1,4 @@
-"""Synthetic pulsed-exposure images with known velocity."""
+"""Synthetic pulsed-exposure images with known velocity: the mean of K frames, or K flashes in one image."""
 
 from __future__ import annotations
 
@@ -48,8 +48,10 @@ def simulate_pulsed_image(n: int, v: Sequence[float], L: int, *,
                           noise: float = 0.0, rng=None, return_frames: bool = False):
     """Mean of ``2L+1`` exposures of a texture moving by ``v`` per step under a fixed window.
 
-    ``L`` is the half-count of Horn's thesis: ``L = 4`` gives ``K = 2L+1 = 9``
-    flashes. ``v = (vx, vy)`` in pixels per step, x along columns, y along
+    The result is the mean of ``K`` frames with short exposures, and equally
+    one exposure with ``K`` short flashes. ``L`` is the half-count of Horn's
+    thesis: ``L = 4`` gives ``K = 2L+1 = 9`` exposures. ``v = (vx, vy)`` in
+    pixels per step, x along columns, y along
     rows (pointing down). Shifts are exact band-limited (Fourier) shifts, so
     ``v`` may be fractional; the texture is large enough that no wrapped
     content reaches the ``n``-by-``n`` window and there are no zero-filled

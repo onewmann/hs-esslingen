@@ -5,10 +5,12 @@ and the short version of it for the top of the README.
 
 does the same as ``python experiments/run.py --only pipeline ...`` (see
 run.py). Writes pipeline.png (every stage of the estimate) and hero.png (one
-exposure, the multi-flash image and its log spectrum with the direction and
-the line spacing). There is no CSV file, so ``--replot`` computes both
-figures again; the image is fixed by its seed, so every run draws the same
-figures. ``--quick`` only selects the output folder.
+frame, the mean of 9 frames of the moving surface and its log spectrum with
+the direction and the line spacing). The simulated image is the mean of 9
+frames with short exposures, which is equally one exposure with 9 short
+flashes. There is no CSV file, so ``--replot`` computes both figures again;
+the image is fixed by its seed, so every run draws the same figures.
+``--quick`` only selects the output folder.
 """
 
 from __future__ import annotations
@@ -23,8 +25,8 @@ from fftvel import estimate_velocity, simulate_pulsed_image
 
 CSV = []
 
-V_TRUE = (5, -3)        # px per flash, x right and y down: 5.83 px at 30.96 deg
-L = 4                   # 2L + 1 = 9 flashes
+V_TRUE = (5, -3)        # px per frame, x right and y down: 5.83 px at 30.96 deg
+L = 4                   # 2L + 1 = 9 frames
 SEED = 3
 SPECTRUM_HALF = 0.3     # hero.png shows |f_x|, |f_y| <= 0.3 cycles/px of the log spectrum
 BOX = dict(boxstyle="round,pad=0.3", fc=INK, ec="none", alpha=0.62)    # label boxes on the images
@@ -38,6 +40,11 @@ def run():
     bp, frames = simulate_pulsed_image(common.N, V_TRUE, L, texture=tex, rng=SEED, return_frames=True)
     e = estimate_velocity(bp, L=L, diagnostics=True)
     fig = plot_estimate(bp, e, frame=frames[:, :, L])
+    for ax in fig.axes:                     # panel titles in the terms of averaged frames
+        if ax.get_title() == "Single exposure":
+            ax.set_title("One frame")
+        elif ax.get_title().startswith("Pulsed image"):
+            ax.set_title(f"{e.exposures} frames averaged")
     fig.patch.set_facecolor("white")
     common.save(fig, "pipeline.png", dpi=110, facecolor="white")
     hero(frames[:, :, L], bp, e)
@@ -51,7 +58,7 @@ def _spectrum_extent(npad):
 
 
 def hero(frame, bp, e):
-    """hero.png: one exposure, the multi-flash image and its log spectrum, in one row."""
+    """hero.png: one frame, the mean of 2L+1 frames of the moving surface and its log spectrum, in one row."""
     import matplotlib.pyplot as plt
     from matplotlib import patheffects
 
@@ -62,8 +69,8 @@ def hero(frame, bp, e):
     fig, axes = plt.subplots(1, 3, figsize=(13, 5.0), layout="constrained")
     fig.get_layout_engine().set(rect=(0, 0.07, 1, 0.93), w_pad=0.15)    # room for the caption line
     fig.patch.set_facecolor(SURFACE)
-    titles = ("(a) One exposure, real texture",
-              f"(b) Moving, {k} flashes in one image",
+    titles = ("(a) One frame, real texture",
+              f"(b) Moving, {k} frames averaged",
               "(c) Log spectrum of (b)")
     for ax, img, t in zip(axes[:2], (frame, bp), titles):
         ax.imshow(img, cmap="gray", interpolation="none")
@@ -73,7 +80,7 @@ def hero(frame, bp, e):
             s.set_visible(False)
         ax.set_title(t, color=INK, fontsize=15, loc="left")
 
-    # motion of the surface during the exposure: from the first to the last flash, 2L steps of v
+    # motion of the surface during the burst: from the first to the last frame, 2L steps of v
     n = bp.shape[0]
     ax = axes[1]
     x0, y0 = 0.10 * n, 0.88 * n
@@ -81,7 +88,7 @@ def hero(frame, bp, e):
     ax.annotate("", xy=(x0 + 2 * L * V_TRUE[0], y0 + 2 * L * V_TRUE[1]), xytext=(x0, y0),
                 arrowprops=dict(arrowstyle="-|>", color="white", lw=2.2, mutation_scale=18,
                                 path_effects=halo))
-    ax.text(x0 + 2 * L * V_TRUE[0] + 8, y0 + 2 * L * V_TRUE[1] + 6, "motion during\nthe exposure",
+    ax.text(x0 + 2 * L * V_TRUE[0] + 8, y0 + 2 * L * V_TRUE[1] + 6, f"motion over\nthe {k} frames",
             color="white", fontsize=13, va="center", bbox=BOX)
 
     ax = axes[2]
@@ -126,8 +133,8 @@ def hero(frame, bp, e):
     ax.text(*mid, f"line spacing\n1 / {e.speed:.2f} px", color="white", fontsize=13, ha="center", va="center",
             bbox=BOX)
 
-    fig.text(0.5, 0.03, f"In simulation, real camera texture, {n} × {n} px: estimate {e.angle_deg:.2f}°, {e.speed:.3f} px per flash; "
-             f"true {true_angle:.2f}°, {true_speed:.3f} px per flash",
+    fig.text(0.5, 0.03, f"In simulation, real camera texture, {n} × {n} px: estimate {e.angle_deg:.2f}°, {e.speed:.3f} px per frame; "
+             f"true {true_angle:.2f}°, {true_speed:.3f} px per frame",
              ha="center", va="center", color=INK, fontsize=14)
     common.save(fig, "hero.png", dpi=130)
 

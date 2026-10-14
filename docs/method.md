@@ -1,7 +1,9 @@
 # Method
 
-This page explains how `fftvel` gets direction and speed from one multi-flash
-image, step by step, and where each step comes from. Two tags mark the origin:
+This page explains how `fftvel` gets direction and speed from one image that
+holds $K$ equally spaced copies of a moving surface, the mean of $K$ camera
+frames or one exposure with $K$ flashes, step by step, and where each step
+comes from. Two tags mark the origin:
 
 * [thesis]: taken from the doctoral thesis of Jan Horn (full reference at the
   end of this page).
@@ -15,18 +17,23 @@ not run yet). What the method achieves is in
 [results.md](results.md), what an acquisition needs in
 [acquisition.md](acquisition.md).
 
-## The multi-flash image model
+## The image model
 
-The thesis and the function names of `fftvel` call a multi-flash image a
+The thesis and the function names of `fftvel` call the analysed image a
 pulsed-exposure image (gepulste Belichtung, as the 2025 scripts write it), and
-the option `exposures` counts the flashes, or the averaged frames when a frame
-stack stands in for one image. $L$ is the half-count of the thesis, with
-$K = 2L+1$ flashes.
+the option `exposures` counts its $K$ exposures: the averaged frames, or the
+flashes. $L$ is the half-count of the thesis, with $K = 2L+1$.
 
-[thesis] A strobe fires $K = 2L+1$ times during one camera exposure. Between
-two flashes the textured surface moves by $\mathbf v$ pixels; this is the flash
-step. The sensor adds up the $K$ shifted copies of the texture $b$, here
-written as their mean:
+Two acquisitions give the same image. With averaged frames, a camera takes
+$K$ frames at a fixed frame rate while the textured surface moves, and their
+mean is computed afterwards; the step $\mathbf v$ is the motion in pixels
+between two frames. With flashes, a strobe fires $K$ times during one camera
+exposure and the sensor adds up the copies; the step is the motion between
+two flashes. The second is the setting of the thesis. In both cases the $K$
+exposures follow each other at equal steps.
+
+[thesis] The image is the mean of the $K = 2L+1$ shifted copies of the
+texture $b$:
 
 $$b_p(\mathbf x) = \frac{1}{2L+1}\sum_{k=-L}^{L} b(\mathbf x - k\mathbf v)$$
 
@@ -41,17 +48,18 @@ integer, has $2L$ zeros and $2L-1$ weak side lobes between two such places,
 and is small elsewhere. The magnitude spectrum of the texture is therefore
 covered by straight lines perpendicular to $\mathbf v$, spaced $1/|\mathbf v|$
 cycles per pixel apart. Their orientation gives the direction of motion, their
-spacing the length of the flash step.
+spacing the length of the step.
 
-For an even number of flashes, or a sum from $k = 0$ to $K-1$, only a phase
+For an even number of exposures, or a sum from $k = 0$ to $K-1$, only a phase
 factor changes. The magnitude is $|\sin(K\pi u)/(K\sin\pi u)|$ for any $K$,
 which is why the estimator accepts any $K \ge 2$ (option `exposures`). The
 magnitude is the same for $\mathbf v$ and $-\mathbf v$, so one image gives the
-direction only modulo 180 deg.
+direction only modulo 180 deg. With averaged frames, phase correlation of two
+consecutive frames gives the sign.
 
 The figure shows every stage for a simulated image: the camera texture of
 [`data/surface_texture.png`](../data/surface_texture.png), moving by (5, -3) px
-per flash with 9 flashes.
+per frame, as the mean of 9 frames with short exposures.
 
 ![Every stage of one estimate](figures/pipeline.png)
 
@@ -132,7 +140,7 @@ power of the windowed pulsed image at bin $j$ is
 
 $$P(j) = \frac{1}{K^2}\Big[K + 2\sum_{m=1}^{K-1}(K-m)\,\rho(m\mathbf v)\,\cos\Big(\frac{2\pi j m |\mathbf v|}{\tilde N}\Big)\Big]$$
 
-Each term pairs two flashes $m$ steps apart, and there are $K-m$ such pairs.
+Each term pairs two exposures $m$ steps apart, and there are $K-m$ such pairs.
 $\rho(m\mathbf v)$ is the autocorrelation of the window at the offset between
 the two copies: copies shifted by $m\mathbf v$ overlap only where the window
 covers both, so their correlation falls as the offset grows. For the
@@ -145,10 +153,13 @@ discrete autocorrelation of the window to $3.3\cdot 10^{-10}$. Since $P$ is a
 finite sum of cosines, it contains the blur that the window causes in the
 spectrum and cannot alias.
 
-If each flash lasts the fraction $d$ of the flash period (option `duty`), the
-texture moves by $d\,|\mathbf v|$ during it, and $P(j)$ is multiplied by
+If each exposure lasts the fraction $d$ of the time between two exposures
+(option `duty`), the texture moves by $d\,|\mathbf v|$ during it, and $P(j)$ is
+multiplied by
 $\mathrm{sinc}^2(j\,d\,|\mathbf v|/\tilde N)$ with
-$\mathrm{sinc}(x) = \sin(\pi x)/(\pi x)$.
+$\mathrm{sinc}(x) = \sin(\pi x)/(\pi x)$. For averaged frames the duty is the
+exposure time over the frame interval, for flashes the flash duration over
+the flash period.
 
 The template for one speed is $\tfrac12\log\big(P(j) + 10^{-3}\big)$, on a
 logarithmic grid of speeds with steps of 0.5 % (factor $e^{0.005}$). A cubic
@@ -158,14 +169,14 @@ correlation coefficient of the detrended profile and the detrended template.
 The speed with the highest quality wins, and a parabola on the log-speed grid
 refines it. The grid starts at
 
-$$v_{\min} = \frac{1.5\,\tilde N}{K\,j_{\max}} \approx \frac{3.35}{K}\ \text{px per flash},\qquad j_{\max} = \big\lfloor 0.9\,(\tilde N/2 - 1)\big\rfloor,$$
+$$v_{\min} = \frac{1.5\,\tilde N}{K\,j_{\max}} \approx \frac{3.35}{K}\ \text{px per step},\qquad j_{\max} = \big\lfloor 0.9\,(\tilde N/2 - 1)\big\rfloor,$$
 
 where the first zero of the Dirichlet pattern still lies well inside the
 profile. That is 0.37 px for $K = 9$ and 0.08 px for $K = 41$, for any square
 from 128 to 1024 px. Below it the grid continues down to a quarter of that
 value as a guard band. The top of the grid is $\tilde N/4$, where the main
 lines are 4 bins apart. The studies in [results.md](results.md) test speeds up
-to $N/4$ (64 px per flash for a 256 px square).
+to $N/4$ (64 px per step for a 256 px square).
 
 ## Step 4: validity
 
@@ -228,7 +239,7 @@ floor of 0.6 decides; at 192 px the two are almost equal.*
 `in_range` is false when the best speed lies in the guard band below
 $`v_{\min}`$ or at the top end of the grid. Motion slower than the range is
 then reported as not valid instead of as a wrong speed: in simulation, all 24
-images at 0.3 px per flash with $K = 9$ came out not valid.
+images at 0.3 px per step with $K = 9$ came out not valid.
 
 ### Isotropy check
 
@@ -244,10 +255,11 @@ failed the quality threshold, in simulation.
 
 ### Blur check (optional)
 
-A single exposure during which the surface moves by $d$ px (motion blur, no
-flashes) multiplies the spectrum by $\mathrm{sinc}^2(j d/\tilde N)$. Its main
-lobe looks like that of $K$ flashes $d/K$ apart. Only the repeated main lines
-of the flashes, $\tilde N/|\mathbf v|$ bins apart, tell the two apart, and
+A single exposure during which the surface moves by $d$ px (motion blur, one
+exposure instead of $K$) multiplies the spectrum by
+$\mathrm{sinc}^2(j d/\tilde N)$. Its main lobe looks like that of $K$
+exposures $d/K$ apart. Only the repeated main lines of the $K$ exposures,
+$\tilde N/|\mathbf v|$ bins apart, tell the two apart, and
 below $`|\mathbf v| = \tilde N/j_{\max}`$ (2.24 px for a 256 px square) they lie
 beyond the fitted profile. `fit_blur` therefore fits a template for one
 continuous exposure of free length $d$, sampled every $h = 0.5$ px along the
@@ -255,8 +267,8 @@ direction $\hat{\mathbf e}$ found in step 2:
 
 $$P_{\text{blur}}(j) = \frac{h}{d}\Big[1 + 2\sum_{q\ge1}\max\Big(1-\frac{qh}{d},\,0\Big)\,\rho(qh\,\hat{\mathbf e})\cos\frac{2\pi j q h}{\tilde N}\Big]$$
 
-`blur_like` is true when this template fits better than the flashes and the
-speed is below $`\tilde N/j_{\max}`$. The result reports `quality_blur`,
+`blur_like` is true when this template fits better than the $K$ exposures and
+the speed is below $`\tilde N/j_{\max}`$. The result reports `quality_blur`,
 `blur_length` and `blur_like` in any case; only `reject_blur` makes
 `blur_like` count against `valid`. On single camera frames of the recording
 `vid4`, all 28 crops that came out valid were blur-like. In the noise study, 21
@@ -290,29 +302,36 @@ acquisition meets them.
 2. The motion is a pure translation in the image plane during the burst: no
    rotation, no change of scale (constant working distance) and no change of
    perspective.
-3. The velocity is constant during the $K$ flashes.
-4. The flashes are equally spaced in time. Alternating intervals and a missing
-   flash both gave wrong results marked valid in simulation.
-5. The number of flashes $K$ is known exactly.
-6. Each flash is short compared with the flash period, or its duration is
-   known (`duty`).
-7. All flashes have about the same energy.
-8. No light other than the flashes reaches the sensor during the exposure.
-   Continuous light adds a motion-blurred image of the surface.
+3. The velocity is constant during the $K$ frames or flashes.
+4. The frames or flashes are equally spaced in time: a fixed frame rate
+   without dropped frames, or flashes from a clocked trigger. Alternating
+   intervals and a missing frame or flash both gave wrong results marked
+   valid in simulation.
+5. The number $K$ of averaged frames or of flashes is known exactly.
+6. Each exposure is short compared with the time between two exposures, or
+   the duty is known (`duty`): the exposure time over the frame interval, or
+   the flash duration over the flash period.
+7. All frames or flashes have about the same energy, so the light must not
+   flicker from frame to frame.
+8. For a multi-flash image, no light other than the flashes reaches the
+   sensor during the exposure. Continuous light adds a motion-blurred image of
+   the surface. Averaged frames are taken under continuous light; there the
+   exposure of each frame is the duty of assumption 6.
 9. Nothing in the analysed square stands still: no sharp static edges, masks,
    glints or hot pixels.
 10. The camera is in focus.
 11. The sensor responds linearly and does not saturate, and the image is
     stored without lossy compression (JPEG adds an 8 x 8 px block grid).
 12. The pixels are square and the image is not rescaled.
-13. The speed lies between about $3.35/K$ and $N/4$ px per flash.
+13. The speed lies between about $3.35/K$ and $N/4$ px per step.
 14. The analysed square has at least about 64 px; below 128 px the stricter
     threshold rejects many correct estimates.
 15. The texture spectrum is smooth enough for a cubic polynomial in $j$ to
     absorb it along the direction of motion.
 
-The sign of the motion is never known: one image gives the direction only
-modulo 180 deg.
+The sign of the motion is never known from the image: it gives the direction
+only modulo 180 deg. With averaged frames, phase correlation of two
+consecutive frames gives the sign.
 
 ## Options and when to use them
 
@@ -322,12 +341,12 @@ The options are keyword arguments in Python
 
 | Python | MATLAB | Default | Use it when |
 |---|---|---|---|
-| `exposures` | `'Exposures'` | 2L+1 | always: the image holds K flashes (or K averaged frames), also an even number. Give the true count: a wrong K scales slow speeds by K_true/K and can stay valid. In simulation with the forward model, telling the estimator 7, 8, 10 or 11 instead of 9 made 34.4 % of the images wrong but valid |
-| `L` | `'L'` | 4 | the half-count of the thesis: the image holds 2L+1 flashes. `exposures` overrides it |
-| `duty` | `'Duty'` | 0 | the motion during one flash (duty times speed) is not well below about 3 px. In simulation with the forward model without the option, duty 0.25 and 0.5 gave 12.5 % and 18.8 % wrong but valid results, with the speed near duty times speed divided by K; with `duty` set to the true value all images from 0 to 0.9 were correct and valid. Near 0.5 every second main line vanishes, so the value must be known |
+| `exposures` | `'Exposures'` | 2L+1 | always: the image holds K averaged frames or K flashes, also an even number. Give the true count: a wrong K scales slow speeds by K_true/K and can stay valid. In simulation with the forward model, telling the estimator 7, 8, 10 or 11 instead of 9 made 34.4 % of the images wrong but valid |
+| `L` | `'L'` | 4 | the half-count of the thesis: the image holds 2L+1 frames or flashes. `exposures` overrides it |
+| `duty` | `'Duty'` | 0 | the motion during one exposure (duty times speed) is not well below about 3 px. The duty is the exposure time over the frame interval for averaged frames, the flash duration over the flash period for flashes. In simulation with the forward model without the option, duty 0.25 and 0.5 gave 12.5 % and 18.8 % wrong but valid results, with the speed near duty times speed divided by K; with `duty` set to the true value all images from 0 to 0.9 were correct and valid. Near 0.5 every second main line vanishes, so the value must be known |
 | `roi` | `'ROI'` | largest square; 512 px in the command line and the live scripts | side of the analysed central square. Set it when the image is larger than needed. Each doubling of the side multiplies the run time by 4 to 6.5: 0.61 s for 256 px and 3.96 s for 512 px per repeated call in Python. 256 to 512 px is a good range |
-| `clip_outliers` | `'ClipOutliers'` | false | static bright spots (glints of the flash, hot pixels) may be in the image. In simulation with the forward model two glints of 3 times the mean signal made 96.9 % of the images wrong but valid; with the option all were correct and valid. It is off by default because it also flattens bright details of the texture |
-| `reject_blur` | `'RejectBlur'` | false | continuous light or vibration may blur the image during the exposure. Below about 2.2 px per flash it also rejects many correct multi-flash results (see the blur check) |
+| `clip_outliers` | `'ClipOutliers'` | false | static bright spots (glints of the light, hot pixels) may be in the image. In simulation with the forward model two glints of 3 times the mean signal made 96.9 % of the images wrong but valid; with the option all were correct and valid. It is off by default because it also flattens bright details of the texture |
+| `reject_blur` | `'RejectBlur'` | false | a single blurred exposure may be estimated instead of K exposures, for example a multi-flash image with continuous light or vibration. Below about 2.2 px per step it also rejects many correct results (see the blur check) |
 | `pad_factor` | `'PadFactor'` | 2 | rarely; larger values interpolate the spectrum and cost time |
 | `min_quality` | `'MinQuality'` | 0.6 | a stricter floor than 0.6 is wanted; small images need more anyway |
 | `diagnostics` | `'Diagnostics'` | false | the intermediate results are needed, for example for `plot_estimate` |

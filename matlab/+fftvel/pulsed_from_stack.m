@@ -1,10 +1,14 @@
 function [bp, K] = pulsed_from_stack(frames, varargin)
-%PULSED_FROM_STACK  Pulsed-exposure image from a stack of single exposures.
+%PULSED_FROM_STACK  Pulsed-exposure image from a burst of camera frames: their mean.
 %   [BP, K] = fftvel.pulsed_from_stack(FRAMES) averages the frames of
 %   FRAMES, taken along its last dimension, into one pulsed-exposure image
 %   BP (double). All other dimensions of length 1 are dropped, so the
 %   H-by-W-by-1-by-F arrays that GETDATA returns work as they are. The
 %   number of frames F must then be odd, and K = F.
+%
+%   The frames must be taken at a fixed frame rate while the surface moves
+%   at constant speed, so that the steps between them are equal; the mean
+%   is then the image that K short flashes in one exposure would give.
 %
 %   [BP, K] = fftvel.pulsed_from_stack(FRAMES, 'Name', Value, ...) sets
 %   options:

@@ -1,20 +1,25 @@
-"""Surface velocity from a single multi-flash image (2-D FFT and Radon transform).
+"""Surface velocity from averaged camera frames (2-D FFT and Radon transform).
 
-A multi-flash image holds ``K`` flashes of a moving surface in one camera
-frame. The method comes from J. Horn's doctoral thesis (2006, see
+A camera takes ``K`` frames at a fixed frame rate while a textured surface
+moves; their mean (:func:`pulsed_from_stack`) shows the surface ``K`` times,
+shifted by equal steps. A strobe flashing ``K`` times during one exposure
+gives the same image in a single frame, a multi-flash image, and the same
+code measures it. The method comes from J. Horn's doctoral thesis (2006, see
 README.md), and like the thesis the function names call such an image a
 pulsed-exposure image. The option ``exposures`` gives ``K``: the number of
-flashes, or of the frames that :func:`pulsed_from_stack` averages. ``L`` is
-the half-count of the thesis, ``K = 2L+1``.
+averaged frames, or of flashes. ``L`` is the half-count of the thesis,
+``K = 2L+1``.
 
 Public API (the names in ``__all__``):
 
-* :func:`estimate_velocity` - direction and speed from one multi-flash
-  image; returns an :class:`Estimate`. All options are keyword-only.
-* :func:`to_physical` - an estimate in pixels per flash converted to length
-  units per second, given the ground sample distance and the time step;
-  returns a :class:`PhysicalVelocity`.
-* :func:`pulsed_from_stack` - pulsed image from a stack of single frames.
+* :func:`pulsed_from_stack` - the mean of a burst of frames as one pulsed
+  image.
+* :func:`estimate_velocity` - direction and speed from one pulsed image (the
+  mean of ``K`` frames, or a multi-flash image); returns an
+  :class:`Estimate`. All options are keyword-only.
+* :func:`to_physical` - an estimate in pixels per step converted to length
+  units per second, given the ground sample distance and the time step
+  (frame interval or flash period); returns a :class:`PhysicalVelocity`.
 * :func:`angle_difference` - difference of two directions modulo 180 deg.
 * :func:`simulate_pulsed_image`, :func:`make_texture` - synthetic images
   with known velocity.
@@ -31,7 +36,7 @@ Public API (the names in ``__all__``):
 :mod:`fftvel.stream` estimates from cameras and video files.
 
 >>> import fftvel
->>> bp = fftvel.simulate_pulsed_image(256, (5, -3), 4, rng=0)   # L = 4, so K = 2L+1 = 9 flashes
+>>> bp = fftvel.simulate_pulsed_image(256, (5, -3), 4, rng=0)   # L = 4, so K = 2L+1 = 9 exposures
 >>> est = fftvel.estimate_velocity(bp, exposures=9)
 >>> round(est.speed, 1), est.valid
 (5.8, True)

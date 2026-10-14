@@ -1,10 +1,10 @@
 """Velocity from a live camera or a video file.
 
-    python python/examples/live_camera.py --mode flash --source pylon --exposures 9 --flash-period 0.001
-    python python/examples/live_camera.py --mode average --source pylon --exposures 9 --exposure-us 500
-    python python/examples/live_camera.py --mode average --source 0 --exposures 9   # any webcam through OpenCV
-    python python/examples/live_camera.py --mode flash --source recording.avi --exposures 9
+    python python/examples/live_camera.py --mode average --source pylon --exposures 9 --frame-rate 80 --exposure-us 2000
     python python/examples/live_camera.py --mode average --source pylon --exposures 9 --save data/measurements/2026-10-20_average
+    python python/examples/live_camera.py --mode average --source 0 --exposures 9   # any webcam through OpenCV
+    python python/examples/live_camera.py --mode flash --source pylon --exposures 9 --flash-period 0.001
+    python python/examples/live_camera.py --mode flash --source recording.avi --exposures 9
 
 Basler cameras need pypylon (pip install pypylon), webcams and video files
 OpenCV (pip install -e "./python[examples]", or keep an opencv-python that is
@@ -12,14 +12,8 @@ already installed and use "./python[plot,data]"; see the README).
 
 --mode must be given:
 
-flash    Every frame is one multi-flash (pulsed) image: a strobe fires K
-         times (--exposures K, or --L L for K = 2L+1) during one exposure.
-         Each frame is estimated on its own; live cameras deliver the
-         newest frame for every estimate. The speed is in px per flash
-         step, and in px/s with --flash-period. --duty is the flash pulse
-         length divided by the flash period. The flash timing cannot be
-         checked from the frame times.
-average  Continuous light: K consecutive frames are averaged into a pulsed
+average  Continuous light: K consecutive frames (--exposures K, or --L L
+         for K = 2L+1) at a fixed frame rate are averaged into a pulsed
          image (do not use this for multi-flash frames). Live cameras
          deliver a fresh burst of K frames per estimate, so frames buffered
          while estimating never end up in a window. The model needs equal
@@ -27,8 +21,14 @@ average  Continuous light: K consecutive frames are averaged into a pulsed
          more than --tol (0.1) times their median is reported as not valid
          ("uneven frame steps"). The speed is in px per frame and px/s. For
          Basler cameras the exposure time is read from the camera and passed
-         to the estimator as duty = exposure / frame step; keep it below
-         at most a quarter of the step.
+         to the estimator as duty = exposure / frame step; keep it at most
+         a quarter of the step.
+flash    Every frame is one multi-flash (pulsed) image: a strobe fires K
+         times during one exposure. Each frame is estimated on its own; live
+         cameras deliver the newest frame for every estimate. The speed is
+         in px per flash step, and in px/s with --flash-period. --duty is
+         the flash pulse length divided by the flash period. The flash
+         timing cannot be checked from the frame times.
 
 Frame times: Basler cameras use the camera clock (the host clock if the
 camera sends no timestamps, as the pylon emulator; the window is then checked
@@ -555,13 +555,13 @@ def _state(r) -> str:
 def _parse(argv):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--mode", required=True, choices=["flash", "average"],
-                   help="flash: every frame holds K strobe flashes; average: K frames are averaged")
+                   help="average: K frames are averaged; flash: every frame holds K strobe flashes")
     p.add_argument("--source", default="pylon", help="'pylon', a webcam index or a video file")
     p.add_argument("--exposures", type=int, metavar="K",
-                   help="number K >= 2 of flashes (flash mode) or frames (average mode); overrides --L")
+                   help="number K >= 2 of frames (average mode) or flashes (flash mode); overrides --L")
     p.add_argument("--L", type=int, default=4, help="half-count of the thesis, K = 2L+1 (default 4, so K = 9)")
-    p.add_argument("--duty", type=float, help="flash mode: flash pulse / flash period (0); average mode: "
-                   "exposure / frame step (default: read from a Basler camera, else 0)")
+    p.add_argument("--duty", type=float, help="average mode: exposure / frame step (default: read from a "
+                   "Basler camera, else 0); flash mode: flash pulse / flash period (0)")
     p.add_argument("--flash-period", type=float, help="flash mode: time between flashes in s, for px/s")
     p.add_argument("--roi", type=int, default=512,
                    help="side of the analysed central square in px (512 takes several seconds per estimate)")

@@ -360,7 +360,7 @@ def test_run_on_synthetic_average(repo, tmp_path):
     # stopped surface: not valid; steps too short to check, but the timestamps are regular
     assert static["valid"] == "0" and static["reason"] and static["uneven_steps"] == "0"
     assert float(static["step_speed_px"]) < 0.05 and static["step_spread"] == "" and static["ref_speed_diff"] == ""
-    assert "Average mode (emulated multi-flash): 3 windows, 1 with uneven steps (column uneven_steps)" in out
+    assert "Average mode (averaged frames): 3 windows, 1 with uneven steps (column uneven_steps)" in out
     assert "  moving_dropped.npz  uneven steps" in out
     assert "Frame period from the timestamps (frame_period_s empty) for 2 windows" in out
     assert "Static images marked valid: 0 of 1" in out

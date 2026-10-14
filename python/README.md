@@ -1,9 +1,10 @@
 # fftvel
 
 The Python package of
-[Surface velocity from a single multi-flash image](../README.md): direction
-and speed of a moving textured surface from one multi-flash image, with the
-2-D FFT and the Radon transform. It gives the same results as the
+[Surface velocity from averaged camera frames](../README.md): direction and
+speed of a moving textured surface from the mean of K camera frames taken at
+a fixed frame rate, or from one multi-flash image, with the 2-D FFT and the
+Radon transform. It gives the same results as the
 MATLAB/Octave package `+fftvel` in [`../matlab`](../matlab), to 1e-9 on the
 shared cases of `tests/parity`, so far checked in GNU Octave; the code has not
 run in MATLAB yet. The main README describes the method, the
@@ -51,22 +52,26 @@ An editable install made before the command existed needs
 `python -m pip install -e ./python` once more. From the repository root:
 
 ```bash
+fftvel estimate data/measurements/synthetic_average/moving_regular.npz --stack --exposures 9 --duty 0.1 --gsd 0.05 --period 0.005
+fftvel estimate data/recordings/vid2.mat --stack --exposures 9
 fftvel simulate --exposures 9 --vx 5 --vy -3 --plot estimate.png
 fftvel estimate data/measurements/synthetic_flash/flash_b.png --exposures 8 --duty 0.2 --gsd 0.05 --period 0.0005
-fftvel estimate data/recordings/vid2.mat --stack --exposures 9
 ```
 
-`simulate` estimates a simulated 256 x 256 px image with 9 flashes and known
-motion. `estimate` reads PNG, TIFF, BMP, `.npy`, `.npz` and `.mat` files,
-writes the result as JSON to stdout and notes on what it read and used to
-stderr. A single image needs the flash count, `--exposures K` for any K of
-at least 2, or `--L L` for K = 2L+1 (L is the half-count of the thesis).
-`--duty` is the flash duration divided by the flash period. `--gsd` (length
-per pixel) and `--period` (seconds between flashes) add the speed per second
-to the JSON: 559.68 mm/s for the second command, an image made with
-560 mm/s. `--stack` averages the first K frames of a stack; the 2025
-recording in the third command has uneven steps and comes out not valid.
-Further options are `--roi` (default 512 px), `--clip-outliers`,
+`estimate` reads PNG, TIFF, BMP, `.npy`, `.npz` and `.mat` files, writes the
+result as JSON to stdout and notes on what it read and used to stderr.
+`--stack` averages the first K frames of a stack (`--exposures K`; without
+it all frames, if their number is odd). `--duty` is the exposure time
+divided by the frame interval, or for a multi-flash image the flash duration
+divided by the flash period. `--gsd` (length per pixel) and `--period`
+(seconds between frames, or between flashes) add the speed per second to the
+JSON: 60.05 mm/s for the synthetic burst of the first command, made with
+60 mm/s. The 2025 recording in the second command has uneven steps and comes
+out not valid. `simulate` estimates a simulated 256 x 256 px mean of 9
+exposures with known motion. A single multi-flash image needs the flash
+count, `--exposures K` for any K of at least 2, or `--L L` for K = 2L+1 (L is
+the half-count of the thesis): 559.68 mm/s for the last command, an image
+made with 560 mm/s. Further options are `--roi` (default 512 px), `--clip-outliers`,
 `--frames-axis`, `--var` and `--plot`; `fftvel estimate --help` explains them
 all, and `fftvel --version` prints the version.
 

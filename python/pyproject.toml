@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fftvel"
 version = "0.1.0"
-description = "Surface velocity from a single multi-flash image (2-D FFT and Radon transform)"
+description = "Surface velocity from averaged camera frames or a single multi-flash image (2-D FFT and Radon transform)"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

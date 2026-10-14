@@ -75,7 +75,7 @@ def plot(rows, srows):
     axes[0].legend(frameon=False, fontsize=9, labelcolor=INK2, loc="center left")
     common.title(fig, "Sensor noise",
                  f"in simulation: {_join(per_level)} images per noise level and texture ({common.N} \u00d7 {common.N} px, "
-                 f"{_join(flashes)} flashes, 1 to 32 px per flash); correct = within 2 deg and 5 %")
+                 f"K = {_join(flashes)}, 1 to 32 px per step); correct = within 2 deg and 5 %")
     common.save(fig, "noise.png")
 
     fig, (ax,) = common.figure(1, 9.6)

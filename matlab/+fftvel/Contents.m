@@ -1,16 +1,19 @@
-% FFTVEL  Surface velocity from a single multi-flash image (2-D FFT and Radon transform).
+% FFTVEL  Surface velocity from averaged camera frames (2-D FFT and Radon transform).
 % Version 0.1.0
 %
-% A multi-flash image holds K flashes of a moving surface in one camera
-% frame. The method comes from J. Horn's doctoral thesis (2006, see
+% A camera takes K frames at a fixed frame rate while a textured surface
+% moves; their mean (pulsed_from_stack) shows the surface K times, shifted
+% by equal steps. A strobe flashing K times during one exposure gives the
+% same image in a single frame, a multi-flash image, and the same code
+% measures it. The method comes from J. Horn's doctoral thesis (2006, see
 % README.md), and like the thesis the function names call such an image a
 % pulsed-exposure image. The option 'Exposures' gives K: the number of
-% flashes, or of the frames that pulsed_from_stack averages. 'L' is the
-% half-count of the thesis, K = 2L+1.
+% averaged frames, or of flashes. 'L' is the half-count of the thesis,
+% K = 2L+1.
 %
 % Estimation
+%   pulsed_from_stack     - Pulsed-exposure image from a burst of camera frames: their mean.
 %   estimate_velocity     - Velocity of a moving texture from one pulsed-exposure image.
-%   pulsed_from_stack     - Pulsed-exposure image from a stack of single exposures.
 %
 % Units and angles
 %   to_physical           - Velocity in length units per second from an estimate in pixels.
@@ -28,10 +31,11 @@
 %
 % Example (from the repository root):
 %   addpath('matlab')
-%   bp = fftvel.simulate_pulsed_image(256, [5 -3], 4);   % L = 4, so K = 2L+1 = 9 flashes
-%   est = fftvel.estimate_velocity(bp, 'Exposures', 9);
-%   fprintf('%.1f deg, %.2f px per flash\n', est.angle_deg, est.speed)
-%   % about 31.0 deg, 5.83 px per flash
+%   [~, frames] = fftvel.simulate_pulsed_image(256, [5 -3], 4);   % 9 frames (L = 4, K = 2L+1)
+%   [bp, K] = fftvel.pulsed_from_stack(frames);                   % their mean, K = 9
+%   est = fftvel.estimate_velocity(bp, 'Exposures', K);
+%   fprintf('%.1f deg, %.2f px per frame\n', est.angle_deg, est.speed)
+%   % about 31.0 deg, 5.83 px per frame
 %
 % The live camera script live_basler and the demos are in matlab/examples.
 % The functions in fftvel.internal are helpers of the functions above.

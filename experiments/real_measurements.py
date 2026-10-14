@@ -1,20 +1,21 @@
-"""Your own measurements against the set motion: estimate every multi-flash
-image (or average-mode frame stack) listed in a meta.csv, convert to mm/s
-and summarise the errors.
+"""Your own measurements against the set motion: estimate every burst of
+averaged frames (mode average) or multi-flash image listed in a meta.csv,
+convert to mm/s and summarise the errors.
 
     python experiments/real_measurements.py data/measurements/SESSION/meta.csv [--figure PNG] [--out FILE]
-    python experiments/real_measurements.py data/measurements/synthetic_flash/meta.csv --out results.csv
+    python experiments/real_measurements.py data/measurements/synthetic_average/meta.csv --out results.csv
 
-meta.csv has one row per image: the file, the number of flashes, the flash
-period, the duty, the gsd, the set speed and direction, whether the surface
-stood still, and optionally two single-flash frames for a phase-correlation
-cross-check (format and advice: data/measurements/README.md). Writes
-results.csv next to meta.csv (or to --out) with the estimate of every image,
-and prints the share of moving images marked valid, the median and 95th
-percentile of the speed and angle errors of the valid ones, the static
-images marked valid with a Clopper-Pearson upper bound, and the worst
-images. --figure adds a plot of estimated against set speed, the speed
-errors and the angle errors.
+meta.csv has one row per burst or image: the file, the mode, the number of
+frames or flashes, the frame period or flash period, the exposure or duty,
+the gsd, the set speed and direction, whether the surface stood still, and
+for multi-flash images optionally two single-flash frames for a
+phase-correlation cross-check (format and advice:
+data/measurements/README.md). Writes results.csv next to meta.csv (or to
+--out) with the estimate of every burst or image, and prints the share of
+moving images marked valid, the median and 95th percentile of the speed and
+angle errors of the valid ones, the static images marked valid with a
+Clopper-Pearson upper bound, and the worst images. --figure adds a plot of
+estimated against set speed, the speed errors and the angle errors.
 
 All rows are checked first. A row with a problem (a file that does not
 exist, a value out of range) is reported with its line, skipped and listed
@@ -22,17 +23,17 @@ in results.csv with the reason; the other rows are still analysed. The exit
 status is 0 when every row was analysed, 1 when some were not, and 2 when
 meta.csv or the options cannot be used at all.
 
-In flash mode (the default), a file that holds a stack (a .mat from getdata,
-a .npy, a .npz or a multi-page TIFF) gives one image per frame, each
-estimated on its own; ``file.mat#3`` selects frame 3 (counted from 1).
-Every frame must then be a multi-flash image. A row with mode ``average``
-instead averages consecutive frames of a stack, taken under continuous light
-with short exposures, into one pulsed image (testing without a flash; it
-emulates the flashes, it does not test their timing). The steps between
-those frames are checked by phase correlation and, if the file holds
-timestamps, by the frame intervals. data/measurements/synthetic_flash and
-data/measurements/synthetic_average hold small synthetic examples of the
-two modes. Files are read with fftvel.io.
+A row with mode ``average`` averages consecutive frames of a stack (a .mat
+from getdata, a .npy, a .npz or a multi-page TIFF), taken at a fixed frame
+rate under continuous light with short exposures, into one pulsed image.
+The steps between those frames are checked by phase correlation and, if
+the file holds timestamps, by the frame intervals. A row without a mode, or
+with mode ``flash``, holds multi-flash images: a file that holds a stack
+then gives one image per frame, each estimated on its own, and
+``file.mat#3`` selects frame 3 (counted from 1).
+data/measurements/synthetic_average and data/measurements/synthetic_flash
+hold small synthetic examples of the two modes. Files are read with
+fftvel.io.
 """
 
 from __future__ import annotations
@@ -1017,7 +1018,7 @@ def _summary_average(ok, valid, out, worst, log):
     timed = [r for r in avg if r.get("period_source") == "timestamps"]
     rated = [r for r in avg if r.get("period_source") == "frame_rate"]
     out.update(average=len(avg), uneven=len(uneven), unchecked=len(unchecked))
-    text = (f"Average mode (emulated multi-flash): {len(avg)} window{'s' if len(avg) > 1 else ''}, "
+    text = (f"Average mode (averaged frames): {len(avg)} window{'s' if len(avg) > 1 else ''}, "
             f"{len(uneven)} with uneven steps (column uneven_steps)")
     if unchecked:
         text += f", {len(unchecked)} not checked (steps below {STEP_MIN:g} px and no timestamps)"

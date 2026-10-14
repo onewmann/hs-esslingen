@@ -24,7 +24,7 @@ checks that it names every one with its H1 line and the version of
 | `fftvel.pulsed_from_stack` (`core.py`) | `fftvel.pulsed_from_stack` | mean of the first K frames of a stack |
 | `fftvel.to_physical` (`core.py`) | `fftvel.to_physical` | pixels per step to length units per second |
 | `fftvel.angle_difference` (`core.py`) | `fftvel.angle_difference` | difference of two directions modulo 180 deg |
-| `fftvel.simulate_pulsed_image` (`simulate.py`) | `fftvel.simulate_pulsed_image` | simulated multi-flash image with known motion |
+| `fftvel.simulate_pulsed_image` (`simulate.py`) | `fftvel.simulate_pulsed_image` | simulated mean of K exposures (averaged frames, or a multi-flash image) with known motion |
 | `fftvel.make_texture` (`simulate.py`) | `fftvel.make_texture` | random texture for the simulator |
 | `fftvel.phase_correlation` (`phasecorr.py`) | `fftvel.phase_correlation` | shift between two frames, the independent reference |
 | `fftvel.plot_estimate` (`plotting.py`) | `fftvel.plot_estimate` | diagnostic figure; needs `diagnostics=True` (`'Diagnostics', true`) |
