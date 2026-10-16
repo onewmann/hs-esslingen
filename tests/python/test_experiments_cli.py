@@ -142,7 +142,11 @@ def test_ci_runs_known_parts(repo, experiments):
             named = named[:next((i for i, w in enumerate(named) if w.startswith("--")), len(named))]
             assert named and set(named) <= set(run.ALL_PARTS), args
     metas = re.findall(r"python experiments/real_measurements\.py (\S+)", text)
-    assert metas and all((repo / m).is_file() for m in metas), metas
+    in_repo = [m for m in metas if not m.startswith('"${{')]
+    assert in_repo and all((repo / m).is_file() for m in in_repo), metas
+    # a meta.csv in the runner's temp folder is written by a session's extract_frames.py just before
+    made = re.findall(r"python (data/measurements/\S+/extract_frames\.py) --out", text)
+    assert len(metas) - len(in_repo) == len(made) and all((repo / m).is_file() for m in made), (metas, made)
 
 
 def test_no_script_looks_like_a_test_module(repo):
