@@ -7,7 +7,7 @@
 A camera takes K frames (9 by default) at a fixed frame rate while a textured surface moves past it, and the mean of these frames shows the surface K times, shifted by the same step each time.
 In the 2-D spectrum of the mean image the shifts become evenly spaced straight lines: their angle gives the direction of motion, their spacing the distance moved per frame.
 A strobe that flashes K times during one exposure gives the same image in a single frame, which is the setting of the thesis the method comes from: contactless measurement of a vehicle's speed over ground.
-The estimator works in simulation and on synthetic frame sequences; it has not yet been tested on a real recording with a known speed.
+The estimator works in simulation, on synthetic frame sequences and on a first real recording, a hand-held phone video at 120 frames per second, where it agrees with phase correlation of the separate frames; a test against a known physical speed is still to come.
 
 ![One frame of a real surface texture, the mean of 9 frames of the same surface moving, and the log spectrum of that mean](docs/figures/hero.png)
 
@@ -18,7 +18,7 @@ The estimator works in simulation and on synthetic frame sequences; it has not y
 | Area | State |
 |---|---|
 | Simulation and synthetic sequences | Works. In simulation (256 px, 9 frames with short exposures, no noise) the direction is within 0.70 deg and the speed within 0.47 % from 0.4 to 64 px per frame. On the two synthetic test sequences with constant motion (whole-pixel steps) all 24 windows of 9 averaged frames are valid. |
-| Real camera, averaged frames | The 2025 Basler recordings are the only real frames so far. Their steps between frames are uneven, by a factor of 2.8 to 4.0 within a recording, and the estimator rejects all 6 of their 9-frame windows, as it should. New recordings at a fixed frame rate are in preparation. |
+| Real camera, averaged frames | Works on a first real recording: a phone moved by hand over a desk top at 120 frames per second, 5.3 to 13.7 px per frame. All 68 windows of 5 frames with even steps are valid and within 0.81 % and 0.52 deg of phase correlation of the same frames (median 0.21 % and 0.13 deg) ([phone video](data/measurements/2026-10-16_phone_120fps/README.md)). There is no physical reference speed and no recording of the stopped surface yet. The 2025 Basler recordings, with steps that vary by a factor of 2.8 to 4.0, are rejected, as they should be. |
 | Real multi-flash images | None yet. |
 | Camera scripts | Experimental. Neither live script has run on camera hardware; the Python one was checked with the pylon camera emulator. |
 | Tests | CI on every push: the Python tests on Python 3.10, 3.13 and 3.14, and the MATLAB/Octave tests, parity cases included, in GNU Octave and in MATLAB. Both jobs also run the two demos. |
@@ -97,6 +97,7 @@ Ordered by how independent the data are of the estimator's own model. All number
 
 | Study | Data | Result |
 |---|---|---|
+| [Phone video at 120 frames per second](docs/results.md#phone-video-at-120-frames-per-second) | 447 real frames of a phone moved by hand over a desk top; windows of 5 frames averaged; reference: the mean step between the same frames by phase correlation | 68 of 68 windows with even steps valid, speed within 0.81 % (median 0.21 %), direction within 0.52 deg; the 21 windows with uneven steps (dropped frames, changing motion) are flagged |
 | [Synthetic test sequences](docs/results.md#synthetic-test-sequences) | 4 sequences from the 2025 student project, made without `fftvel`; windows of 9 frames averaged | Constant motion (whole-pixel steps): 24 of 24 windows valid, 134.93 to 135.03 deg (true 135), speed within 0.005 px. Changing speed: 17 of 22 valid, errors up to 11.1 %. Irregular steps: 4 of 22 valid, errors up to 14.4 % |
 | [2025 recordings](docs/results.md#the-2025-recordings) | 3 Basler frame sequences of a moving surface, two 9-frame averages each | Steps vary by a factor of 2.8 to 4.0 within a recording; all 6 windows rejected (quality 0.23 to 0.40, threshold 0.6) |
 | [Single camera frames](docs/results.md#single-camera-frames-a-real-null-test) | 1360 crops of single frames of the 2025 recordings: one exposure each, so nothing repeats | 59 valid, all false alarms; 41 of the 47 on the moving surface look like motion blur |
@@ -275,4 +276,4 @@ Jan Horn: *Zweidimensionale Geschwindigkeitsmessung texturierter Oberflächen mi
 
 ## Citation and licence
 
-[CITATION.cff](CITATION.cff) holds the citation of this code, and GitHub offers it under "Cite this repository". For the method, cite the thesis above. The code is under the MIT licence, see [LICENSE](LICENSE). The data files in `data/` (the test sequences, the camera texture, the 2025 recordings and the synthetic measurement examples) are under CC BY 4.0; [data/README.md](data/README.md#licence-of-the-data) says what each file is and who made it.
+[CITATION.cff](CITATION.cff) holds the citation of this code, and GitHub offers it under "Cite this repository". For the method, cite the thesis above. The code is under the MIT licence, see [LICENSE](LICENSE). The data files in `data/` (the test sequences, the camera texture, the 2025 recordings, the phone video and the synthetic measurement examples) are under CC BY 4.0; [data/README.md](data/README.md#licence-of-the-data) says what each file is and who made it.

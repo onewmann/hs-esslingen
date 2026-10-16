@@ -2,8 +2,8 @@
 
 Two small files for tests and simulations and the four camera recordings in
 `recordings/` come from the 2025 student project. `measurements/` is the
-folder for measurement sessions of your own; it holds two synthetic example
-sessions. The data files in this folder are under CC BY 4.0
+folder for measurement sessions; it holds two synthetic example sessions
+and one real recording, a phone video at 120 frames per second. The data files in this folder are under CC BY 4.0
 ([licence of the data](#licence-of-the-data)).
 
 ## `testsequences.mat`
@@ -49,8 +49,8 @@ columns x 1 colour channel x frames).
 The steps are the displacement between consecutive frames by phase
 correlation of the central 1024 x 1024 px. They are not uniform, while the
 method assumes equal steps between the frames it averages, so the estimator
-rejects all six 9-frame windows of `vid2` to `vid4`; new recordings at a
-fixed frame rate are in preparation.
+rejects all six 9-frame windows of `vid2` to `vid4`. The phone video in
+`measurements/2026-10-16_phone_120fps/`, with even steps, is measured.
 `python experiments/run.py --only recordings` analyses this (the folder
 defaults to `data/recordings`) and writes `experiments/results/recordings.csv`
 and `docs/figures/recordings.png`.
@@ -85,6 +85,7 @@ say what you changed.
 | `recordings/vid1.mat` to `vid4.mat` | Basler camera recordings | Oliver Neumann's camera recordings from the 2025 student project |
 | `surface_texture.png` | central 1024 x 1024 px of the first frame of `recordings/vid2.mat` | cut from that recording in the rework |
 | `measurements/synthetic_average/`, `measurements/synthetic_flash/` | simulated frame stacks, multi-flash images and their `meta.csv` | written by the `make_example.py` script next to them, from `surface_texture.png` |
+| `measurements/2026-10-16_phone_120fps/` | phone video of a desk top at 120 frames per second, its `meta.csv`, results and figure | Oliver Neumann's recording (2026); the video stream is unchanged, the sound track and the file metadata were removed |
 
-The `make_example.py` scripts are code and, like all code in this
+The `make_example.py` and `extract_frames.py` scripts are code and, like all code in this
 repository, under the MIT licence of [LICENSE](../LICENSE).

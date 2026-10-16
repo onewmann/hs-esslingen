@@ -11,10 +11,11 @@ abstract: >-
   strobe flashing K times during one exposure gives the same image; that is
   the setting of the doctoral thesis the method comes from. Python package
   fftvel and MATLAB/Octave package +fftvel; parity tests in Python, GNU
-  Octave and MATLAB check that both give the same results to 1e-9. Tested in simulation
-  and on synthetic image sequences; the only real frame recordings so far have
-  uneven steps and are rejected, and no real multi-flash image has been
-  analysed yet.
+  Octave and MATLAB check that both give the same results to 1e-9. Tested in simulation,
+  on synthetic image sequences and on a hand-held phone video at 120 frames
+  per second, where it agrees with phase correlation of the separate frames;
+  no test against a physical reference speed and no real multi-flash image
+  yet.
 authors:
   - family-names: Neumann
     given-names: Oliver

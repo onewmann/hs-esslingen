@@ -170,6 +170,18 @@ publishing. Done in this session:
   final tree equal to the branch minus docs/dev, photo pixels unchanged.
 - 367 Python tests and 10 Octave test files pass.
 
+Phone video (16 October). The owner recorded the desk top with a phone: three
+videos at 30 fps (76 to 93 px per frame, motion blur; 51 of 268 windows of 5
+frames valid; not committed) and one at 120 fps, which is now the session
+data/measurements/2026-10-16_phone_120fps (video stream unchanged, sound and
+metadata removed; extract_frames.py with OpenCV; 68 of 68 windows with even
+steps valid, median 0.21 % and 0.13 deg against the mean step). README Status,
+results.md, acquisition.md (section Phone videos), CITATION.cff and
+data/README.md updated; CI extracts and evaluates the session. Commit signing
+is off in this clone (git config commit.gpgsign false), as the owner asked.
+Still missing: a recording of the phone lying still, and a physical reference
+(GSD from a ruler in the image, a known speed).
+
 ## Next steps
 
 1. Record the test without a flash: follow docs/acquisition.md, section

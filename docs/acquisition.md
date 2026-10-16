@@ -4,9 +4,11 @@ What a camera set-up needs so that the mean of a burst of frames, or one
 multi-flash image, satisfies the model of [method.md](method.md), and how to
 record and evaluate your own measurements. The first part covers frame
 bursts, the main mode of this repository; the multi-flash set-up of the thesis
-follows as an extension. No usable real recording exists yet: the 2025 frame
-recordings have uneven steps and are rejected, new recordings at a fixed
-frame rate are in preparation, and no multi-flash image has been recorded.
+follows as an extension. The first real recording that the estimator
+measures is a hand-held phone video at 120 frames per second
+([phone video](../data/measurements/2026-10-16_phone_120fps/README.md)); a
+recording against a physical reference speed is still to come, and no
+multi-flash image has been recorded.
 The numbers on this page come from the simulations and the independent
 forward model in [results.md](results.md), from the 2025 camera recordings,
 and from worked examples computed here.
@@ -137,6 +139,27 @@ reflections. Keep sheet edges, clamps, tape, screw heads and dust spots out of
 the analysed square during the whole burst, and make the sheet longer than the
 move plus the field of view. Static bursts of the surface must come out not
 valid ([static images](#static-images)).
+
+### Phone videos
+
+A phone can record usable bursts. In the
+[phone video](../data/measurements/2026-10-16_phone_120fps/README.md), slow
+motion at 120 frames per second gave 5 to 14 px per frame for a hand moving at
+an ordinary pace, and all windows with even steps were valid; at 30 frames per
+second the same hand gave 76 to 93 px per frame with strong motion blur, and
+few windows were valid ([results](results.md#phone-video-at-120-frames-per-second)).
+
+* Record in slow motion (120 or 240 frames per second), or in a manual mode
+  with a short exposure (1/1000 s) and the lamp on.
+* Move the phone flat, at a constant height and a steady pace, for example
+  along a ruler or the edge of the table.
+* The lamp makes a bright spot that stays at the same place in the image.
+  Analyse a square away from it (`extract_frames.py` of the phone session
+  shows how to cut one from a video).
+* The phone stores a timestamp for every frame; dropped frames show up as
+  longer gaps, and the step check flags the windows that hold them.
+* Video files are compressed with loss. It did not prevent the measurement
+  here, but keep the bit rate high.
 
 ### Reference speed
 

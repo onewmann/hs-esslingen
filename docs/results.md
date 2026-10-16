@@ -3,12 +3,13 @@
 This page collects all studies, ordered by how independent they are of the
 estimator's own model. The first ones use data that `fftvel` did not generate;
 the later ones use images from models, and the closer such a model is to the
-one the estimator fits, the less a good result proves. The only real
-recordings analysed so far are the 2025 Basler frame sequences, whose uneven
-steps the estimator rejects. New frame recordings at a fixed frame rate are in
-preparation, no real multi-flash image has been recorded yet, and
+one the estimator fits, the less a good result proves. The real recordings
+are a phone video at 120 frames per second, which the estimator measures in
+agreement with phase correlation, and the 2025 Basler frame sequences, whose
+uneven steps it rejects. No recording with a physical reference speed and no
+real multi-flash image exist yet;
 [`data/measurements/README.md`](../data/measurements/README.md) describes the
-format both will be evaluated in.
+format they will be evaluated in.
 
 The simulated images hold $K$ instantaneous exposures at equal steps, which is
 the mean of $K$ frames with short exposures and equally one exposure with $K$
@@ -22,6 +23,41 @@ Every number comes from the CSV files in
 direction within 2 deg and a speed within 5 % of the true values. How the
 estimator works is in [method.md](method.md), what an acquisition needs in
 [acquisition.md](acquisition.md).
+
+## Phone video at 120 frames per second
+
+A phone moved by hand over the speckled top of a desk, recorded in slow
+motion at 120 frames per second with the phone's lamp on: 447 frames,
+3.9 s, 5.3 to 13.7 px per frame, close to horizontal. Windows of 5
+consecutive frames of a 512 x 512 px square below the lamp's bright spot were
+averaged and estimated; the reference is the mean step between the same
+frames by phase correlation, which is independent of the estimator but not of
+the recording. The video, the script that cuts the frames and all outputs are
+in [`data/measurements/2026-10-16_phone_120fps`](../data/measurements/2026-10-16_phone_120fps/README.md).
+
+| | Windows | Valid | Speed against the step: median, 95th percentile, max | Direction: median, max |
+|---|---:|---:|---|---|
+| Even steps | 68 | 68 | 0.21 %, 0.61 %, 0.81 % | 0.13 deg, 0.52 deg |
+| Uneven steps | 21 | 20 | (left out; see below) | |
+
+None of the 68 windows with even steps is off by more than 5 % or 2 deg
+(one-sided 95 % upper bound 4.3 %; the windows come from one recording and
+are not independent). The phone dropped two frames at four places; the four
+valid windows that hold such a gap are 32 to 34 % below the mean step, which
+the three times longer step inflates, and within 0.5 % of the median step.
+The step check flags all of them, and by the exclusion rule they are left out.
+There is no physical reference speed (the ground sample distance was not
+measured), no recording of the phone lying still, and the estimator and the
+reference share any scale error of the image, such as lens distortion or
+rolling shutter.
+
+Three earlier videos of the same desk at 30 frames per second (not in the
+repository) moved by 76 to 93 px per frame (median), with steps that varied
+by 24 to 36 % within 9 frames and strong motion blur. Of their windows of 5
+frames, 51 of 268 were valid, and the share fell with speed: 14 of 21 of the
+windows with fairly even steps were valid at 30 to 60 px per frame, 5 of 78
+above 90 px. At 120 frames per second the steps are four times smaller and the
+exposure shorter.
 
 ## Synthetic test sequences
 
@@ -77,8 +113,9 @@ The steps vary by a factor of 2.8 to 4.0 within each recording and their
 directions spread over 29 to 41 deg, so the averages do not follow the model.
 All six windows are rejected; for the 1024 px square the threshold is 0.6.
 This shows that the validity check refuses data that break the model. It says
-nothing about the accuracy on real frames with equal steps or on multi-flash
-images; new recordings at a fixed frame rate are in preparation.
+nothing about the accuracy on real frames with equal steps, which the
+[phone video](#phone-video-at-120-frames-per-second) shows, or on multi-flash
+images.
 
 ```bash
 python experiments/recordings_2025.py
