@@ -49,11 +49,13 @@ columns x 1 colour channel x frames).
 The steps are the displacement between consecutive frames by phase
 correlation of the central 1024 x 1024 px. They are not uniform, while the
 method assumes equal steps between the frames it averages, so the estimator
-rejects all six 9-frame windows of `vid2` to `vid4`. The phone video in
-`measurements/2026-10-16_phone_120fps/`, with even steps, is measured.
+rejects all six 9-frame windows of `vid2` to `vid4`.
 `python experiments/run.py --only recordings` analyses this (the folder
 defaults to `data/recordings`) and writes `experiments/results/recordings.csv`
 and `docs/figures/recordings.png`.
+The phone video in `measurements/2026-10-16_phone_120fps/` is measured: its 68
+windows with even steps are valid, and the step check flags the 21 others
+(dropped frames, changing motion).
 
 `fftvel.pulsed_from_stack` (MATLAB and Python) and
 `python -m fftvel estimate data/recordings/vid2.mat --stack --exposures 9`

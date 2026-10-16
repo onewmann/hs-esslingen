@@ -32,8 +32,9 @@ the square breaks the model (assumption 9 in
 The frame interval is 8.32 ms (median of the timestamps stored in the video).
 There is a gap of 178 ms after the first frame, as the phone starts recording,
 and four gaps of 25 ms, three frame intervals, where the phone dropped two
-frames. The surface moved by 5.3 to 13.7 px per frame, close to horizontal
-(directions of -7 to 14 deg). The exposure time is not stored, so the duty is
+frames. Between consecutive frames the surface moved by about 1.5 to 14.3 px
+(5.3 to 13.7 px in the 68 windows with even steps), close to horizontal
+(directions of -11 to 15 deg between frames, -7 to 14 deg in those windows). The exposure time is not stored, so the duty is
 taken as 0. Nothing was saturated.
 
 ## Result
@@ -59,7 +60,7 @@ recording of one surface and are not independent).
 The window that is not valid is the first one, which holds the start gap.
 Four of the valid windows with uneven steps hold one of the 25 ms gaps; their
 estimates are 32 to 34 % below the mean step, because one of their four steps
-is three times as long. Their estimates agree within 0.5 % with the median of
+is three times as long. Their estimates agree within 0.7 % with the median of
 the steps, the regular step between the other frames. A fifth window has steps
 that spread by 23 % and is 2.3 deg off. By the exclusion rule of
 [acquisition.md](../../docs/acquisition.md#first-recording-step-by-step) all

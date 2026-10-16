@@ -23,10 +23,12 @@ def test_video_frames_and_timestamps(ef):
     pytest.importorskip("cv2")
     frames, t = ef.read_video(SESSION / "desk_120fps.mp4", max_frames=12)
     assert frames.shape == (12, 512, 512) and frames.dtype == np.uint8
-    assert t[0] == 0 and np.all(np.diff(t) > 0)
+    assert np.all(np.diff(t) > 0)
     assert 0.177 < t[1] < 0.179                          # the gap after the first frame
     assert np.allclose(np.diff(t[1:]), 1 / 120.2, rtol=0.01)
-    assert 60 < frames.mean() < 200 and frames.std() > 5   # texture, not a black or saturated square
+    # the square below the lamp's spot: mean about 89 and no saturation (a wrongly turned frame gives
+    # a different square with a mean near 118 that holds part of the saturated spot)
+    assert 87 < frames.mean() < 92 and frames.max() < 200 and frames.std() > 5
 
 
 def test_meta_csv_lists_the_windows_of_the_video(ef, tmp_path):

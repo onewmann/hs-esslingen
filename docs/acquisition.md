@@ -144,10 +144,11 @@ valid ([static images](#static-images)).
 
 A phone can record usable bursts. In the
 [phone video](../data/measurements/2026-10-16_phone_120fps/README.md), slow
-motion at 120 frames per second gave 5 to 14 px per frame for a hand moving at
-an ordinary pace, and all windows with even steps were valid; at 30 frames per
-second the same hand gave 76 to 93 px per frame with strong motion blur, and
-few windows were valid ([results](results.md#phone-video-at-120-frames-per-second)).
+motion at 120 frames per second gave about 5 to 14 px per frame in the windows
+with even steps, for a hand moving at an ordinary pace, and all those windows
+were valid. Three earlier videos at 30 frames per second (not in the
+repository) moved by 76 to 93 px per frame with strong motion blur, and few
+windows were valid ([results](results.md#phone-video-at-120-frames-per-second)).
 
 * Record in slow motion (120 or 240 frames per second), or in a manual mode
   with a short exposure (1/1000 s) and the lamp on.
@@ -549,8 +550,9 @@ window with a dropped frame through the step check and marks the static
 window not valid. On the multi-flash example it marks both moving images
 valid with speed errors of 0.055 and 0.057 % and the static image not valid.
 These errors come from the estimator alone, without the errors of a real
-axis, GSD or timing. Real frame recordings at a fixed frame rate are being
-prepared and are not in the repository yet.
+axis, GSD or timing. The first real recording, a hand-held phone video at 120
+frames per second, is in `data/measurements/2026-10-16_phone_120fps`; a
+recording against a physical reference speed is still to come.
 
 ### Checklist
 

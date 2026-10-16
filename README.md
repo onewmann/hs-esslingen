@@ -18,7 +18,7 @@ The estimator works in simulation, on synthetic frame sequences and on a first r
 | Area | State |
 |---|---|
 | Simulation and synthetic sequences | Works. In simulation (256 px, 9 frames with short exposures, no noise) the direction is within 0.70 deg and the speed within 0.47 % from 0.4 to 64 px per frame. On the two synthetic test sequences with constant motion (whole-pixel steps) all 24 windows of 9 averaged frames are valid. |
-| Real camera, averaged frames | Works on a first real recording: a phone moved by hand over a desk top at 120 frames per second, 5.3 to 13.7 px per frame. All 68 windows of 5 frames with even steps are valid and within 0.81 % and 0.52 deg of phase correlation of the same frames (median 0.21 % and 0.13 deg) ([phone video](data/measurements/2026-10-16_phone_120fps/README.md)). There is no physical reference speed and no recording of the stopped surface yet. The 2025 Basler recordings, with steps that vary by a factor of 2.8 to 4.0, are rejected, as they should be. |
+| Real camera, averaged frames | Works on a first real recording: a phone moved by hand over a desk top at 120 frames per second. All 68 windows of 5 frames with even steps are valid and within 0.81 % and 0.52 deg of phase correlation of the same frames (median 0.21 % and 0.13 deg), at 5.3 to 13.7 px per frame ([phone video](data/measurements/2026-10-16_phone_120fps/README.md)). There is no physical reference speed and no recording of the stopped surface yet. The 2025 Basler recordings, with steps that vary by a factor of 2.8 to 4.0, are rejected, as they should be. |
 | Real multi-flash images | None yet. |
 | Camera scripts | Experimental. Neither live script has run on camera hardware; the Python one was checked with the pylon camera emulator. |
 | Tests | CI on every push: the Python tests on Python 3.10, 3.13 and 3.14, and the MATLAB/Octave tests, parity cases included, in GNU Octave and in MATLAB. Both jobs also run the two demos. |
@@ -93,7 +93,7 @@ The options `exposures`, `duty` (the exposure over the frame interval, or the fl
 
 ## Results
 
-Ordered by how independent the data are of the estimator's own model. All numbers come from `experiments/results/*.csv`.
+Ordered by how independent the data are of the estimator's own model. All numbers come from `experiments/results/*.csv`, those of the phone video from `data/measurements/2026-10-16_phone_120fps/results.csv`.
 
 | Study | Data | Result |
 |---|---|---|
