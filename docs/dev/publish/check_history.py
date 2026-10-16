@@ -26,6 +26,11 @@ for sha in blobs:
             if kind == b"eXIf" or (kind == b"iTXt" and data[p + 8:p + 25] == b"XML:com.adobe.xmp"):
                 bad.append(f"{sha}: PNG with an {kind.decode()} chunk (photo metadata)")
             p += 12 + n
+    if data[4:8] == b"ftyp":                     # MP4/MOV: location atoms (GPS) of phones and cameras
+        for atom, what in ((b"\xa9xyz", "a location atom (\xa9xyz)"), (b"loci", "a location atom (loci)"),
+                           (b"com.apple.quicktime.location", "a location key"), (b"location.ISO6709", "a location key")):
+            if atom in data:
+                bad.append(f"{sha}: video with {what}")
     low = data.lower()
     for needle, what in ((b"gpslatitude", "GPS position"), (b"\\users\\", "a Windows user folder"),
                          (b"without ai", "a claim about the time before the rework"),

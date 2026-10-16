@@ -9,29 +9,15 @@ the rework and should be removed before the repository is published as
 
 Work happens on branch `claude/pensive-gates-pzcxla` of `onewmann/hs-esslingen`.
 
-There are two versions of the same history:
-
-- On GitHub, the first seven commits after `8f0aec4` (`c3f77ab` to `ebe9cb6`)
-  still name "Claude" as author and carry `Co-Authored-By`/`Claude-Session`
-  lines. Replacing them needs a force push, which the session's permission
-  check refused. Every later commit on GitHub is authored by Oliver Neumann.
-- The clean history (all commits after `8f0aec4` authored by Oliver Neumann,
-  no AI trailers) exists only in the local clone of the session. It can be
-  rebuilt at any time from the GitHub branch. The trees are identical; this
-  was checked on 11 October:
-
-```
-git clone https://github.com/onewmann/hs-esslingen && cd hs-esslingen
-git checkout -b clean origin/claude/pensive-gates-pzcxla
-git filter-branch -f \
-  --env-filter 'export GIT_AUTHOR_NAME="Oliver Neumann" GIT_AUTHOR_EMAIL="149961666+onewmann@users.noreply.github.com" GIT_COMMITTER_NAME="Oliver Neumann" GIT_COMMITTER_EMAIL="149961666+onewmann@users.noreply.github.com"' \
-  --msg-filter 'grep -v -e "^Co-Authored-By: Claude" -e "^Claude-Session:"' \
-  8f0aec4..HEAD
-git tag -a student-project-2025 8f0aec4 -m "Student project scripts of 2025. The AI-assisted rework starts after this commit."
-```
-
-The tag `student-project-2025` (pointing to `8f0aec4`) exists only locally;
-pushing tags was refused as well, hence the last command above.
+On GitHub, the first seven commits after `8f0aec4` (`c3f77ab` to `ebe9cb6`)
+still name "Claude" as author and carry `Co-Authored-By`/`Claude-Session`
+lines; replacing them needs a force push, which the session's permission check
+refused. Every later commit is authored by Oliver Neumann. Since 16 October
+the session's clone follows the GitHub branch again (the earlier locally
+rewritten history was only a copy with the same trees). publish.sh does the
+cleaning for publishing (authors, trailers, tag), so no clean local history is
+needed. Commit signing is off in the clone (`git config commit.gpgsign
+false`); new commits are unsigned.
 
 ## Done
 
