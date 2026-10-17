@@ -3,6 +3,7 @@
 Run inside the rewritten repository: python check_history.py. Exit status 0: clean, 3: a blob needs
 cleaning (listed on stderr); anything else means the check itself failed.
 """
+import re
 import struct
 import subprocess
 import sys
@@ -26,7 +27,9 @@ for sha in blobs:
             if kind == b"eXIf" or (kind == b"iTXt" and data[p + 8:p + 25] == b"XML:com.adobe.xmp"):
                 bad.append(f"{sha}: PNG with an {kind.decode()} chunk (photo metadata)")
             p += 12 + n
-    if data[4:8] == b"ftyp":                     # MP4/MOV: location atoms (GPS) of phones and cameras
+    if data[4:8] == b"ftyp":                     # MP4/MOV: sound tracks, and location atoms (GPS) of phones
+        if re.search(rb"hdlr.{8}soun", data, re.S):
+            bad.append(f"{sha}: video with a sound track")
         for atom, what in ((b"\xa9xyz", "a location atom (\xa9xyz)"), (b"loci", "a location atom (loci)"),
                            (b"com.apple.quicktime.location", "a location key"), (b"location.ISO6709", "a location key")):
             if atom in data:

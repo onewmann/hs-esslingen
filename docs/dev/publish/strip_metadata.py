@@ -1,6 +1,16 @@
-# git filter-repo --blob-callback body: drop the EXIF and XMP chunks (location, camera, time) from PNG
-# files; the image data stay byte for byte. Only 2D-FFT/data/image001.png at the tag has such chunks.
+# git filter-repo --blob-callback body.
+# 1. Videos: a blob whose id names a file in clean_videos/ (next to the rewritten repository) is replaced by
+#    it: the same video stream without the sound track and the file metadata (made with
+#    ffmpeg -map 0:v:0 -c copy -map_metadata -1; the frames are identical). These are the two phone videos
+#    of 2025 at the tag.
+# 2. PNG files: drop the EXIF and XMP chunks (location, camera, time); the image data stay byte for byte.
+#    Only 2D-FFT/data/image001.png at the tag has such chunks.
+import os
 import struct
+clean = os.path.join("..", "clean_videos", blob.original_id.decode() + ".mp4")
+if os.path.isfile(clean):
+    with open(clean, "rb") as f:
+        blob.data = f.read()
 d = blob.data
 if d[:8] == b"\x89PNG\r\n\x1a\n" and (b"eXIf" in d or b"XML:com.adobe.xmp" in d):
     out, p = [d[:8]], 8
