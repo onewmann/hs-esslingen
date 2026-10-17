@@ -168,6 +168,18 @@ is off in this clone (git config commit.gpgsign false), as the owner asked.
 Still missing: a recording of the phone lying still, and a physical reference
 (GSD from a ruler in the image, a known speed).
 
+Graph paper and sound tracks (17 October). Two phone videos of 5 mm graph
+paper at 120 fps (moved, held still) are the session
+data/measurements/2026-10-17_phone_grid: speed within 1.4 % of the step check,
+direction pulled towards the grid lines (10 of 83 windows more than 2 deg off),
+3 of 89 still windows valid; the scale of each window comes from the grid
+(0.036 to 0.041 mm/px, the hand changed height). All videos in the tree have
+no sound track; publish.sh replaces the two 2025 phone videos at the tag by
+copies without sound and metadata (clean_videos/), and check_history.py fails
+on any video with a sound track. The first two commits get new hashes
+(5f2dad8, bae6504). Still missing: the phone lying still on the desk top (a
+random texture) and an independent reference speed.
+
 ## Next steps
 
 1. Record the test without a flash: follow docs/acquisition.md, section
