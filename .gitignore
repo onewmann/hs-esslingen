@@ -21,4 +21,4 @@ experiments/results_quick/
 data/measurements/synthetic_*/results.csv
 data/measurements/synthetic_*/results.png
 # frame stack written by extract_frames.py from the video of a session (about 75 MB)
-data/measurements/*/frames.npz
+data/measurements/*/frames*.npz

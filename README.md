@@ -93,11 +93,12 @@ The options `exposures`, `duty` (the exposure over the frame interval, or the fl
 
 ## Results
 
-Ordered by how independent the data are of the estimator's own model. All numbers come from `experiments/results/*.csv`, those of the phone video from `data/measurements/2026-10-16_phone_120fps/results.csv`.
+Ordered by how independent the data are of the estimator's own model. All numbers come from `experiments/results/*.csv`, those of the phone videos from the `results.csv` of their sessions in `data/measurements/`.
 
 | Study | Data | Result |
 |---|---|---|
 | [Phone video at 120 frames per second](docs/results.md#phone-video-at-120-frames-per-second) | 447 real frames of a phone moved by hand over a desk top; windows of 5 frames averaged; reference: the mean step between the same frames by phase correlation | 68 of 68 windows with even steps valid, speed within 0.81 % (median 0.21 %), direction within 0.52 deg; the 21 windows with uneven steps (dropped frames, changing motion) are flagged |
+| [Graph paper](docs/results.md#graph-paper-a-periodic-texture) | phone videos of 5 mm graph paper at 120 frames per second, moved and held still; a periodic texture, against assumption 1 | moved: speed within 1.4 % of the mean step, direction pulled towards the grid lines (10 of 83 windows more than 2 deg off, up to 5.2 deg); held still: 3 of 89 windows wrongly valid |
 | [Synthetic test sequences](docs/results.md#synthetic-test-sequences) | 4 sequences from the 2025 student project, made without `fftvel`; windows of 9 frames averaged | Constant motion (whole-pixel steps): 24 of 24 windows valid, 134.93 to 135.03 deg (true 135), speed within 0.005 px. Changing speed: 17 of 22 valid, errors up to 11.1 %. Irregular steps: 4 of 22 valid, errors up to 14.4 % |
 | [2025 recordings](docs/results.md#the-2025-recordings) | 3 Basler frame sequences of a moving surface, two 9-frame averages each | Steps vary by a factor of 2.8 to 4.0 within a recording; all 6 windows rejected (quality 0.23 to 0.40, threshold 0.6) |
 | [Single camera frames](docs/results.md#single-camera-frames-a-real-null-test) | 1360 crops of single frames of the 2025 recordings: one exposure each, so nothing repeats | 59 valid, all false alarms; 41 of the 47 on the moving surface look like motion blur |
@@ -122,7 +123,7 @@ These causes give a wrong result that is still marked valid by the estimator alo
 | Changing speed | test sequence with changing speed (`accelerating`): 17 of 22 windows valid, errors up to 11.1 % | constant speed during the K frames; the step check flags windows whose steps spread by more than 10 % ([reference speed](docs/acquisition.md#reference-speed)) |
 | Strong static edges | an edge of twice the mean signal: 28.1 % wrong but valid | keep edges and masks out of the analysed square (`roi`), fill masked areas with the image mean ([edges](docs/acquisition.md#saturation-and-glints)) |
 | Glints, saturated spots | two static glints of 3 times the mean signal: 96.9 % wrong but valid | `clip_outliers`, with which all were correct and valid; diffuse light, no saturated pixels ([glints](docs/acquisition.md#saturation-and-glints)) |
-| Periodic texture | a pattern repeating every 64 or 128 px: 100 % wrong but valid; every 160 px: 50.0 % | a non-repeating texture ([assumptions](docs/method.md#assumptions)) |
+| Periodic texture | a pattern repeating every 64 or 128 px: 100 % wrong but valid; every 160 px: 50.0 %. Real graph paper (a period of about 125 px, phone video): speed within 1.4 %, but the direction pulled towards the grid lines by up to 5.2 deg (10 of 83 windows more than 2 deg off), and 3 of 89 windows of the phone held still valid ([graph paper](data/measurements/2026-10-17_phone_grid/README.md)) | a non-repeating texture ([assumptions](docs/method.md#assumptions)) |
 | Wrong K | 7, 8, 10 or 11 assumed for 9: 34.4 % wrong but valid, speed scaled by 9/K | the number of averaged frames as `exposures` / `--exposures`; `pulsed_from_stack` returns it, and `real_measurements.py` takes it from the column `frames` |
 
 ### Marked not valid
@@ -276,4 +277,4 @@ Jan Horn: *Zweidimensionale Geschwindigkeitsmessung texturierter Oberflächen mi
 
 ## Citation and licence
 
-[CITATION.cff](CITATION.cff) holds the citation of this code, and GitHub offers it under "Cite this repository". For the method, cite the thesis above. The code is under the MIT licence, see [LICENSE](LICENSE). The data files in `data/` (the test sequences, the camera texture, the 2025 recordings, the phone video and the synthetic measurement examples) are under CC BY 4.0; [data/README.md](data/README.md#licence-of-the-data) says what each file is and who made it.
+[CITATION.cff](CITATION.cff) holds the citation of this code, and GitHub offers it under "Cite this repository". For the method, cite the thesis above. The code is under the MIT licence, see [LICENSE](LICENSE). The data files in `data/` (the test sequences, the camera texture, the 2025 recordings, the phone videos and the synthetic measurement examples) are under CC BY 4.0; [data/README.md](data/README.md#licence-of-the-data) says what each file is and who made it.

@@ -138,7 +138,11 @@ grid, a checkerboard or any other regular pattern, and glossy surfaces with
 reflections. Keep sheet edges, clamps, tape, screw heads and dust spots out of
 the analysed square during the whole burst, and make the sheet longer than the
 move plus the field of view. Static bursts of the surface must come out not
-valid ([static images](#static-images)).
+valid ([static images](#static-images)). Graph paper shows what a regular pattern
+does: in a phone video it pulled the direction towards the grid lines by up to
+5.2 deg, and 3 of 89 windows of the phone held still came out valid
+([graph paper](../data/measurements/2026-10-17_phone_grid/README.md)). Use such
+paper only to measure the scale.
 
 ### Phone videos
 

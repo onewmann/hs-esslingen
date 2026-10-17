@@ -63,6 +63,33 @@ videos the steps were about ten times smaller (median 8.7 px against 76 to
 93 px), so the phone also moved more slowly or the image scale differed; the
 exposure times are not stored.
 
+## Graph paper: a periodic texture
+
+Two phone videos of graph paper with 5 mm squares at 120 frames per second, one
+moved by hand and one held still, analysed like the desk video (windows of 5
+frames, a central 512 x 512 px square). A grid breaks assumption 1 (a texture
+that does not repeat); its period here is about 125 px, close to the 128 px at
+which the forward model gave only wrong results marked valid. The squares give
+the scale of every window of the moving video (0.036 to 0.041 mm/px, as the
+hand changed height). Files and details:
+[`data/measurements/2026-10-17_phone_grid`](../data/measurements/2026-10-17_phone_grid/README.md).
+
+| | Windows | Valid | Speed against the step: median, 95th percentile, max | Direction: median, 95th percentile, max |
+|---|---:|---:|---|---|
+| Moved, even steps | 91 | 83 | 0.19 %, 0.60 %, 1.39 % | 0.25 deg, 3.63 deg, 5.22 deg |
+| Held still (`static` 1) | 89 | 3 | | |
+
+The speed stays within 1.4 % of the step check (7.3 to 15.4 px per frame, 35 to
+75 mm/s), but the direction is pulled towards the grid lines: 10 of the 83
+windows are more than 2 deg off, 9 of them on the side of the lines. Of the
+still windows, 3 are marked valid at about 4 px per frame along the lines,
+while their frames moved by at most 0.11 px (one-sided 95 % upper bound of
+the rate: 8.5 %). In the forward model, textures that repeat every 64 or
+128 px gave errors of tens of degrees in the direction and large errors of the
+speed; the real grid, thin lines on paper with a texture of its own and a
+motion nearly along the lines, failed far more mildly, but in the same way:
+results marked valid that the pattern, not the motion, decides.
+
 ## Synthetic test sequences
 
 Four sequences of 256 x 256 px from the 2025 student project

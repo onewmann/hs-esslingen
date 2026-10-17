@@ -17,6 +17,7 @@ data/measurements/
   synthetic_average/       simulated frame bursts for average mode, written by synthetic_average/make_example.py
   synthetic_flash/         simulated multi-flash images, written by synthetic_flash/make_example.py
   2026-10-16_phone_120fps/ a real phone video at 120 frames per second and its evaluation (README.md there)
+  2026-10-17_phone_grid/   phone videos of graph paper: a periodic texture, moved and held still (README.md there)
   2026-10-20_average/      one folder per session, named <date>_<mode> (any name works)
     meta.csv
     burst_0001.npz
