@@ -22,10 +22,11 @@ from the median of the last five accepted windows (a misreading: blur, the
 paper tilting, its edge entering the field) gets no gsd_mm_per_px. There is no set speed: the reference is the step check.
 
 grid_lines.csv gives, for every window of both videos, the period of the grid
-in px, the ground sample distance and the direction of the grid lines in the
-image (deg, counter-clockwise from +x with y up, as angle_deg in results.csv),
-measured from the shift of the row means between the left and right half of
-the field and of the column means between its upper and lower half. The hand
+in px and the direction of the grid lines in the image (deg, counter-clockwise
+from +x with y up, as angle_deg in results.csv), measured from the shift of the
+row means between the left and right half of the field and of the column means
+between its upper and lower half, and the ground sample distance where meta.csv
+has one. The hand
 turned the phone, so the lines do not stay at 0 deg; directions.py compares
 the estimates with them.
 """
@@ -93,10 +94,9 @@ def _shift(a, b, max_shift=60):
     c = np.array([np.dot(a[max(0, -k):n - max(0, k)], b[max(0, k):n - max(0, -k)])
                   for k in range(-max_shift, max_shift + 1)])
     k = int(np.argmax(c))
-    frac = 0.0
-    if 0 < k < len(c) - 1:
-        frac = 0.5 * (c[k - 1] - c[k + 1]) / (c[k - 1] - 2 * c[k] + c[k + 1])
-    return k - max_shift + frac
+    if not 0 < k < len(c) - 1:
+        return float("nan")                         # the peak at the edge of the search range: shift too large
+    return k - max_shift + 0.5 * (c[k - 1] - c[k + 1]) / (c[k - 1] - 2 * c[k] + c[k + 1])
 
 
 def line_angle(img):
@@ -105,7 +105,9 @@ def line_angle(img):
     The horizontal lines lie lower or higher in the right half than in the
     left half, the vertical lines further right or left in the lower half than
     in the upper half; both give the rotation, and their mean is returned.
-    Valid while the shift between the halves stays below half the period.
+    Valid while the shift between the halves, half the width times tan(angle),
+    stays below half the period and below the 60 px that _shift searches
+    (about 6.7 deg on the 1024 px field); beyond that the result is nan or wrong.
     """
     h, w = img.shape
     hh, hw = h // 2, w // 2

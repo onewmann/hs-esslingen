@@ -93,7 +93,7 @@ The options `exposures`, `duty` (the exposure over the frame interval, or the fl
 
 ## Results
 
-Ordered by how independent the data are of the estimator's own model. All numbers come from `experiments/results/*.csv`, those of the phone videos from the `results.csv` of their sessions in `data/measurements/`.
+Ordered by how independent the data are of the estimator's own model. All numbers come from `experiments/results/*.csv`, those of the phone videos from the `results.csv` of their sessions in `data/measurements/` (made with OpenCV 5.0.0); the numbers for OpenCV 4.12 come from a rerun with that version, which is not kept in the repository.
 
 | Study | Data | Result |
 |---|---|---|

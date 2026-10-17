@@ -177,8 +177,8 @@ threshold); the scale of each window comes from the grid
 (0.036 to 0.041 mm/px, the hand changed height). All videos in the tree have
 no sound track; publish.sh replaces the two 2025 phone videos at the tag by
 copies without sound and metadata (clean_videos/), and check_history.py fails
-on any video with a sound track or with location, device or capture-time
-metadata. The first two commits get new hashes (5f2dad8, bae6504). The grid lines turned with the hand (-0.1 to 4.1 deg in
+on any video with a sound track, one of the location, device or date tags it
+looks for, or a capture time in mvhd, tkhd or mdhd. The first two commits get new hashes (5f2dad8, bae6504). The grid lines turned with the hand (-0.2 to 4.1 deg in
 the image, grid_lines.csv); all 10 windows more than 2 deg off lie within
 0.36 deg of the lines (directions.py). Still missing: the phone lying still on
 the desk top (a random texture) and an independent reference speed.

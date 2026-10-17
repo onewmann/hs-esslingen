@@ -89,7 +89,7 @@ say what you changed.
 | `surface_texture.png` | central 1024 x 1024 px of the first frame of `recordings/vid2.mat` | cut from that recording in the rework |
 | `measurements/synthetic_average/`, `measurements/synthetic_flash/` | simulated frame stacks, multi-flash images and their `meta.csv` | written by the `make_example.py` script next to them, from `surface_texture.png` |
 | `measurements/2026-10-16_phone_120fps/` | phone video of a desk top at 120 frames per second, its `meta.csv`, results and figure | Oliver Neumann's recording (2026); the video stream is unchanged, the sound track and the file metadata were removed |
-| `measurements/2026-10-17_phone_grid/` | two phone videos of graph paper at 120 frames per second, their `meta.csv`, results and figure | Oliver Neumann's recordings (2026); the same |
+| `measurements/2026-10-17_phone_grid/` | two phone videos of graph paper at 120 frames per second, their `meta.csv`, the measured grid lines (`grid_lines.csv`), results and figure | Oliver Neumann's recordings (2026); the same |
 
-The `make_example.py` and `extract_frames.py` scripts are code and, like all code in this
-repository, under the MIT licence of [LICENSE](../LICENSE).
+The `make_example.py`, `extract_frames.py` and `directions.py` scripts are code and, like all
+code in this repository, under the MIT licence of [LICENSE](../LICENSE).

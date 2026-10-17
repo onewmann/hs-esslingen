@@ -111,3 +111,16 @@ def test_grid_directions_against_the_lines(capsys):
     out = capsys.readouterr().out
     assert "grid lines at -0.1 to 4.1 deg" in out and "closer to the lines than the step: 10" in out
     assert "in 62 of 83" in out
+
+
+def test_grid_lines_use_the_frames_of_the_window(grid, monkeypatch, tmp_path):
+    pytest.importorskip("cv2")
+    field = np.arange(12.0)[:, None, None] * np.ones((12, 4, 4))     # frame i (from 0) holds the value i
+    monkeypatch.setattr(grid, "_reader", lambda: lambda *args: (field, np.arange(12) / 120))
+    monkeypatch.setattr(grid, "grid_period", lambda img: 130.0)
+    monkeypatch.setattr(grid, "line_angle", lambda img: float(img[0, 0]))
+    assert grid.main(["--out", str(tmp_path)]) == 0
+    with open(tmp_path / "grid_lines.csv", newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    # window s (from 1) holds the frames s to s + 4, the values s - 1 to s + 3, mean s + 1
+    assert [float(r["line_angle_deg"]) for r in rows][:2] == [2.0, 7.0]

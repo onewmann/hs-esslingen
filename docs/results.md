@@ -4,8 +4,10 @@ This page collects all studies, ordered by how independent they are of the
 estimator's own model. The first ones use data that `fftvel` did not generate;
 the later ones use images from models, and the closer such a model is to the
 one the estimator fits, the less a good result proves. The real recordings
-are a phone video at 120 frames per second, which the estimator measures in
-agreement with phase correlation, and the 2025 Basler frame sequences, whose
+are a phone video of a desk top at 120 frames per second, which the estimator
+measures in agreement with phase correlation, two phone videos of graph paper,
+whose periodic texture pulls the direction towards the grid lines and lets a
+few still windows pass as motion, and the 2025 Basler frame sequences, whose
 uneven steps it rejects. No recording with a physical reference speed and no
 real multi-flash image exist yet;
 [`data/measurements/README.md`](../data/measurements/README.md) describes the
@@ -79,20 +81,22 @@ The squares give the scale of every window of the moving video (0.036 to
 | Moved, even steps | 91 | 83 | 0.19 %, 0.60 %, 1.39 % | 0.25 deg, 3.63 deg, 5.22 deg |
 | Held still (`static` 1) | 89 | 3 (OpenCV 5.0.0; 13 with 4.12) | | |
 
-The speed stays within 1.4 % of the step check (7.3 to 15.4 px per frame, 35 to
-75 mm/s), but the direction is pulled towards the grid lines. The hand turned
-the phone a little, so the lines lie at -0.1 to 4.1 deg in the image, and the
-phone moved at -9.9 to 9.2 deg to them. 10 of the 83 windows are more than
-2 deg off the step, by up to 5.2 deg, and in all 10 the estimate lies within
-0.36 deg of the lines. Of the still windows, 3 are marked valid at about 4 px
-per frame along the lines, while their frames moved by at most 0.11 px
-(one-sided 95 % upper bound of the rate: 8.5 %). Their quality, 0.60 to 0.63,
-lies just above the threshold, so the count depends on small details: decoded
-with OpenCV 4.12 instead of 5.0.0, whose grey values differ by up to 2 levels,
-13 of 89 still windows come out valid (upper bound 22 %), while the moving
-video changes little (81 valid windows, largest speed deviation 1.25 %). In
-the forward model, textures that repeat every 64 or 128 px gave errors of tens
-of degrees in the direction and large errors of the speed; the real grid, thin
+The speed stays within 1.4 % of the step check (7.3 to 15.4 px per frame, 35
+to 75 mm/s), but the direction is pulled towards the grid lines. The hand
+turned the phone a little, so the lines lie at -0.2 to 4.1 deg in the image.
+In the 83 valid windows the phone moved at -9.9 to 9.2 deg to them; in 7
+windows with even steps near the end it moved at 10.8 to 24.0 deg, and none of
+these is valid. 10 of the 83 windows are more than 2 deg off the step, by up
+to 5.2 deg, and in all 10 the estimate lies within 0.36 deg of the lines. Of
+the still windows, 3 are marked valid at about 4 px per frame along the lines,
+while their frames moved by at most 0.11 px (one-sided 95 % upper bound of the
+rate: 8.5 %). Their quality, 0.60 to 0.63, lies just above the threshold, so
+the count depends on small details: decoded with OpenCV 4.12 instead of 5.0.0,
+whose grey values differ by up to 2 levels, 13 of 89 still windows come out
+valid (upper bound 22 %), while the moving video changes little (81 instead of
+83 valid windows with even steps, largest speed deviation 1.25 %). In the
+forward model, textures that repeat every 64 or 128 px gave errors of tens of
+degrees in the direction and large errors of the speed; the real grid, thin
 lines on paper with a texture of its own and a motion nearly along the lines,
 failed far more mildly, but in the same way: results marked valid that the
 pattern, not the motion, decides.

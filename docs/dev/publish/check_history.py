@@ -30,24 +30,25 @@ def boxes(data, start=0, end=None):
 
 
 def video_problems(data):
-    """Sound tracks and location, device and capture-time metadata of an MP4/MOV file; mdat (the frames) is skipped."""
-    meta, times = b"", []
+    """Sound tracks, the location, device and date tags below and capture times of an MP4/MOV file; mdat is skipped."""
+    parts, kinds, times = [], set(), []
 
     def visit(start, end):
-        nonlocal meta
         for kind, a, b in boxes(data, start, end):
-            if kind == b"mdat":
+            if kind == b"mdat":                      # the frames
                 continue
             if kind in CONTAINERS:
                 visit(a, b)
                 continue
-            meta += kind + data[a:b]
+            parts.append(kind + data[a:b])
+            kinds.add(kind)
             if kind in (b"mvhd", b"tkhd", b"mdhd") and b - a >= 20:
                 wide = data[a] == 1                  # version 1: 64-bit times
                 times.extend(struct.unpack(">QQ", data[a + 4:a + 20]) if wide else
                              struct.unpack(">II", data[a + 4:a + 12]))
 
     visit(0, len(data))
+    meta = b"".join(parts)
     out = []
     if re.search(rb"hdlr.{8}soun", meta, re.S):
         out.append("a sound track")
@@ -56,8 +57,14 @@ def video_problems(data):
                        (b"com.android.", "an Android key"), (b"com.samsung.", "a Samsung key"),
                        (b"\xa9mak", "the maker of the device (\xa9mak)"), (b"\xa9mod", "the device model (\xa9mod)"),
                        (b"com.apple.quicktime.make", "the maker of the device"),
-                       (b"com.apple.quicktime.model", "the device model")):
+                       (b"com.apple.quicktime.model", "the device model"),
+                       (b"\xa9day", "a recording date (\xa9day)"),
+                       (b"com.apple.quicktime.creationdate", "a recording date key")):
         if atom in meta:
+            out.append(what)
+    for kind, what in ((b"auth", "the device name (auth, written by Samsung phones)"),
+                       (b"smta", "the device model (smta, written by Samsung phones)")):
+        if kind in kinds:
             out.append(what)
     if any(times):
         out.append("a capture time in mvhd, tkhd or mdhd")

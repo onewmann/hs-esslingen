@@ -14,8 +14,8 @@ and figure are under CC BY 4.0
 | `grid_moving_120fps.mp4` | phone moved by hand, 546 frames, 4.7 s; the video stream as recorded, without sound track and file metadata |
 | `grid_still_120fps.mp4` | phone held still, 447 frames, 3.9 s; the same |
 | `extract_frames.py` | writes `frames_moving.npz` and `frames_still.npz` (the central 512 x 512 px square of every frame, with the timestamps), `meta.csv` and `grid_lines.csv` |
-| `meta.csv` | 109 windows of 5 frames of the moving video, each with the ground sample distance measured on the grid, and 89 of the still one (`static` 1) |
-| `grid_lines.csv` | for every window of both videos: the period of the grid in px, the ground sample distance and the direction of the grid lines in the image |
+| `meta.csv` | 109 windows of 5 frames of the moving video, all but the last two with the ground sample distance measured on the grid, and 89 of the still one (`static` 1) |
+| `grid_lines.csv` | for every window of both videos: the period of the grid in px and the direction of the grid lines in the image, and the ground sample distance where `meta.csv` has one |
 | `results.csv`, `results.png` | the output of `experiments/real_measurements.py` |
 | `directions.py` | compares the estimated directions with the grid lines and with the steps |
 
@@ -46,28 +46,30 @@ Against the mean step between the same frames by phase correlation:
 | | Windows | Valid |
 |---|---:|---:|
 | Even steps | 91 | 83 |
-| Uneven steps (start of the recording, changing motion, one dropped frame) | 18 | 5 |
+| Uneven steps (start of the recording, changing motion, two dropped frames) | 18 | 5 |
 
 | 83 valid windows with even steps | Median | 95th percentile | Max |
 |---|---:|---:|---:|
 | Speed, \|est/step - 1\| | 0.19 % | 0.60 % | 1.39 % |
 | Direction | 0.25 deg | 3.63 deg | 5.22 deg |
 
-The speed is right: 7.3 to 15.4 px per frame, 35 to 75 mm/s (median
-51 mm/s). The direction is not. The hand turned the phone a little, so the
-grid lines lie at -0.1 to 4.1 deg in the image (`grid_lines.csv`), and the
-phone moved at -9.9 to 9.2 deg to them. 10 of the 83 windows are more than
-2 deg off the step, by up to 5.2 deg (frames 31 to 35); in all 10 the
-estimate lies within 0.36 deg of the grid lines, and in all 10 the motion ran
-within 5.3 deg of them. Most windows with motion that close to the lines are
-not pulled that far, but over all 83 windows the estimate lies closer to the
-lines than the step does in 62.
+The speed is right: 7.3 to 15.4 px per frame, 35 to 75 mm/s (median 51 mm/s).
+The direction is not. The hand turned the phone a little, so the grid lines
+lie at -0.2 to 4.1 deg in the image (`grid_lines.csv`). In the 83 valid
+windows the phone moved at -9.9 to 9.2 deg to them; in 7 windows with even
+steps between frames 501 and 540 it moved at 10.8 to 24.0 deg, and none of
+these is valid. 10 of the 83 windows are more than 2 deg off the step, by up
+to 5.2 deg (frames 31 to 35); in all 10 the estimate lies within 0.36 deg of
+the grid lines, and in all 10 the motion ran within 5.3 deg of them. Most
+windows with motion that close to the lines are not pulled that far, but over
+all 83 windows the estimate lies closer to the lines than the step does in 62.
 
-The window of frames 226 to 230 holds the one dropped frame of this video (a
-gap of 25 ms, three frame intervals). It is valid and 34 % below the mean step,
-but only 1.0 % below the median step, the regular step between the other
-frames, as in the [desk-top video](../2026-10-16_phone_120fps/README.md#result).
-The step check flags it, and it is left out of the numbers above.
+The window of frames 226 to 230 holds the one place where this video dropped
+frames: two frames, a gap of 25 ms, three frame intervals. It is valid and
+34 % below the mean step, but only 1.0 % below the median step, the regular
+step between the other frames, as in the
+[desk-top video](../2026-10-16_phone_120fps/README.md#result). The step check
+flags it, and it is left out of the numbers above.
 
 ## Still video
 
