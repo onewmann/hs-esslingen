@@ -16,10 +16,10 @@ columns 284 to 795). The stack goes to frames.npz in the format that
 python/examples/live_camera.py --save writes: frames (rows x columns x frames,
 8-bit), t (s from the first frame) and clock ('video': the times stored in the
 file, without the transfer jitter of host times), plus opencv, the OpenCV
-version. The grey conversion differs slightly between OpenCV versions; the
-committed results.csv was made with OpenCV 5.0.0, and with 4.12 the largest
-deviations are 0.88 % and 0.58 deg instead of 0.81 % and 0.52 deg. frames.npz is
-about 75 MB and not kept in git.
+version. OpenCV versions decode the video slightly differently (grey values up
+to 2 levels apart); the committed results.csv was made with OpenCV 5.0.0, and
+with 4.12 the largest deviations are 0.88 % and 0.58 deg instead of 0.81 % and
+0.52 deg. frames.npz is about 75 MB and not kept in git.
 
 meta.csv lists consecutive, non-overlapping windows of 5 frames (mode
 average). The phone moved by hand at an unknown speed, so gsd_mm_per_px,

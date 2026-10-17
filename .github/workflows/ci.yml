@@ -33,9 +33,10 @@ jobs:
           python experiments/real_measurements.py data/measurements/synthetic_average/meta.csv --out "${{ runner.temp }}/measurements/average.csv" --figure "${{ runner.temp }}/measurements/average.png"
           python experiments/real_measurements.py data/measurements/synthetic_flash/meta.csv --out "${{ runner.temp }}/measurements/results.csv" --figure "${{ runner.temp }}/measurements/results.png"
           python data/measurements/2026-10-16_phone_120fps/extract_frames.py --out "${{ runner.temp }}/phone"
-          python experiments/real_measurements.py "${{ runner.temp }}/phone/meta.csv" --jobs 2 --figure "${{ runner.temp }}/phone/results.png"
+          python experiments/real_measurements.py "${{ runner.temp }}/phone/meta.csv" --jobs 4 --figure "${{ runner.temp }}/phone/results.png"
           python data/measurements/2026-10-17_phone_grid/extract_frames.py --out "${{ runner.temp }}/grid"
-          python experiments/real_measurements.py "${{ runner.temp }}/grid/meta.csv" --jobs 2 --figure "${{ runner.temp }}/grid/results.png"
+          python experiments/real_measurements.py "${{ runner.temp }}/grid/meta.csv" --jobs 4 --figure "${{ runner.temp }}/grid/results.png"
+          python data/measurements/2026-10-17_phone_grid/directions.py "${{ runner.temp }}/grid"
 
   octave:
     runs-on: ubuntu-24.04

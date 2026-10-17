@@ -24,7 +24,7 @@ python experiments/real_measurements.py data/measurements/2026-10-16_phone_120fp
 The analysed square lies below the bright spot of the lamp, which stays at
 the same place in the image while the surface moves; a static bright spot in
 the square breaks the model (assumption 9 in
-[method.md](../../docs/method.md#assumptions)). `frames.npz` is not in git
+[method.md](../../../docs/method.md#assumptions)). `frames.npz` is not in git
 (75 MB); the script makes it from the video in a few seconds.
 
 ## Recording
@@ -63,7 +63,7 @@ estimates are 32 to 34 % below the mean step, because one of their four steps
 is three times as long. Their estimates agree within 0.7 % with the median of
 the steps, the regular step between the other frames. A fifth window has steps
 that spread by 23 % and is 2.3 deg off. By the exclusion rule of
-[acquisition.md](../../docs/acquisition.md#first-recording-step-by-step) all
+[acquisition.md](../../../docs/acquisition.md#first-recording-step-by-step) all
 21 windows with uneven steps are left out of the numbers above.
 
 ## What this shows, and what not
@@ -85,6 +85,6 @@ It does not show:
 
 An earlier attempt with three videos at 30 frames per second (not in the
 repository) failed for the reasons in
-[acquisition.md](../../docs/acquisition.md#choosing-the-frame-rate): at
+[acquisition.md](../../../docs/acquisition.md#choosing-the-frame-rate): at
 76 to 93 px per frame (median) and with the motion blur of a long exposure,
 51 of 268 windows of 5 frames were valid.

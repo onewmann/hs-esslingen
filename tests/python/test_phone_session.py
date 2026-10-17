@@ -1,4 +1,5 @@
-"""data/measurements/2026-10-16_phone_120fps: the video is read upright with its timestamps, and meta.csv matches it."""
+"""The phone sessions in data/measurements: the videos are read upright with their timestamps, and meta.csv and the
+results match them."""
 
 import csv
 import importlib.util
@@ -66,11 +67,47 @@ def test_grid_scale_skips_misread_windows(grid, monkeypatch):
     assert gsd[3] is None and gsd[0] == pytest.approx(5 / 125) and gsd[5] == pytest.approx(5 / 127)
 
 
+def test_grid_line_angle_of_a_turned_grid(grid):
+    pytest.importorskip("scipy")
+    rows, cols = np.mgrid[0:1024, 0:1024].astype(float)
+    x, y = cols, -rows                                  # y up, as angle_deg in results.csv
+    for deg in (-3.0, 0.0, 4.0):
+        a = np.radians(deg)
+        u = (-x * np.sin(a) + y * np.cos(a)) % 130      # across the lines that run at deg
+        v = (x * np.cos(a) + y * np.sin(a)) % 130       # across the lines at right angles to them
+        img = np.where((np.minimum(u, 130 - u) < 1) | (np.minimum(v, 130 - v) < 1), 60.0, 120.0)
+        assert grid.line_angle(img) == pytest.approx(deg, abs=0.1)
+
+
+def _read(name):
+    with open(GRID / name, newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
 def test_grid_meta_and_results(grid):
-    with open(GRID / "meta.csv", newline="", encoding="utf-8") as f:
-        meta = list(csv.DictReader(f))
-    assert [r["static"] for r in meta].count("1") == 89 and len(meta) == 198
-    assert all(r["gsd_mm_per_px"] == "" or 0.035 < float(r["gsd_mm_per_px"]) < 0.042 for r in meta if r["static"] == "0")
-    with open(GRID / "results.csv", newline="", encoding="utf-8") as f:
-        res = list(csv.DictReader(f))
+    meta = _read("meta.csv")
+    assert len(meta) == 198 and [r["static"] for r in meta].count("1") == 89
+    moving = [r for r in meta if r["static"] == "0"]
+    assert [i for i, r in enumerate(moving) if r["gsd_mm_per_px"] == ""] == [107, 108]   # the paper's edge
+    assert all(0.036 < float(r["gsd_mm_per_px"]) < 0.041 for r in moving[:107])
+    lines = _read("grid_lines.csv")
+    assert [r["file"] for r in lines] == [r["file"] + f"#{r['first_frame']}-{int(r['first_frame']) + 4}"
+                                          for r in meta]
+    res = _read("results.csv")
     assert len(res) == 198
+    even = [r for r in res if r["file"].startswith("frames_moving") and r["uneven_steps"] == "0"]
+    valid = [r for r in even if r["valid"] == "1"]
+    off = [abs((float(r["angle_deg"]) - float(r["ref_angle_deg"]) + 90) % 180 - 90) for r in valid]
+    assert len(even) == 91 and len(valid) == 83 and sum(d > 2 for d in off) == 10
+    assert [r["file"] for r in res if r["static"] == "1" and r["valid"] == "1"] == [
+        f"frames_still.npz#{s}-{s + 4}" for s in (306, 311, 316)]
+
+
+def test_grid_directions_against_the_lines(capsys):
+    spec = importlib.util.spec_from_file_location("grid_directions", GRID / "directions.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.main(GRID) == 0
+    out = capsys.readouterr().out
+    assert "grid lines at -0.1 to 4.1 deg" in out and "closer to the lines than the step: 10" in out
+    assert "in 62 of 83" in out

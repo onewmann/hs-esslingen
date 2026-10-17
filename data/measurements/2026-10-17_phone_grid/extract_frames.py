@@ -20,6 +20,14 @@ lines of the 512 px square alone are too few for a steady value). The phone was 
 changed during the recording; a window whose period differs by more than 3 %
 from the median of the last five accepted windows (a misreading: blur, the
 paper tilting, its edge entering the field) gets no gsd_mm_per_px. There is no set speed: the reference is the step check.
+
+grid_lines.csv gives, for every window of both videos, the period of the grid
+in px, the ground sample distance and the direction of the grid lines in the
+image (deg, counter-clockwise from +x with y up, as angle_deg in results.csv),
+measured from the shift of the row means between the left and right half of
+the field and of the column means between its upper and lower half. The hand
+turned the phone, so the lines do not stay at 0 deg; directions.py compares
+the estimates with them.
 """
 
 from __future__ import annotations
@@ -74,6 +82,38 @@ def grid_period(img, lo=70, hi=300):
     return float(np.mean(out))
 
 
+def _shift(a, b, max_shift=60):
+    """Shift in px with b(x) close to a(x - shift), by cross-correlation and a parabola through its peak."""
+    from scipy.ndimage import gaussian_filter1d
+
+    a = a - gaussian_filter1d(a, 30)
+    b = b - gaussian_filter1d(b, 30)
+    a, b = a - a.mean(), b - b.mean()
+    n = a.size
+    c = np.array([np.dot(a[max(0, -k):n - max(0, k)], b[max(0, k):n - max(0, -k)])
+                  for k in range(-max_shift, max_shift + 1)])
+    k = int(np.argmax(c))
+    frac = 0.0
+    if 0 < k < len(c) - 1:
+        frac = 0.5 * (c[k - 1] - c[k + 1]) / (c[k - 1] - 2 * c[k] + c[k + 1])
+    return k - max_shift + frac
+
+
+def line_angle(img):
+    """Direction of the grid lines in deg, counter-clockwise from +x with y up.
+
+    The horizontal lines lie lower or higher in the right half than in the
+    left half, the vertical lines further right or left in the lower half than
+    in the upper half; both give the rotation, and their mean is returned.
+    Valid while the shift between the halves stays below half the period.
+    """
+    h, w = img.shape
+    hh, hw = h // 2, w // 2
+    s_rows = _shift(img[:, :hw].mean(axis=1), img[:, hw:].mean(axis=1))
+    s_cols = _shift(img[:hh, :].mean(axis=0), img[hh:, :].mean(axis=0))
+    return float((np.degrees(np.arctan2(-s_rows, hw)) + np.degrees(np.arctan2(s_cols, hh))) / 2)
+
+
 def window_gsd(field, window=WINDOW, tol=0.03):
     """gsd in mm/px per window of ``window`` frames of ``field`` (frames x rows x columns), and the periods.
 
@@ -99,23 +139,29 @@ def main(argv=None):
     a = p.parse_args(argv)
     read_video = _reader()
     a.out.mkdir(parents=True, exist_ok=True)
-    rows = []
+    rows, lines = [], []
     import cv2
     for video, stack, static, note in VIDEOS:
         m = (SCALE_FIELD - SIZE) // 2
         field, t = read_video(HERE / video, ROW - m, COL - m, SCALE_FIELD)
         frames = field[:, m:m + SIZE, m:m + SIZE]
         np.savez_compressed(a.out / stack, frames=np.moveaxis(frames, 0, 2), t=t, clock="video", opencv=cv2.__version__)
-        gsds = window_gsd(field)[0] if not static else None
+        gsds, periods = window_gsd(field)
         for i, s in enumerate(range(1, len(frames) - WINDOW + 2, WINDOW)):
-            gsd = "" if gsds is None or gsds[i] is None else f"{gsds[i]:.6f}"
+            gsd = "" if static or gsds[i] is None else f"{gsds[i]:.6f}"
             rows.append([stack, "average", WINDOW, s, static, SIZE, gsd, note])
+            angle = np.mean([line_angle(f.astype(float)) for f in field[s - 1:s - 1 + WINDOW]])
+            lines.append([f"{stack}#{s}-{s + WINDOW - 1}", f"{periods[i]:.2f}", gsd, f"{angle:.3f}"])
         print(f"{video}: {len(frames)} frames -> {stack}")
     with open(a.out / "meta.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(["file", "mode", "frames", "first_frame", "static", "roi", "gsd_mm_per_px", "note"])
         w.writerows(rows)
-    print(f"meta.csv: {len(rows)} windows")
+    with open(a.out / "grid_lines.csv", "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f, lineterminator="\n")
+        w.writerow(["file", "period_px", "gsd_mm_per_px", "line_angle_deg"])
+        w.writerows(lines)
+    print(f"meta.csv and grid_lines.csv: {len(rows)} windows")
     return 0
 
 

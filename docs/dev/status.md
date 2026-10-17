@@ -172,13 +172,16 @@ Graph paper and sound tracks (17 October). Two phone videos of 5 mm graph
 paper at 120 fps (moved, held still) are the session
 data/measurements/2026-10-17_phone_grid: speed within 1.4 % of the step check,
 direction pulled towards the grid lines (10 of 83 windows more than 2 deg off),
-3 of 89 still windows valid; the scale of each window comes from the grid
+3 of 89 still windows valid (13 with OpenCV 4.12: their quality lies at the
+threshold); the scale of each window comes from the grid
 (0.036 to 0.041 mm/px, the hand changed height). All videos in the tree have
 no sound track; publish.sh replaces the two 2025 phone videos at the tag by
 copies without sound and metadata (clean_videos/), and check_history.py fails
-on any video with a sound track. The first two commits get new hashes
-(5f2dad8, bae6504). Still missing: the phone lying still on the desk top (a
-random texture) and an independent reference speed.
+on any video with a sound track or with location, device or capture-time
+metadata. The first two commits get new hashes (5f2dad8, bae6504). The grid lines turned with the hand (-0.1 to 4.1 deg in
+the image, grid_lines.csv); all 10 windows more than 2 deg off lie within
+0.36 deg of the lines (directions.py). Still missing: the phone lying still on
+the desk top (a random texture) and an independent reference speed.
 
 ## Next steps
 

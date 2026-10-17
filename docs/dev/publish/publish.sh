@@ -10,10 +10,11 @@
 # commit, replaces the remaining mentions of the university, sets every author
 # and committer to Oliver Neumann and removes the AI trailers from the messages.
 # It also removes the location data (EXIF, XMP) of the 2025 photo, the sound
-# tracks and file metadata of the two 2025 phone videos (clean_videos/), a
-# Windows user folder in one 2025 script and the early README sentences about
-# the time before the rework (replacements.txt, strip_metadata.py), and checks
-# every blob for them afterwards (check_history.py, needs Python).
+# tracks and file metadata (device, capture time) of the two 2025 phone videos
+# (clean_videos/), a Windows user folder in one 2025 script and the early
+# README sentences about the time before the rework (replacements.txt,
+# strip_metadata.py), and checks every blob for them afterwards
+# (check_history.py, needs Python).
 # It stops if the local repository that holds this script has uncommitted
 # changes (outside docs/dev) or another HEAD than the commit it publishes;
 # ALLOW_DIFF=1 turns that into a warning.

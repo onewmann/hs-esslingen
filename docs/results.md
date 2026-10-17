@@ -68,27 +68,34 @@ exposure times are not stored.
 Two phone videos of graph paper with 5 mm squares at 120 frames per second, one
 moved by hand and one held still, analysed like the desk video (windows of 5
 frames, a central 512 x 512 px square). A grid breaks assumption 1 (a texture
-that does not repeat); its period here is about 125 px, close to the 128 px at
-which the forward model gave only wrong results marked valid. The squares give
-the scale of every window of the moving video (0.036 to 0.041 mm/px, as the
-hand changed height). Files and details:
+that does not repeat); its period here is about 130 px (122 to 138 px), close
+to the 128 px at which the forward model gave only wrong results marked valid.
+The squares give the scale of every window of the moving video (0.036 to
+0.041 mm/px, as the hand changed height). Files and details:
 [`data/measurements/2026-10-17_phone_grid`](../data/measurements/2026-10-17_phone_grid/README.md).
 
 | | Windows | Valid | Speed against the step: median, 95th percentile, max | Direction: median, 95th percentile, max |
 |---|---:|---:|---|---|
 | Moved, even steps | 91 | 83 | 0.19 %, 0.60 %, 1.39 % | 0.25 deg, 3.63 deg, 5.22 deg |
-| Held still (`static` 1) | 89 | 3 | | |
+| Held still (`static` 1) | 89 | 3 (OpenCV 5.0.0; 13 with 4.12) | | |
 
 The speed stays within 1.4 % of the step check (7.3 to 15.4 px per frame, 35 to
-75 mm/s), but the direction is pulled towards the grid lines: 10 of the 83
-windows are more than 2 deg off, 9 of them on the side of the lines. Of the
-still windows, 3 are marked valid at about 4 px per frame along the lines,
-while their frames moved by at most 0.11 px (one-sided 95 % upper bound of
-the rate: 8.5 %). In the forward model, textures that repeat every 64 or
-128 px gave errors of tens of degrees in the direction and large errors of the
-speed; the real grid, thin lines on paper with a texture of its own and a
-motion nearly along the lines, failed far more mildly, but in the same way:
-results marked valid that the pattern, not the motion, decides.
+75 mm/s), but the direction is pulled towards the grid lines. The hand turned
+the phone a little, so the lines lie at -0.1 to 4.1 deg in the image, and the
+phone moved at -9.9 to 9.2 deg to them. 10 of the 83 windows are more than
+2 deg off the step, by up to 5.2 deg, and in all 10 the estimate lies within
+0.36 deg of the lines. Of the still windows, 3 are marked valid at about 4 px
+per frame along the lines, while their frames moved by at most 0.11 px
+(one-sided 95 % upper bound of the rate: 8.5 %). Their quality, 0.60 to 0.63,
+lies just above the threshold, so the count depends on small details: decoded
+with OpenCV 4.12 instead of 5.0.0, whose grey values differ by up to 2 levels,
+13 of 89 still windows come out valid (upper bound 22 %), while the moving
+video changes little (81 valid windows, largest speed deviation 1.25 %). In
+the forward model, textures that repeat every 64 or 128 px gave errors of tens
+of degrees in the direction and large errors of the speed; the real grid, thin
+lines on paper with a texture of its own and a motion nearly along the lines,
+failed far more mildly, but in the same way: results marked valid that the
+pattern, not the motion, decides.
 
 ## Synthetic test sequences
 
