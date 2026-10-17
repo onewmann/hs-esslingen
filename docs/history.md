@@ -4,7 +4,7 @@ The method comes from the doctoral thesis of Jan Horn (2006; full reference in
 [method.md](method.md#reference)). A student project in 2025 implemented it in
 MATLAB. Its scripts are kept at the tag
 [`student-project-2025`](https://github.com/onewmann/2D-FFT-Code/tree/student-project-2025/2D-FFT),
-unchanged apart from three small edits listed [below](#what-the-tag-holds). Everything after the tag
+unchanged apart from a few small edits listed [below](#what-the-tag-holds). Everything after the tag
 was done with the assistance of AI (Claude by Anthropic): first a code review
 of the 2025 scripts, then the rework, starting with the commit "Rewrite the
 2D-FFT velocity estimator for MATLAB, Octave and Python". On this page and in
@@ -136,9 +136,11 @@ The first upload also contained `Matlab_BaslerCamDriver/`, a Basler camera
 driver for MATLAB by another author under the MIT licence. It is third-party
 code: the tag still holds it at the repository root, and the rework neither
 contains nor uses it. The upload also held a repository template `README.md`
-in `2D-FFT/`, which was removed from the tag. Two privacy edits followed: the
+in `2D-FFT/`, which was removed from the tag. Privacy edits followed: the
 photo `2D-FFT/data/image001.png` lost its location data (the EXIF and XMP
-metadata; the pixels are unchanged), and
+metadata; the pixels are unchanged), the two phone videos
+`2D-FFT/data/testvid.mp4` and `testvid1.mp4` lost their sound tracks and file
+metadata (the video streams are unchanged), and
 `2D-FFT/aktuell/Grundlagen_Skripte/studiprojekKapitel34_v2.m` reads its image
 from `data\image001.png` instead of a folder on the author's computer. Apart
 from that, the tag keeps the 2025 scripts unchanged.
