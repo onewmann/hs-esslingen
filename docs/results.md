@@ -21,7 +21,11 @@ per flash for a multi-flash image.
 Every number comes from the CSV files in
 [`experiments/results/`](../experiments/results), written by a full run of
 `experiments/run.py --all` on 12 October 2026 (4 CPUs, Python 3.13.16, NumPy
-2.5.3, GNU Octave 8.4.0, see `environment.json`). "Correct" always means a
+2.5.3, GNU Octave 8.4.0, see `environment.json`) and, for the textures of
+streaks, by `experiments/streaks.py` on 24 October 2026, except those of the
+phone videos, which come from the `results.csv` of their sessions in
+`data/measurements/` (OpenCV 5.0.0; the numbers for OpenCV 4.12 come from a
+rerun that is not kept in the repository). "Correct" always means a
 direction within 2 deg and a speed within 5 % of the true values. How the
 estimator works is in [method.md](method.md), what an acquisition needs in
 [acquisition.md](acquisition.md).
@@ -31,7 +35,8 @@ estimator works is in [method.md](method.md), what an acquisition needs in
 A phone moved by hand over the speckled top of a desk, recorded in slow
 motion at 120 frames per second with the phone's lamp on: 447 frames,
 3.9 s, close to horizontal, 5.3 to 13.7 px per frame in the windows with
-even steps (about 1.5 to 14.3 px between any two frames). Windows of 5
+even steps (about 1.5 to 14.3 px between consecutive frames one interval
+apart). Windows of 5
 consecutive frames of a 512 x 512 px square below the lamp's bright spot were
 averaged and estimated; the reference is the mean step between the same
 frames by phase correlation, which is independent of the estimator but not of
@@ -55,14 +60,13 @@ reference share any scale error of the image, such as lens distortion or
 rolling shutter.
 
 Three earlier videos of the same desk at 30 frames per second (not in the
-repository) moved by 76 to 93 px per frame (median), with steps that varied
-by 24 to 36 % within 9 frames and strong motion blur. Of their windows of 5
-frames, 51 of 268 were valid, and the share fell with speed: 14 of 21 of the
-windows with fairly even steps were valid at 30 to 60 px per frame, 5 of 78
-above 90 px. At the same speed and image scale, 120 frames per second gives
-steps four times smaller, and the exposure cannot exceed 8.3 ms. In these
-videos the steps were about ten times smaller (median 8.7 px against 76 to
-93 px), so the phone also moved more slowly or the image scale differed; the
+repository) moved by tens of pixels per frame, with strong motion blur and
+uneven steps, and most of their windows of 5 frames were not valid, fewer the
+faster the motion; that attempt is why this session was recorded at 120
+frames per second. At the same speed and image scale, 120 frames per second
+gives steps four times smaller, and the exposure cannot exceed 8.3 ms. The
+steps in this video, median 8.7 px, were about ten times smaller than in
+those, so the phone also moved more slowly or the image scale differed; the
 exposure times are not stored.
 
 ## Graph paper: a periodic texture
@@ -90,11 +94,13 @@ these is valid. 10 of the 83 windows are more than 2 deg off the step, by up
 to 5.2 deg, and in all 10 the estimate lies within 0.36 deg of the lines. Of
 the still windows, 3 are marked valid at about 4 px per frame along the lines,
 while their frames moved by at most 0.11 px (one-sided 95 % upper bound of the
-rate: 8.5 %). Their quality, 0.60 to 0.63, lies just above the threshold, so
-the count depends on small details: decoded with OpenCV 4.12 instead of 5.0.0,
-whose grey values differ by up to 2 levels, 13 of 89 still windows come out
-valid (upper bound 22 %), while the moving video changes little (81 instead of
-83 valid windows with even steps, largest speed deviation 1.25 %). In the
+rate: 8.5 %; the windows come from one recording of one patch and are not
+independent, so the bound is too narrow). Their quality, 0.60 to 0.63, lies
+just above the threshold, so the count depends on small details: decoded with
+OpenCV 4.12 instead of 5.0.0, whose grey values differ by up to 2 levels, 13
+of 89 still windows come out valid (upper bound 22 %, same caveat), while the
+moving video changes little (81 instead of 83 valid windows with even steps,
+largest speed deviation 1.25 %). In the
 forward model, textures that repeat every 64 or 128 px gave errors of tens of
 degrees in the direction and large errors of the speed; the real grid, thin
 lines on paper with a texture of its own and a motion nearly along the lines,
@@ -428,7 +434,10 @@ exactly when $k \ge 9$.
 | 7. crops of the camera texture without added noise | 588 | 1 | 0.80 % | 10.19 |
 
 All 2268 simulated images without motion together gave 0 valid (upper bound
-0.13 %), with a largest k of 8.64. Three of the four valid `vid1` crops have
+0.13 %), with a largest k of 8.64. None of them is a texture of streaks; such
+static textures pass in about half of the images
+([static textures of streaks](#static-textures-of-streaks)). Three of the
+four valid `vid1` crops have
 35 % or more saturated pixels. The bounds of the two real sets assume
 independent crops, but the crops come from only 10 frames per recording, so
 these bounds are too narrow
@@ -464,6 +473,34 @@ is unknown until such recordings exist.
 ```bash
 python experiments/calibrate_threshold.py
 ```
+
+
+### Static textures of streaks
+
+The isotropy check compares the fit along the direction found with the fit
+across it, so a texture that is itself anisotropic can pass it while nothing
+moves. [`experiments/streaks.py`](../experiments/streaks.py) takes 256 px
+crops of static random textures with a correlation length of 1 to 4 px across
+the streaks and 8 to 64 px along them (12 images per pair of lengths, K = 9),
+textures with the same length in both directions as controls, and the same
+textures of streaks in motion at 1 to 8 px per step in four directions.
+
+| Static textures | Images | Valid | Valid with `reject_blur` and `clip_outliers` |
+|---|---:|---:|---:|
+| length along the streaks 16 times or more that across | 72 | 39 | 39 |
+| 8 times | 36 | 3 | 3 |
+| 2 to 4 times | 36 | 0 | 0 |
+| isotropic controls | 48 | 0 | 0 |
+
+The valid static images come out as motion of 4.4 to 4.7 px per step along
+the streaks, with a quality of 0.60 to 0.68 against the threshold of 0.60;
+none is blur-like, and the isotropy check flagged 2 of the 72. In motion, all
+32 images were correct and valid (largest direction error 0.04 deg, largest
+speed error 0.19 %): the estimator measures such a surface when it moves and
+reports it as moving when it does not. A brushed or grained surface is
+therefore unsuitable (assumption 1 in [method.md](method.md#assumptions)),
+and static bursts belong in every session
+([acquisition.md](acquisition.md#static-images)).
 
 ## Run time
 

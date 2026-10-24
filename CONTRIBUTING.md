@@ -141,7 +141,7 @@ their content has changed.
 
 5. Rerun the studies. `python experiments/run.py --all` rewrites the CSV files
    in `experiments/results/` and the figures in `docs/figures/` (its docstring
-   gives about 70 min on 4 cores); `--quick` checks the scripts with smaller
+   gives about 75 min on 4 cores); `--quick` checks the scripts with smaller
    grids and writes to the ignored `experiments/results_quick/`.
 
    ```bash

@@ -7,7 +7,9 @@ experiments/real_measurements.py reads.
 The frames are read with the reader of the session 2026-10-16_phone_120fps
 (OpenCV, turned upright, grey) and cut to the central 512 x 512 px square
 (rows 704 to 1215, columns 284 to 795): frames_moving.npz and frames_still.npz,
-not kept in git.
+not kept in git. The 1024 px field of every frame of a video is held in memory
+for the grid measurement, about 1.7 GB at the peak for these videos; a longer
+video needs proportionally more.
 
 meta.csv lists consecutive windows of 5 frames of both videos. The still video
 is listed with static 1: the phone was held still over the paper, and its

@@ -22,9 +22,12 @@ and figure are under CC BY 4.0
 ```bash
 python -m pip install -e "./python[plot,data,video]"
 python data/measurements/2026-10-17_phone_grid/extract_frames.py
-python experiments/real_measurements.py data/measurements/2026-10-17_phone_grid/meta.csv --figure data/measurements/2026-10-17_phone_grid/results.png
+python experiments/real_measurements.py data/measurements/2026-10-17_phone_grid/meta.csv --jobs 4 --figure data/measurements/2026-10-17_phone_grid/results.png
 python data/measurements/2026-10-17_phone_grid/directions.py
 ```
+
+With one worker (the default) the evaluation takes several minutes; `--jobs 4`
+uses four cores.
 
 The committed `results.csv` was made with OpenCV 5.0.0. Other versions
 decode the video slightly differently (grey values up to 2 levels apart), and
@@ -76,12 +79,16 @@ flags it, and it is left out of the numbers above.
 All windows of the still video (`static` 1) must come out not valid. 3 of 89
 are marked valid (frames 306 to 320): 4.1 to 4.4 px per frame along the grid
 lines (0 and 180 deg), while their frames moved by 0.03 to 0.11 px. The
-one-sided 95 % upper bound of the rate is 8.5 %.
+one-sided 95 % Clopper-Pearson upper bound over the 89 windows is 8.5 %, but
+the windows come from one recording of one patch of paper and are not
+independent, so the bound is too narrow
+([acquisition.md](../../../docs/acquisition.md#static-images) counts repeated
+recordings of one patch as one).
 
 This number is fragile. The quality of the three windows is 0.60 to 0.63,
 just above the threshold of 0.60. With OpenCV 4.12 instead of 5.0.0, 13 of 89
-windows come out valid (upper bound 22 %), all with a quality of 0.62 to
-0.70. On the moving video the two versions agree closely: 81 instead of 83
+windows come out valid (upper bound 22 %, with the same caveat), all with a
+quality of 0.62 to 0.70. On the moving video the two versions agree closely: 81 instead of 83
 valid windows with even steps, largest speed deviation 1.25 % instead of
 1.39 %, again 10 windows more than 2 deg off, 9 of them the same.
 

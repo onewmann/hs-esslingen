@@ -27,9 +27,9 @@ lies in the subfolder `python`, so the URL needs `#subdirectory=python`:
 python -m pip install "fftvel @ git+https://github.com/onewmann/2D-FFT-Code#subdirectory=python"
 ```
 
-This still downloads the files of the current version, about 70 MB, most of
-it the recordings in `data/recordings`, although the package itself is about
-100 KB.
+This still downloads the files of the current version, about 130 MB, most of
+it the recordings in `data/recordings` and the phone videos in
+`data/measurements`, although the package itself is about 100 KB.
 
 The core (`python -m pip install -e ./python`) needs only NumPy and reads
 `.npy` and `.npz` files. The extras add:

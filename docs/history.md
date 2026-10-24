@@ -53,8 +53,10 @@ recordings of the moving surface gives steps of 2.94 to 8.19 px (`vid2`), 4.53
 to 17.99 px (`vid3`) and 1.60 to 6.01 px (`vid4`), with directions spread over
 29 to 41 deg within a recording. All six 9-frame averages are rejected by the
 rework ([results.md](results.md#the-2025-recordings)). Averaged frames are
-also the main mode of the rework; new recordings at a fixed frame rate are in
-preparation.
+also the main mode of the rework; the first recordings at a fixed frame rate,
+phone videos at 120 frames per second, are evaluated in
+[results.md](results.md#phone-video-at-120-frames-per-second), and a
+recording against a physical reference speed is still to come.
 
 ![Frame-to-frame motion in the 2025 recordings](figures/recordings.png)
 

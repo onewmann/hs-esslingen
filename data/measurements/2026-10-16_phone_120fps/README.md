@@ -18,8 +18,11 @@ correlation. Data and figure are under CC BY 4.0
 ```bash
 python -m pip install -e "./python[plot,data,video]"
 python data/measurements/2026-10-16_phone_120fps/extract_frames.py
-python experiments/real_measurements.py data/measurements/2026-10-16_phone_120fps/meta.csv --figure data/measurements/2026-10-16_phone_120fps/results.png
+python experiments/real_measurements.py data/measurements/2026-10-16_phone_120fps/meta.csv --jobs 4 --figure data/measurements/2026-10-16_phone_120fps/results.png
 ```
+
+With one worker (the default) the evaluation takes a few minutes; `--jobs 4`
+uses four cores.
 
 The analysed square lies below the bright spot of the lamp, which stays at
 the same place in the image while the surface moves; a static bright spot in
@@ -32,10 +35,12 @@ the square breaks the model (assumption 9 in
 The frame interval is 8.32 ms (median of the timestamps stored in the video).
 There is a gap of 178 ms after the first frame, as the phone starts recording,
 and four gaps of 25 ms, three frame intervals, where the phone dropped two
-frames. Between consecutive frames the surface moved by about 1.5 to 14.3 px
-(5.3 to 13.7 px in the 68 windows with even steps), close to horizontal
-(directions of -11 to 15 deg between frames, -7 to 14 deg in those windows). The exposure time is not stored, so the duty is
-taken as 0. Nothing was saturated.
+frames. Between consecutive frames one interval apart the surface moved by
+about 1.5 to 14.3 px (5.3 to 13.7 px in the 68 windows with even steps), close
+to horizontal (directions of -11 to 15 deg between frames, -7 to 14 deg in
+those windows); across the four dropped-frame gaps it moved 23 to 43 px. The
+exposure time is not stored, so the duty is taken as 0. Nothing was
+saturated.
 
 ## Result
 
@@ -85,6 +90,6 @@ It does not show:
 
 An earlier attempt with three videos at 30 frames per second (not in the
 repository) failed for the reasons in
-[acquisition.md](../../../docs/acquisition.md#choosing-the-frame-rate): at
-76 to 93 px per frame (median) and with the motion blur of a long exposure,
-51 of 268 windows of 5 frames were valid.
+[acquisition.md](../../../docs/acquisition.md#choosing-the-frame-rate): tens
+of pixels per frame with the motion blur of a long exposure, and most windows
+of 5 frames were not valid.

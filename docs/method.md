@@ -137,15 +137,15 @@ $j$ from 2 to $0.9\,(\tilde N/2 - 1)$; the two bins next to zero frequency
 hold the central peak and are left out. For a random texture the expected
 power of the windowed pulsed image at bin $j$ is
 
-$$P(j) = \frac{1}{K^2}\Big[K + 2\sum_{m=1}^{K-1}(K-m)\,\rho(m\mathbf v)\,\cos\Big(\frac{2\pi j m |\mathbf v|}{\tilde N}\Big)\Big]$$
+$$P(j) = \frac{1}{K^2}\Big[K + 2\sum_{s=1}^{K-1}(K-s)\,\rho(s\mathbf v)\,\cos\Big(\frac{2\pi j s |\mathbf v|}{\tilde N}\Big)\Big]$$
 
-Each term pairs two exposures $m$ steps apart, and there are $K-m$ such pairs.
-$\rho(m\mathbf v)$ is the autocorrelation of the window at the offset between
-the two copies: copies shifted by $m\mathbf v$ overlap only where the window
+Each term pairs two exposures $s$ steps apart, and there are $K-s$ such pairs.
+$\rho(s\mathbf v)$ is the autocorrelation of the window at the offset between
+the two copies: copies shifted by $s\mathbf v$ overlap only where the window
 covers both, so their correlation falls as the offset grows. For the
 separable Hann window of $N$ points it has a closed form:
 
-$$\rho(m\mathbf v) = \rho_w(m v_x)\,\rho_w(m v_y),\qquad \rho_w(\tau) = (1-x)\,\frac{2+\cos 2\pi x}{3} + \frac{\sin 2\pi x}{2\pi},\qquad x = \frac{|\tau|}{N-1}$$
+$$\rho(s\mathbf v) = \rho_w(s v_x)\,\rho_w(s v_y),\qquad \rho_w(\tau) = (1-x)\,\frac{2+\cos 2\pi x}{3} + \frac{\sin 2\pi x}{2\pi},\qquad x = \frac{|\tau|}{N-1}$$
 
 for $x < 1$, and $`\rho_w = 0`$ beyond. For $N = 256$ it agrees with the
 discrete autocorrelation of the window to $3.3\cdot 10^{-10}$. Since $P$ is a
@@ -211,7 +211,9 @@ with a little noise; 32 to 256 px; K = 3, 5, 9 and 21, that is L = 1, 2, 4
 and 10; 12 seeds each) the
 largest $k$ was 8.41 and the 99th percentile 7.47. On all 2268 simulated
 images without motion, held-out textures included, the largest $k$ was 8.64,
-and none was valid. These sets also served to check the constant, so the
+and none was valid. None of these textures is strongly anisotropic; a static
+texture of streaks passes in about half of the images (assumption 1). These
+sets also served to check the constant, so the
 held-out real images are the better guide to real false alarms: of 252 crops
 of single frames of the room scene `vid1`, 4 were valid. These crops come from
 the 10 frames of one scene, so they are not independent trials and say little
@@ -245,11 +247,16 @@ The same speed fit is repeated on the projection perpendicular to the
 direction found. Motion makes the spectrum anisotropic, so that fit is
 clearly worse or gives another speed. If its quality is less than 0.15 lower
 and its speed lies within a factor $e^{0.12} \approx 1.13$, the structure is
-isotropic and the estimate is not valid. This catches defocus, whose disc blur
-puts ring-shaped zeros into the spectrum that look like slow motion in every
-direction, and square repeating textures, which have the same period along
-both axes. In the noise study it flagged 10 of 840 images, all of which also
-failed the quality threshold, in simulation.
+isotropic and the estimate is not valid. It is meant to catch defocus, whose
+disc blur puts ring-shaped zeros into the spectrum that look like slow motion
+in every direction, and square repeating textures, which have the same period
+along both axes; the test suite checks it on a defocused camera texture and on
+a repeating texture. On real graph paper held still it flagged three of the
+six windows that reached the quality threshold and let the other three
+through as valid ([results.md](results.md#graph-paper-a-periodic-texture)). A
+static texture that is itself strongly anisotropic, such as streaks, passes it
+(assumption 1). In the noise study it flagged 10 of 840 images, all of which
+also failed the quality threshold, in simulation.
 
 ### Blur check (optional)
 
@@ -296,7 +303,15 @@ acquisition meets them.
 1. The surface carries a random, non-repeating texture over the whole analysed
    square. A texture that repeats every 160 px or less gave wrong results
    marked valid in 50 to 100 % of the images, in simulation with the forward
-   model.
+   model. A static texture of streaks, with a correlation length along the
+   streaks 16 times or more that across them (1 to 4 px across, 16 to 64 px
+   along), came out valid in 39 of 72 simulated 256 px images, as motion of
+   4.4 to 4.7 px per step along the streaks, and `reject_blur` and
+   `clip_outliers` do not change that; the isotropy check does not reject it,
+   because the texture itself is anisotropic. The same textures in motion were
+   measured correctly in all 32 cases, so the risk is a static brushed or
+   grained surface reported as moving
+   ([static textures of streaks](results.md#static-textures-of-streaks)).
 2. The motion is a pure translation in the image plane during the burst: no
    rotation, no change of scale (constant working distance) and no change of
    perspective.

@@ -1,9 +1,10 @@
 """Accuracy, noise robustness, validity check, test sequences, camera
 recordings and before/after comparison; on request also the threshold
-calibration, the baselines, the model violations and the run time.
+calibration, the baselines, the model violations, the textures of streaks
+and the run time.
 
     python experiments/run.py                 # default parts, about 15 min on 4 cores
-    python experiments/run.py --all           # all ten parts, about 70 min on 4 cores
+    python experiments/run.py --all           # all eleven parts, about 75 min on 4 cores
     python experiments/run.py --quick         # smaller grids, for a check
     python experiments/run.py --quick --all
     python experiments/run.py --only calibration violations
@@ -12,7 +13,7 @@ calibration, the baselines, the model violations and the run time.
     python experiments/noise.py --quick       # one part alone
 
 Parts run without --only (the default set): accuracy, noise, before_after,
-pipeline, testsequences and recordings. --all adds the four parts that run
+pipeline, testsequences and recordings. --all adds the five parts that run
 only on request (or name them with --only):
 
 * calibration: the validity threshold (calibrate_threshold.py, about 20 min
@@ -21,6 +22,8 @@ only on request (or name them with --only):
   (baselines.py, 7 to 10 min on 4 cores),
 * violations: an independent forward model of the camera and the factors
   that break the estimator (model_violations.py, about 20 min on 4 cores),
+* streaks: static textures of streaks that pass the validity check, and the
+  same textures in motion (streaks.py, about 2 min on 4 cores),
 * timing: run time of estimate_velocity in Python and, if octave is on the
   PATH, in Octave (timing.py, about 8 min; it runs last and alone, so that
   nothing else competes for the CPU).
@@ -73,16 +76,17 @@ import model_violations  # noqa: E402
 import noise  # noqa: E402
 import pipeline_figure  # noqa: E402
 import recordings_2025  # noqa: E402
+import streaks  # noqa: E402
 import testsequences  # noqa: E402
 import timing  # noqa: E402
 from history import before_after  # noqa: E402
 
 PARTS = ["accuracy", "noise", "before_after", "pipeline", "testsequences", "recordings"]   # the default set
-EXTRA = ["calibration", "baselines", "violations", "timing"]           # only with --only or --all
+EXTRA = ["calibration", "baselines", "violations", "streaks", "timing"]   # only with --only or --all
 ALL_PARTS = PARTS + EXTRA
 STUDIES = dict(zip(ALL_PARTS, (accuracy, noise, before_after, pipeline_figure, testsequences, recordings_2025,
-                               calibrate_threshold, baselines, model_violations, timing), strict=True))
-SIMULATIONS = ["accuracy", "noise", "before_after", "calibration", "baselines", "violations"]   # share the pool
+                               calibrate_threshold, baselines, model_violations, streaks, timing), strict=True))
+SIMULATIONS = ["accuracy", "noise", "before_after", "calibration", "baselines", "violations", "streaks"]
 SUMMARISED = ["accuracy", "noise", "before_after"]      # summary also for the CSV files of an earlier run
 RECORDING_FILES = {"recordings": recordings_2025.FILES, "calibration": calibrate_threshold.FILES}
 
@@ -179,6 +183,8 @@ def main(argv=None, only=None, description=__doc__):
                 baselines.summary(baselines.run(pool, a.quick))
             if "violations" in sim:
                 model_violations.summary(model_violations.run(pool, a.quick), check=False)   # run printed the check
+            if "streaks" in sim:
+                streaks.summary(streaks.run(pool, a.quick))
     if "pipeline" in parts:
         pipeline_figure.run()
     if "testsequences" in parts:

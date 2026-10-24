@@ -446,8 +446,9 @@ Text/CSV (delimiter comma); a double click puts each row into one cell.
 * Give the share of moving images marked valid and the reasons for the
   others (column `reason`), the number of images behind each statistic, the
   median, 95th percentile and maximum of the errors of the valid images
-  (with fewer than 20 images the 95th percentile lies between the largest
-  values), the valid images that are off by more than 5 % or 2 deg, and the
+  (the percentile by linear interpolation between the sorted values, numpy's
+  default; with fewer than 20 images it lies between the largest values), the
+  valid images that are off by more than 5 % or 2 deg, and the
   static images marked valid, each with its upper bound. The bound assumes
   independent images, so count static images of one surface patch as one
   ([static images](../../docs/acquisition.md#static-images)).

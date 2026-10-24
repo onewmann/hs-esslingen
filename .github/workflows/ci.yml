@@ -25,8 +25,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e "./python[test,video]"
-      - name: Test
-        run: python -m pytest -q tests/python
+      - name: Test (the optional readers must be installed, or their tests skip)
+        run: |
+          python -c "import cv2, h5py, matplotlib, PIL, scipy, tifffile"
+          python -m pytest -q -rs tests/python
       - name: Experiments (small subset, outside the repository)
         run: |
           python experiments/run.py --quick --only pipeline testsequences before_after --out "${{ runner.temp }}/exp"

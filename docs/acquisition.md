@@ -134,8 +134,10 @@ can do the same (assumptions 1 and 9 in
 (for example Gaussian noise made with numpy, smoothed so that one grain spans
 a few pixels in the image and stretched to the full grey range), matte paper
 or cardboard with a fine irregular texture, or sandpaper. Not suitable are woven fabric, a
-grid, a checkerboard or any other regular pattern, and glossy surfaces with
-reflections. Keep sheet edges, clamps, tape, screw heads and dust spots out of
+grid, a checkerboard or any other regular pattern, brushed or grained surfaces
+whose streaks are many times longer than they are wide (a static one can come
+out valid as motion along the streaks; assumption 1 in
+[method.md](method.md#assumptions)), and glossy surfaces with reflections. Keep sheet edges, clamps, tape, screw heads and dust spots out of
 the analysed square during the whole burst, and make the sheet longer than the
 move plus the field of view. Static bursts of the surface must come out not
 valid ([static images](#static-images)). Graph paper shows what a regular pattern
@@ -152,7 +154,7 @@ A phone can record usable bursts. In the
 motion at 120 frames per second gave about 5 to 14 px per frame in the windows
 with even steps, for a hand moving at an ordinary pace, and all those windows
 were valid. Three earlier videos at 30 frames per second (not in the
-repository) moved by 76 to 93 px per frame with strong motion blur, and few
+repository) moved by tens of pixels per frame with strong motion blur, and few
 windows were valid ([results](results.md#phone-video-at-120-frames-per-second)).
 
 * Record in slow motion (120 or 240 frames per second), or in a manual mode

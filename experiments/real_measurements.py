@@ -1122,8 +1122,10 @@ def _summary_average(ok, valid, out, worst, log, tol_speed=TOL_SPEED, tol_angle=
 def plot(results, path: Path, tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, label=""):
     """Estimated against set speed, the speed errors and the angle errors, written to ``path``.
 
-    The axes are scaled to the set values and the valid estimates; not valid
-    estimates outside them are left out and counted in the subtitle.
+    The axes are scaled to the set values and the valid estimates; estimates
+    outside them are left out and counted in the subtitle, valid ones
+    separately (a valid estimate off by more than 100 % lies outside the error
+    panel).
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -1133,7 +1135,7 @@ def plot(results, path: Path, tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, label=""
     moving = [r for r in ok if not r["static"]]
     static = [r for r in ok if r["static"]]
     fig, (ax1, ax2, ax3) = common.figure(3, 13.5)
-    hidden = set()
+    hidden = {}                                 # id(row) -> valid, for the rows outside an axis
     pts = [r for r in moving if r.get("speed_err") is not None]
     steps = [r for r in moving if r.get("mode") == "average" and r.get("ref_speed_diff") is not None
              and not r.get("uneven_steps")]
@@ -1156,7 +1158,7 @@ def plot(results, path: Path, tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, label=""
         _scatter(ax2, ref, err, valid)
         ax2.set_xlim(0, top)
         ax2.set_ylim(-lim, lim)
-        hidden |= {r["file"] for r, e, y in zip(steps, err, est) if abs(e) > lim or y > top}
+        hidden.update({id(r): bool(r["valid"]) for r, e, y in zip(steps, err, est) if abs(e) > lim or y > top})
         labels = (("mean step, phase correlation (px/frame)", "estimated speed (px/frame)"),
                   ("mean step, phase correlation (px/frame)", "speed against the step (%)"))
     elif pts:
@@ -1177,7 +1179,7 @@ def plot(results, path: Path, tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, label=""
         _scatter(ax2, set_v, err, valid)
         ax2.set_xlim(0, top)
         ax2.set_ylim(-lim, lim)
-        hidden |= {r["file"] for r, e, y in zip(pts, err, est_v) if abs(e) > lim or y > top}
+        hidden.update({id(r): bool(r["valid"]) for r, e, y in zip(pts, err, est_v) if abs(e) > lim or y > top})
     else:
         modes = {r.get("mode") for r in moving}
         period = "frame period" if modes == {"average"} else ("flash or frame period" if "average" in modes
@@ -1200,7 +1202,7 @@ def plot(results, path: Path, tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, label=""
         _scatter(ax3, [r["set_angle_deg"] % 180 for r in ang], err, valid)
         ax3.set_xlim(0, 180)
         ax3.set_ylim(-lim, lim)
-        hidden |= {r["file"] for r, e in zip(ang, err) if abs(e) > lim}
+        hidden.update({id(r): bool(r["valid"]) for r, e in zip(ang, err) if abs(e) > lim})
     elif steps:                                 # no set angle: the estimate against the direction of the mean step
         err = np.array([r["ref_angle_diff_deg"] for r in steps])
         valid = np.array([bool(r["valid"]) for r in steps])
@@ -1210,7 +1212,7 @@ def plot(results, path: Path, tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, label=""
         _scatter(ax3, [r["ref_angle_deg"] for r in steps], err, valid)
         ax3.set_xlim(0, 180)
         ax3.set_ylim(-lim, lim)
-        hidden |= {r["file"] for r, e in zip(steps, err) if abs(e) > lim}
+        hidden.update({id(r): bool(r["valid"]) for r, e in zip(steps, err) if abs(e) > lim})
     else:
         ax3.text(0.5, 0.5, "no set angle", transform=ax3.transAxes, ha="center", color=INK2)
     if ang or not steps:
@@ -1222,7 +1224,9 @@ def plot(results, path: Path, tol_speed=TOL_SPEED, tol_angle=TOL_ANGLE, label=""
            f"{len(static)} static ones (should be 0); filled = valid, open = not valid, band = "
            f"{100 * tol_speed:g} % / {tol_angle:g} deg")
     if hidden:
-        sub += f"; {len(hidden)} not valid outside the axes"
+        n_valid = sum(hidden.values())
+        sub += (f"; {len(hidden)} outside the axes, {n_valid} of them valid" if n_valid
+                else f"; {len(hidden)} not valid outside the axes")
     stepped = not pts and steps                 # the speed panels show the estimate against the mean step
     if stepped:
         dropped = sum(1 for r in moving if r.get("mode") == "average" and r.get("ref_speed_diff") is not None

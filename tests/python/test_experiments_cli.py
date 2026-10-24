@@ -8,7 +8,7 @@ import sys
 import pytest
 
 STUDY_MODULES = ["run", "common", "accuracy", "noise", "pipeline_figure", "recordings_2025", "testsequences",
-                 "calibrate_threshold", "baselines", "model_violations", "timing",
+                 "calibrate_threshold", "baselines", "model_violations", "streaks", "timing",
                  "history", "history.before_after", "history.original_2025"]
 ALL_VIDEOS = "vid1.mat, vid2.mat, vid3.mat, vid4.mat not found"
 
@@ -109,7 +109,7 @@ def test_default_folders(repo, experiments):
     assert common.QUICK == repo / "experiments" / "results_quick"
     assert common.RECORDINGS == repo / "data" / "recordings"
     assert run.PARTS == ["accuracy", "noise", "before_after", "pipeline", "testsequences", "recordings"]
-    assert run.EXTRA == ["calibration", "baselines", "violations", "timing"]
+    assert run.EXTRA == ["calibration", "baselines", "violations", "streaks", "timing"]
     assert run.ALL_PARTS == run.PARTS + run.EXTRA and list(run.STUDIES) == run.ALL_PARTS
     for part in run.ALL_PARTS:
         study = run.STUDIES[part]

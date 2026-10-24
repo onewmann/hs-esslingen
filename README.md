@@ -18,7 +18,7 @@ The estimator works in simulation, on synthetic frame sequences and on a first r
 | Area | State |
 |---|---|
 | Simulation and synthetic sequences | Works. In simulation (256 px, 9 frames with short exposures, no noise) the direction is within 0.70 deg and the speed within 0.47 % from 0.4 to 64 px per frame. On the two synthetic test sequences with constant motion (whole-pixel steps) all 24 windows of 9 averaged frames are valid. |
-| Real camera, averaged frames | Works on a first real recording: a phone moved by hand over a desk top at 120 frames per second. All 68 windows of 5 frames with even steps are valid and within 0.81 % and 0.52 deg of phase correlation of the same frames (median 0.21 % and 0.13 deg), at 5.3 to 13.7 px per frame ([phone video](data/measurements/2026-10-16_phone_120fps/README.md)). There is no physical reference speed and no recording of the stopped surface yet. The 2025 Basler recordings, with steps that vary by a factor of 2.8 to 4.0, are rejected, as they should be. |
+| Real camera, averaged frames | Works on a first real recording: a phone moved by hand over a desk top at 120 frames per second. All 68 windows of 5 frames with even steps are valid and within 0.81 % and 0.52 deg of phase correlation of the same frames (median 0.21 % and 0.13 deg), at 5.3 to 13.7 px per frame ([phone video](data/measurements/2026-10-16_phone_120fps/README.md)). There is no physical reference speed yet, and no recording of the stopped desk top; the only recording of a stopped surface is of graph paper, a periodic texture ([graph paper](data/measurements/2026-10-17_phone_grid/README.md)). The 2025 Basler recordings, with steps that vary by a factor of 2.8 to 4.0, are rejected, as they should be. |
 | Real multi-flash images | None yet. |
 | Camera scripts | Experimental. Neither live script has run on camera hardware; the Python one was checked with the pylon camera emulator. |
 | Tests | CI on every push: the Python tests on Python 3.10, 3.13 and 3.14, and the MATLAB/Octave tests, parity cases included, in GNU Octave and in MATLAB. Both jobs also run the two demos. |
@@ -104,6 +104,7 @@ Ordered by how independent the data are of the estimator's own model. All number
 | [Single camera frames](docs/results.md#single-camera-frames-a-real-null-test) | 1360 crops of single frames of the 2025 recordings: one exposure each, so nothing repeats | 59 valid, all false alarms; 41 of the 47 on the moving surface look like motion blur |
 | [Accuracy](docs/results.md#accuracy-and-noise-in-simulation) | in simulation: 256 px, 9 frames with short exposures, no noise, random and camera texture | Within 0.70 deg and 0.47 % from 0.4 to 64 px per frame; 0 of 24 valid at 0.3 px per frame, below the range |
 | [Noise](docs/results.md#accuracy-and-noise-in-simulation) | in simulation: 60 images per noise level and texture | Noise at half the signal: 91.7 % correct (random texture) and 70.0 % (camera texture); noise as strong as the signal: 71.7 % and 50.0 %. 11 of 592 valid estimates wrong; 0 of 120 images without motion valid |
+| [Static streaks](docs/results.md#static-textures-of-streaks) | in simulation: 192 static textures of streaks and isotropic controls, 32 moving textures of streaks | 39 of the 72 static textures whose grain is 16 times or more longer than wide are valid, as motion of 4.4 to 4.7 px per step along the streaks; 0 of 48 isotropic controls; all 32 moving ones correct and valid |
 | [Baselines](docs/results.md#baselines) | in simulation: the 840 noise images | Correct (random / camera texture): `fftvel` 80.2 / 63.3 %, single-image baselines at most 72.1 / 59.8 % (on the camera texture not significantly different from the cepstrum), phase correlation of two frames 95.0 / 87.9 % |
 
 The simulated images come from the model the estimator fits: the mean of K instantaneous exposures, which is the mean of K frames with short exposures and equally one exposure with K short flashes. They check the implementation and say nothing about how well that model describes a real camera. Most numbers in the next section come from an independent forward model, which does not use the estimator's simulator and adds sensor noise, long exposures, timing and brightness jitter and other violations of the model ([results.md](docs/results.md#model-violations-in-an-independent-forward-model)).
@@ -124,6 +125,7 @@ These causes give a wrong result that is still marked valid by the estimator alo
 | Strong static edges | an edge of twice the mean signal: 28.1 % wrong but valid | keep edges and masks out of the analysed square (`roi`), fill masked areas with the image mean ([edges](docs/acquisition.md#saturation-and-glints)) |
 | Glints, saturated spots | two static glints of 3 times the mean signal: 96.9 % wrong but valid | `clip_outliers`, with which all were correct and valid; diffuse light, no saturated pixels ([glints](docs/acquisition.md#saturation-and-glints)) |
 | Periodic texture | a pattern repeating every 64 or 128 px: 100 % wrong but valid; every 160 px: 50.0 %. Real graph paper (a period of about 130 px, phone video): speed within 1.4 %, but the direction pulled towards the grid lines by up to 5.2 deg (10 of 83 windows more than 2 deg off), and 3 of 89 windows of the phone held still valid, 13 with another OpenCV version ([graph paper](data/measurements/2026-10-17_phone_grid/README.md)) | a non-repeating texture ([assumptions](docs/method.md#assumptions)) |
+| Static texture of streaks (brushed or grained surface) | correlation length along the streaks 16 times or more that across them, nothing moving: 39 of 72 valid as motion of 4.4 to 4.7 px per step along the streaks; in motion, all 32 correct and valid ([streaks](docs/results.md#static-textures-of-streaks)) | a texture with about the same grain in every direction ([assumptions](docs/method.md#assumptions)); static bursts as a control ([static images](docs/acquisition.md#static-images)) |
 | Wrong K | 7, 8, 10 or 11 assumed for 9: 34.4 % wrong but valid, speed scaled by 9/K | the number of averaged frames as `exposures` / `--exposures`; `pulsed_from_stack` returns it, and `real_measurements.py` takes it from the column `frames` |
 
 ### Marked not valid
@@ -261,11 +263,11 @@ python/examples/     demos and the live camera script
 matlab/+fftvel/      MATLAB/Octave package (help fftvel.Contents), helpers in +internal/; matlab/examples/ the same demos and live_basler.m
 tests/               both test suites, the parity cases and constants.json
 experiments/         one script per study (run.py runs them) and real_measurements.py, the evaluation of your own measurements; results/ holds the CSV files
-data/                test sequences, a camera texture, the 2025 recordings; measurements/ for your own sessions and two synthetic examples
+data/                test sequences, a camera texture, the 2025 recordings; measurements/ holds two synthetic examples, the two phone sessions of 2026 and your own sessions
 docs/                method.md, results.md, acquisition.md, history.md; figures/
 ```
 
-A full clone is about 130 MB, because the history also holds the files of the 2025 student project. A partial clone fetches only the files of the version you check out (about 70 MB, most of it the four recordings in `data/recordings/`) and older files when they are needed:
+A full clone is about 190 MB, because the history also holds the files of the 2025 student project. A partial clone fetches only the files of the version you check out (about 130 MB, roughly half of it the four recordings in `data/recordings/` and half the three phone videos in `data/measurements/`) and older files when they are needed:
 
 ```bash
 git clone --filter=blob:none https://github.com/onewmann/2D-FFT-Code
