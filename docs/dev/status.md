@@ -183,6 +183,26 @@ the image, grid_lines.csv); all 10 windows more than 2 deg off lie within
 0.36 deg of the lines (directions.py). Still missing: the phone lying still on
 the desk top (a random texture) and an independent reference speed.
 
+Ground-up review (24 October). Seven reviewers and seven skeptics went over
+the clean repository (algorithm, evaluator, claims, reader, history,
+reproduction, security); 20 findings held. The one about the method: a static
+texture of streaks (correlation length along them 16 times or more that
+across) passes the validity check in about half of the images, because the
+isotropy check cannot tell an anisotropic texture from motion. New study
+experiments/streaks.py (part "streaks" of run.py, streaks.csv): 39 of 72 such
+images valid, 0 of 48 controls, all 32 moving ones correct; method.md
+(assumption 1, isotropy check), README (Where it fails, Results) and
+acquisition.md (test surface) say so. The rest: stale clone sizes (190 and
+130 MB), the Status sentence about the stopped surface, history.md, the
+symbol m used twice in method.md, the 30 fps numbers without a file behind
+them (replaced by words), the bounds of the still grid now with the caveat
+that the windows are not independent, the desk steps across the gaps (23 to
+43 px), --jobs 4 in the session commands, the figure subtitle of
+real_measurements.py (valid points outside the axes), CI imports the optional
+readers before the tests, publish.sh removes the remote before the refs and
+runs git fsck, and messages.txt strips the check_history.py paragraphs from
+two public commit messages.
+
 ## Next steps
 
 1. Record the test without a flash: follow docs/acquisition.md, section

@@ -58,10 +58,10 @@ fi
 # the tagger takes the committer identity: fixed here, not whatever this machine has configured
 GIT_COMMITTER_NAME=$OWNER_NAME GIT_COMMITTER_EMAIL=$OWNER_EMAIL git tag -f -a "$TAG" 8f0aec4 \
   -m "Student project scripts of 2025, unchanged apart from privacy edits: the template README removed, the location data of one photo, the sound and metadata of two videos and a local folder path in one script taken out. The AI-assisted rework starts after this commit." >/dev/null
+git remote remove origin          # first, so that refs/remotes/origin/HEAD goes with it
 for ref in $(git for-each-ref --format='%(refname)' refs/remotes refs/heads refs/tags); do
   case "$ref" in refs/heads/main|refs/tags/$TAG) ;; *) git update-ref -d "$ref" ;; esac
 done
-git remote remove origin
 
 git filter-repo --force \
   --invert-paths --path docs/dev --path 2D-FFT/README.md \
@@ -91,6 +91,8 @@ fi
   || fail "the first two commits no longer get the hashes 5f2dad8 and bae6504 that replacements.txt writes"
 git merge-base --is-ancestor "$TAG" main || fail "the tag $TAG is not in the history of main"
 git cat-file -e "$TAG:2D-FFT" 2>/dev/null || fail "the README links $TAG/2D-FFT, which the tag does not hold"
+rm -rf .git/filter-repo           # the maps from the old hashes and ref names
+git fsck --full --no-dangling >/dev/null 2>&1 || fail "git fsck reports a problem in the rewritten repository"
 echo "clean history: $WORK/repo ($(git rev-list --count main) commits, tag $TAG)"
 
 if [ "${1:-}" = "--push" ]; then

@@ -3,3 +3,6 @@ regex:(?m)^Claude-Session:[^\n]*\n?==>
  See docs/dev/status.md.==>
 Written by the current step and still under review: shared==>Shared
 Say that AI assistance was used for the rework only==>Say for which part of the work AI assistance was used
+regex:(?s)\n\ncheck_history\.py also fails on the device boxes Samsung phones write.*?one bytes object\.==>
+regex:check_history\.py walks the MP4 boxes outside mdat and also fails on\nAndroid and Samsung keys, device make and model, and capture times in\nmvhd, tkhd and mdhd\. CI runs directions\.py and evaluates the phone\nsessions with 4 jobs\.==>CI runs directions.py and evaluates the phone sessions with 4 jobs.
+Graph paper and history check: fixes from the second review==>Graph paper: fixes from the second review
